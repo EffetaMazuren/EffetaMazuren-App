@@ -35,10 +35,12 @@ function Accordion({ title, dot, hint, children }: any) {
 }
 
 function DataRow({ label, value, valueColor }: any) {
+  const display = (!value || value === 'null' || value === '') ? '—' : value
+  const isMissing = display === '—'
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '0.5px solid #f3f4f6' }}>
       <span style={{ fontSize: 12, color: '#9ca3af' }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 500, color: valueColor || '#111827', textAlign: 'right', maxWidth: '60%' }}>{value || '—'}</span>
+      <span style={{ fontSize: 13, fontWeight: isMissing ? 400 : 500, color: isMissing ? '#d1d5db' : (valueColor || '#111827'), textAlign: 'right', maxWidth: '65%' }}>{display}</span>
     </div>
   )
 }
@@ -46,7 +48,8 @@ function DataRow({ label, value, valueColor }: any) {
 export default function FichaCaminante() {
   const router = useRouter()
   const { id } = useParams()
-  const [cam, setCam] = useState<any>(null)
+  const [cam, setCam] = useState<any>(null)       // datos de pago (vista)
+  const [detalle, setDetalle] = useState<any>(null) // datos completos (tabla)
   const [pagos, setPagos] = useState<any[]>([])
   const [contactos, setContactos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,12 +59,38 @@ export default function FichaCaminante() {
 
   useEffect(() => {
     async function cargar() {
-      const { data: c } = await supabase.from('vista_pagos_caminantes').select('*').eq('id', id).single()
-      setCam(c)
-      const { data: p } = await supabase.from('pagos').select('*').eq('persona_id', id).order('fecha')
+      // 1. Datos de pago desde la vista
+      const { data: vista } = await supabase
+        .from('vista_pagos_caminantes')
+        .select('*')
+        .eq('id', id)
+        .single()
+      setCam(vista)
+
+      // 2. Datos completos desde la tabla directamente
+      const { data: completo } = await supabase
+        .from('caminantes')
+        .select('*')
+        .eq('id', id)
+        .single()
+      setDetalle(completo)
+
+      // 3. Pagos
+      const { data: p } = await supabase
+        .from('pagos')
+        .select('*')
+        .eq('persona_id', id)
+        .order('fecha')
       setPagos(p || [])
-      const { data: ct } = await supabase.from('contactos_emergencia').select('*').eq('persona_id', id).order('orden')
+
+      // 4. Contactos
+      const { data: ct } = await supabase
+        .from('contactos_emergencia')
+        .select('*')
+        .eq('persona_id', id)
+        .order('orden')
       setContactos(ct || [])
+
       setLoading(false)
     }
     cargar()
@@ -87,19 +116,21 @@ export default function FichaCaminante() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ caminante_id: cam.id }),
     })
-    if (res.ok) {
-      alert('✅ Correo enviado correctamente')
-      window.location.reload()
-    } else {
-      alert('Error enviando correo')
-    }
+    if (res.ok) { alert('✅ Correo enviado'); window.location.reload() }
+    else alert('Error enviando correo')
     setEnviandoCorreo(false)
   }
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><div style={{ color: '#9ca3af' }}>Cargando...</div></div>
-  if (!cam) return <div style={{ padding: 20 }}>Caminante no encontrado</div>
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div style={{ color: '#9ca3af' }}>Cargando...</div>
+    </div>
+  )
+
+  if (!cam || !detalle) return <div style={{ padding: 20 }}>Caminante no encontrado</div>
 
   const pct = Math.min(Math.round((cam.total_pagado / 500000) * 100), 100)
+  const sacramentos = detalle.sacramentos?.join(', ') || '—'
 
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 40 }}>
@@ -109,59 +140,45 @@ export default function FichaCaminante() {
           <ArrowLeft size={16} /> Caminantes
         </button>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Download size={16} color="#6b7280" /></button>
-          <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><MoreHorizontal size={16} color="#6b7280" /></button>
+          <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <Download size={16} color="#6b7280" />
+          </button>
+          <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <MoreHorizontal size={16} color="#6b7280" />
+          </button>
         </div>
       </div>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '4px 20px 16px', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 500, color: '#0d0d14', letterSpacing: -0.3 }}>{cam.nombre}</div>
-          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>C.C. {cam.numero_documento}</div>
+          <div style={{ fontSize: 22, fontWeight: 500, color: '#0d0d14', letterSpacing: -0.3 }}>{detalle.nombre}</div>
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{detalle.tipo_documento} {detalle.numero_documento} · {detalle.edad} años</div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
             {cam.estado_pago === 'completo' && <Chip label="Pago completo" bg="#dcfce7" color="#166534" />}
             {cam.estado_pago === 'parcial' && <Chip label="Abono parcial" bg="#fef3c7" color="#92400e" />}
             {cam.estado_pago === 'sin_pago' && <Chip label="Sin pago" bg="#f3f4f6" color="#6b7280" />}
-            {cam.es_sorpresa && <Chip label="Sorpresa" bg="#ede9fe" color="#5b21b6" />}
+            {detalle.es_sorpresa && <Chip label="Sorpresa" bg="#ede9fe" color="#5b21b6" />}
           </div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          {cam.inscrito_oficialmente && (
+          {detalle.inscrito_oficialmente && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0f1787', color: '#fff', padding: '5px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500 }}>
               <CheckCircle size={13} /> Inscrito
             </div>
           )}
           <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 5 }}>
-            {cam.inscrito_oficialmente ? 'Cupo asegurado' : 'Sin cupo aún'}
+            {detalle.inscrito_oficialmente ? 'Cupo asegurado' : 'Sin cupo aún'}
           </div>
         </div>
       </div>
 
-      {/* Banner inscrito */}
-      {cam.inscrito_oficialmente && (
-        <div style={{ margin: '0 20px 14px', background: '#0f1787', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CheckCircle size={15} color="#fff" />
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: '#fff' }}>Inscripción confirmada</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 1 }}>
-                {new Date(cam.fecha_inscripcion).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </div>
-            </div>
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, textAlign: 'right' }}>Retiro<br/>Jul 2026</div>
-        </div>
-      )}
-
       {/* Alerta sorpresa */}
-      {cam.es_sorpresa && (
+      {detalle.es_sorpresa && contactos.length > 0 && (
         <div style={{ margin: '0 20px 14px', background: '#f5f3ff', border: '0.5px solid #c4b5fd', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           <EyeOff size={14} color="#5b21b6" style={{ marginTop: 1, flexShrink: 0 }} />
           <span style={{ fontSize: 12, color: '#5b21b6' }}>
-            <strong>Retiro sorpresa.</strong> {contactos[0] ? `Contactar a: ${contactos[0].nombre} (${contactos[0].parentesco}) · ${contactos[0].celular}` : 'Ver contactos de emergencia'}
+            <strong>Retiro sorpresa.</strong> Contactar a: {contactos[0].nombre} ({contactos[0].parentesco}) · {contactos[0].celular}
           </span>
         </div>
       )}
@@ -169,27 +186,28 @@ export default function FichaCaminante() {
       {/* Acciones */}
       <div style={{ display: 'flex', gap: 8, padding: '0 20px 16px', flexWrap: 'wrap' }}>
         <button onClick={enviarCorreo} disabled={enviandoCorreo} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: '#0f1787', color: '#fff' }}>
-          <Mail size={14} /> {enviandoCorreo ? 'Enviando...' : cam.es_sorpresa ? 'Correo al contacto' : 'Enviar correo'}
+          <Mail size={14} /> {enviandoCorreo ? 'Enviando...' : detalle.es_sorpresa ? 'Correo al contacto' : 'Enviar correo'}
         </button>
         <button onClick={() => setModalPago(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: '0.5px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: '#fff', color: '#0d0d14' }}>
           <Plus size={14} /> Registrar pago
         </button>
       </div>
 
-      {/* Card de pago — siempre visible */}
+      {/* Card pago — siempre visible */}
       <div style={{ margin: '0 20px 12px', background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
-        <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #edf0f7', display: 'flex', alignItems: 'center', gap: 8, background: '#f8fdf9' }}>
-          <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: 0.8, textTransform: 'uppercase', color: '#16a34a' }}>Estado de pago</span>
+        <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #edf0f7', background: '#f8fdf9' }}>
+          <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: 0.8, textTransform: 'uppercase' as const, color: '#16a34a' }}>Estado de pago</span>
         </div>
         <div style={{ padding: '14px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px solid #f1f2f6', fontSize: 13 }}>
-            <span style={{ color: '#6b7194' }}>Total requerido</span><span style={{ fontWeight: 500 }}>{fmt(500000)}</span>
+            <span style={{ color: '#6b7280' }}>Total requerido</span><span style={{ fontWeight: 500 }}>{fmt(500000)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px solid #f1f2f6', fontSize: 13 }}>
-            <span style={{ color: '#6b7194' }}>Total pagado</span><span style={{ fontWeight: 500, color: '#166534' }}>{fmt(cam.total_pagado)}</span>
+            <span style={{ color: '#6b7280' }}>Total pagado</span><span style={{ fontWeight: 500, color: '#166534' }}>{fmt(cam.total_pagado)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13 }}>
-            <span style={{ color: '#6b7194' }}>Saldo pendiente</span><span style={{ fontWeight: 500, color: cam.saldo_pendiente > 0 ? '#92400e' : '#166534' }}>{fmt(Math.max(cam.saldo_pendiente, 0))}</span>
+            <span style={{ color: '#6b7280' }}>Saldo pendiente</span>
+            <span style={{ fontWeight: 500, color: cam.saldo_pendiente > 0 ? '#92400e' : '#166534' }}>{fmt(Math.max(cam.saldo_pendiente, 0))}</span>
           </div>
           <div style={{ margin: '10px 0 6px' }}>
             <div style={{ height: 7, background: '#e8eaf6', borderRadius: 4 }}>
@@ -201,7 +219,7 @@ export default function FichaCaminante() {
           </div>
           {pagos.length > 0 && (
             <>
-              <div style={{ fontSize: 11, fontWeight: 500, color: '#9ca3af', margin: '12px 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Historial de abonos</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: '#9ca3af', margin: '12px 0 6px', textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Historial de abonos</div>
               {pagos.map((p, i) => (
                 <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '0.5px solid #f1f2f6' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -219,26 +237,39 @@ export default function FichaCaminante() {
               ))}
             </>
           )}
+          <div style={{ marginTop: 12 }}>
+            <button onClick={() => setModalPago(true)} style={{ width: '100%', height: 38, border: '0.5px solid #e5e7eb', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#0d0d14' }}>
+              <Plus size={14} /> Registrar nuevo abono
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Acordeones */}
       <div style={{ padding: '0 20px' }}>
+
         <Accordion title="Datos personales" dot="#0f1787">
-          <DataRow label="Celular" value={cam.celular} />
-          <DataRow label="Correo" value={cam.correo} />
-          <DataRow label="Estado correo" value={cam.estado_correo === 'sin_enviar' ? '⏳ Pendiente' : cam.estado_correo === 'enviado' ? '✓ Enviado' : '✓ Enviado al contacto'} valueColor={cam.estado_correo === 'sin_enviar' ? '#d97706' : '#166534'} />
+          <DataRow label="Celular" value={detalle.celular} />
+          <DataRow label="Correo" value={detalle.correo} />
+          <DataRow label="Dirección" value={detalle.direccion} />
+          <DataRow label="Barrio" value={detalle.barrio} />
+          <DataRow label="Fecha de nacimiento" value={detalle.fecha_nacimiento ? new Date(detalle.fecha_nacimiento).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : null} />
+          <DataRow label="Talla camiseta" value={detalle.talla_camiseta} />
+          <DataRow label="Sacramentos" value={sacramentos} />
+          <DataRow label="Estado correo" value={detalle.estado_correo === 'sin_enviar' ? '⏳ Pendiente' : detalle.estado_correo === 'enviado' ? '✓ Enviado' : '✓ Enviado al contacto'} valueColor={detalle.estado_correo === 'sin_enviar' ? '#d97706' : '#166534'} />
         </Accordion>
 
         <Accordion title="Salud" dot="#dc2626">
-          <DataRow label="EPS" value={cam.eps} />
-          <DataRow label="Alergias" value={cam.alergias} />
-          <DataRow label="Restricciones" value={cam.restricciones_alimentarias} />
-          <DataRow label="Medicamentos" value={cam.medicamentos} />
+          <DataRow label="EPS" value={detalle.eps} />
+          <DataRow label="Alergias" value={detalle.alergias} />
+          <DataRow label="Restricciones alimentarias" value={detalle.restricciones_alimentarias} />
+          <DataRow label="Medicamentos" value={detalle.medicamentos} />
         </Accordion>
 
-        <Accordion title="Contactos de emergencia" dot="#7c3aed" hint={`${contactos.length}`}>
-          {contactos.map(c => (
+        <Accordion title="Contactos de emergencia" dot="#7c3aed" hint={contactos.length > 0 ? `${contactos.length}` : '0'}>
+          {contactos.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#9ca3af', padding: '8px 0' }}>Sin contactos registrados</div>
+          ) : contactos.map(c => (
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '0.5px solid #f3f4f6' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#5b21b6' }}>
@@ -254,17 +285,21 @@ export default function FichaCaminante() {
         </Accordion>
 
         <Accordion title="Historial" dot="#d1d5db">
-          <DataRow label="Inscripción" value={new Date(cam.fecha_inscripcion).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} />
-          <DataRow label="Correo inscripción" value={cam.estado_correo === 'sin_enviar' ? 'Pendiente' : '✓ Enviado'} valueColor={cam.estado_correo === 'sin_enviar' ? '#9ca3af' : '#166534'} />
+          <DataRow label="Fecha de inscripción" value={detalle.fecha_inscripcion ? new Date(detalle.fecha_inscripcion).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : null} />
+          <DataRow label="Correo inscripción" value={detalle.estado_correo === 'sin_enviar' ? 'Pendiente' : '✓ Enviado'} valueColor={detalle.estado_correo === 'sin_enviar' ? '#9ca3af' : '#166534'} />
           <DataRow label="Correo pago completo" value={cam.estado_pago === 'completo' ? '✓ Enviado' : 'Pendiente de pago'} valueColor={cam.estado_pago === 'completo' ? '#166534' : '#9ca3af'} />
+          <DataRow label="Retiro" value="Effetá Mazuren · Julio 2026" />
+          {detalle.observaciones && <DataRow label="Observaciones" value={detalle.observaciones} />}
         </Accordion>
+
       </div>
 
       {/* Modal pago */}
       {modalPago && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
           <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%' }}>
-            <div style={{ fontSize: 16, fontWeight: 500, color: '#0d0d14', marginBottom: 16 }}>Registrar abono</div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: '#0d0d14', marginBottom: 4 }}>Registrar abono</div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 16 }}>{detalle.nombre}</div>
             <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Valor del abono (COP)</div>
             <input
               type="number"
