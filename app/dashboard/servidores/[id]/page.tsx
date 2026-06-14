@@ -90,11 +90,15 @@ export default function ServidorPage() {
       }
     }
 
-    // Registrar pago
+  const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
+
     const { error } = await supabase.from('pagos').insert({
       persona_id: id,
       tipo_persona: 'servidor',
+      retiro_id: r?.id,
       valor: Number(valorPago),
+      fecha: new Date().toISOString().split('T')[0],
+      estado: 'confirmado',
       comprobante_url,
       comprobante_nombre,
     })
