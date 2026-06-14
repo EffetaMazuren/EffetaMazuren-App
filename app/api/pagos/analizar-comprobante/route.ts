@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
       valor,
       confianza: valor ? 'alta' : 'baja',
       textoDetectado: textoCompleto,
+      debug: lineas,
     })
   } catch (error) {
     console.error('Error analizando comprobante:', error)
