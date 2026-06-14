@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     const totalPagado = pagos?.reduce((sum, p) => sum + Number(p.valor), 0) || 0
-    const valorTotal = 500000 // valor caminante
+    const valorTotal = 500000
     const faltaPorPagar = Math.max(0, valorTotal - totalPagado)
     const inscritoOficialmente = totalPagado >= valorTotal
 
@@ -73,6 +73,37 @@ export async function POST(request: NextRequest) {
         .update({ inscrito_oficialmente: true })
         .eq('id', caminanteId)
     }
+
+    // ── CORREO DE CONFIRMACIÓN ──────────────────────────────────────────
+    // Obtener nombre y correo del caminante
+    const { data: caminante } = await supabase
+      .from('caminantes')
+      .select('nombre, correo, es_sorpresa')
+      .eq('id', caminanteId)
+      .single()
+
+    // Solo enviar si tiene correo y NO es sorpresa
+    if (caminante?.correo && !caminante?.es_sorpresa) {
+      try {
+        const appsScriptUrl = process.env.APPS_SCRIPT_CORREOS_URL!
+        await fetch(appsScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nombre: caminante.nombre,
+            correo: caminante.correo,
+            monto_abonado: Number(valor),
+            total_pagado: totalPagado,
+            valor_total: valorTotal,
+            es_pago_completo: inscritoOficialmente,
+          }),
+        })
+      } catch (errCorreo) {
+        // El correo falla silenciosamente — el pago ya quedó guardado
+        console.error('Error enviando correo confirmación:', errCorreo)
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────
 
     return NextResponse.json({
       success: true,
