@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
-import { Plus, ArrowUpRight, ArrowDownRight, FileImage } from 'lucide-react'
+import { Plus, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 type Transaccion = {
   id: string
@@ -83,14 +83,26 @@ export default function FinanzasPage() {
   const ingresosEffeta = transacciones.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + Number(t.valor), 0)
   const egresosEffeta = transacciones.filter(t => t.tipo === 'egreso').reduce((s, t) => s + Number(t.valor), 0)
   const balanceEffeta = ingresosEffeta - egresosEffeta
-
   const totalParroquia = totalPagadoCaminantes + totalPagadoServidores
   const casaRetiros = categorias.find(c => c.nombre === 'Casa de retiros')?.presupuesto ?? 39000000
   const saldoParroquia = totalParroquia - casaRetiros
-
   const txIngresos = transacciones.filter(t => t.tipo === 'ingreso')
   const txEgresos = transacciones.filter(t => t.tipo === 'egreso')
   const txConComprobante = transacciones.filter(t => t.comprobante_url)
+
+  const COLORES = [
+    { bg: '#eff6ff', border: '#bfdbfe', texto: '#1e40af' },
+    { bg: '#f0fdf4', border: '#bbf7d0', texto: '#166534' },
+    { bg: '#fdf4ff', border: '#e9d5ff', texto: '#6b21a8' },
+    { bg: '#fff7ed', border: '#fed7aa', texto: '#9a3412' },
+    { bg: '#fef2f2', border: '#fecaca', texto: '#991b1b' },
+    { bg: '#f0f9ff', border: '#bae6fd', texto: '#0c4a6e' },
+    { bg: '#fafaf9', border: '#d6d3d1', texto: '#44403c' },
+    { bg: '#f7fee7', border: '#d9f99d', texto: '#3f6212' },
+    { bg: '#fff1f2', border: '#fecdd3', texto: '#9f1239' },
+    { bg: '#ecfdf5', border: '#a7f3d0', texto: '#065f46' },
+    { bg: '#eef2ff', border: '#c7d2fe', texto: '#3730a3' },
+  ]
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f7f8fc' }}>
@@ -104,9 +116,7 @@ export default function FinanzasPage() {
       {/* Hero navy */}
       <div style={{ background: '#0f1787', padding: '28px 20px 32px' }}>
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Nequi Effetá</div>
-        <div style={{ fontSize: 36, fontWeight: 600, color: '#fff', letterSpacing: '-0.5px' }}>
-          {fmt(balanceEffeta)}
-        </div>
+        <div style={{ fontSize: 36, fontWeight: 600, color: '#fff', letterSpacing: '-0.5px' }}>{fmt(balanceEffeta)}</div>
         <div style={{ fontSize: 12, color: balanceEffeta >= 0 ? '#86efac' : '#fca5a5', marginTop: 4 }}>
           {balanceEffeta >= 0 ? '↑' : '↓'} Balance disponible
         </div>
@@ -163,7 +173,7 @@ export default function FinanzasPage() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 13, color: '#6b7280' }}>Pagos servidores</span>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: '#166634' }}>{fmt(totalPagadoServidores)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: '#166534' }}>{fmt(totalPagadoServidores)}</span>
                 </div>
                 <div style={{ height: '0.5px', background: '#f3f4f6' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -190,26 +200,25 @@ export default function FinanzasPage() {
               Nequi Effetá · por categoría
             </div>
             {categorias.filter(c => c.tipo_cuenta === 'effeta').map(cat => {
-              const ingresos = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.valor), 0)
-              const egresos = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'egreso').reduce((s, t) => s + Number(t.valor), 0)
-              const balance = ingresos - egresos
-              const hayMovimientos = ingresos > 0 || egresos > 0
+              const ing = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.valor), 0)
+              const egr = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'egreso').reduce((s, t) => s + Number(t.valor), 0)
+              const balance = ing - egr
+              const hayMov = ing > 0 || egr > 0
               return (
-                <div key={cat.id}
-                  onClick={() => router.push(`/dashboard/finanzas/categoria/${cat.id}`)}
+                <div key={cat.id} onClick={() => router.push(`/dashboard/finanzas/categoria/${cat.id}`)}
                   style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>{cat.nombre}</div>
-                    {hayMovimientos && (
+                    {hayMov && (
                       <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                        {ingresos > 0 && <span style={{ color: '#16a34a' }}>↑ {fmt(ingresos)} </span>}
-                        {egresos > 0 && <span style={{ color: '#dc2626' }}>↓ {fmt(egresos)}</span>}
+                        {ing > 0 && <span style={{ color: '#16a34a' }}>↑ {fmt(ing)} </span>}
+                        {egr > 0 && <span style={{ color: '#dc2626' }}>↓ {fmt(egr)}</span>}
                       </div>
                     )}
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: !hayMovimientos ? '#9ca3af' : balance >= 0 ? '#166534' : '#dc2626' }}>
-                      {hayMovimientos ? fmt(balance) : '—'}
+                    <div style={{ fontSize: 14, fontWeight: 600, color: !hayMov ? '#9ca3af' : balance >= 0 ? '#166534' : '#dc2626' }}>
+                      {hayMov ? fmt(balance) : '—'}
                     </div>
                     {(cat.presupuesto ?? 0) > 0 && (
                       <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>de {fmt(cat.presupuesto)}</div>
@@ -267,28 +276,29 @@ export default function FinanzasPage() {
           </>
         )}
 
-{/* ── COMPROBANTES ── */}
+        {/* ── COMPROBANTES ── */}
         {tab === 'comprobantes' && (
           <>
-            {/* Filtro por categoría */}
+            {/* Filtros */}
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 }}>
-              <button
-                onClick={() => setFiltroCategoria('todas')}
-                style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtroCategoria === 'todas' ? '#0f1787' : '#fff', color: filtroCategoria === 'todas' ? '#fff' : '#6b7280' }}>
+              <button onClick={() => setFiltroCategoria('todas')} style={{
+                padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500,
+                whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb',
+                background: filtroCategoria === 'todas' ? '#0f1787' : '#fff',
+                color: filtroCategoria === 'todas' ? '#fff' : '#6b7280'
+              }}>
                 Todas · {txConComprobante.length}
               </button>
-              {categorias.filter(c => c.tipo_cuenta === 'effeta').filter(cat =>
-                txConComprobante.some(t => t.categoria_id === cat.id)
-              ).map(cat => {
-                const count = txConComprobante.filter(t => t.categoria_id === cat.id).length
-                return (
-                  <button key={cat.id}
-                    onClick={() => setFiltroCategoria(cat.id)}
-                    style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtroCategoria === cat.id ? '#0f1787' : '#fff', color: filtroCategoria === cat.id ? '#fff' : '#6b7280' }}>
-                    {cat.nombre} · {count}
-                  </button>
-                )
-              })}
+              {categorias.filter(c => c.tipo_cuenta === 'effeta' && txConComprobante.some(t => t.categoria_id === c.id)).map(cat => (
+                <button key={cat.id} onClick={() => setFiltroCategoria(cat.id)} style={{
+                  padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500,
+                  whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb',
+                  background: filtroCategoria === cat.id ? '#0f1787' : '#fff',
+                  color: filtroCategoria === cat.id ? '#fff' : '#6b7280'
+                }}>
+                  {cat.nombre} · {txConComprobante.filter(t => t.categoria_id === cat.id).length}
+                </button>
+              ))}
             </div>
 
             {txConComprobante.length === 0 ? (
@@ -298,24 +308,9 @@ export default function FinanzasPage() {
               </div>
             ) : filtroCategoria === 'todas' ? (
               /* Vista todas — agrupadas por categoría con color */
-              <>
-                {categorias.filter(c => c.tipo_cuenta === 'effeta').filter(cat =>
-                  txConComprobante.some(t => t.categoria_id === cat.id)
-                ).map((cat, idx) => {
-                  const colores = [
-                    { bg: '#eff6ff', border: '#bfdbfe', texto: '#1e40af' },
-                    { bg: '#f0fdf4', border: '#bbf7d0', texto: '#166534' },
-                    { bg: '#fdf4ff', border: '#e9d5ff', texto: '#6b21a8' },
-                    { bg: '#fff7ed', border: '#fed7aa', texto: '#9a3412' },
-                    { bg: '#fef2f2', border: '#fecaca', texto: '#991b1b' },
-                    { bg: '#f0f9ff', border: '#bae6fd', texto: '#0c4a6e' },
-                    { bg: '#fafaf9', border: '#d6d3d1', texto: '#44403c' },
-                    { bg: '#f7fee7', border: '#d9f99d', texto: '#3f6212' },
-                    { bg: '#fff1f2', border: '#fecdd3', texto: '#9f1239' },
-                    { bg: '#ecfdf5', border: '#a7f3d0', texto: '#065f46' },
-                    { bg: '#eef2ff', border: '#c7d2fe', texto: '#3730a3' },
-                  ]
-                  const color = colores[idx % colores.length]
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {categorias.filter(c => c.tipo_cuenta === 'effeta' && txConComprobante.some(t => t.categoria_id === c.id)).map((cat, idx) => {
+                  const color = COLORES[idx % COLORES.length]
                   const txCat = txConComprobante.filter(t => t.categoria_id === cat.id)
                   return (
                     <div key={cat.id} style={{ background: color.bg, border: `1px solid ${color.border}`, borderRadius: 14, padding: '14px' }}>
@@ -338,7 +333,7 @@ export default function FinanzasPage() {
                     </div>
                   )
                 })}
-              </>
+              </div>
             ) : (
               /* Vista categoría individual */
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -360,25 +355,18 @@ export default function FinanzasPage() {
             )}
           </>
         )}
+      </div>
 
       {/* Modal imagen ampliada */}
       {imagenAmpliada && (
-        <div
-          onClick={() => setImagenAmpliada(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <img
-            src={imagenAmpliada.comprobante_url!}
-            alt={imagenAmpliada.descripcion}
-            style={{ maxWidth: '100%', maxHeight: '75vh', borderRadius: 12, objectFit: 'contain' }}
-            onClick={e => e.stopPropagation()}
-          />
+        <div onClick={() => setImagenAmpliada(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <img src={imagenAmpliada.comprobante_url!} alt={imagenAmpliada.descripcion} style={{ maxWidth: '100%', maxHeight: '75vh', borderRadius: 12, objectFit: 'contain' }} onClick={e => e.stopPropagation()} />
           <div style={{ marginTop: 16, textAlign: 'center' }}>
             <div style={{ fontSize: 15, fontWeight: 500, color: '#fff' }}>{imagenAmpliada.descripcion}</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
               {imagenAmpliada.categorias_financieras?.nombre} · {fmt(imagenAmpliada.valor)}
             </div>
-            <a href={imagenAmpliada.comprobante_url!} target="_blank" rel="noopener noreferrer"
-              style={{ display: 'inline-block', marginTop: 12, fontSize: 13, color: '#a5b4fc', textDecoration: 'underline' }}>
+            <a href={imagenAmpliada.comprobante_url!} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 12, fontSize: 13, color: '#a5b4fc', textDecoration: 'underline' }}>
               Abrir en pantalla completa
             </a>
           </div>
@@ -387,9 +375,8 @@ export default function FinanzasPage() {
       )}
 
       {/* Botón registrar */}
-      {tab !== 'resumen' && tab !== 'comprobantes' && (
-        <button
-          onClick={() => router.push(`/dashboard/finanzas/registrar?tipo=${tab === 'ingresos' ? 'ingreso' : 'egreso'}`)}
+      {(tab === 'ingresos' || tab === 'egresos') && (
+        <button onClick={() => router.push(`/dashboard/finanzas/registrar?tipo=${tab === 'ingresos' ? 'ingreso' : 'egreso'}`)}
           style={{ position: 'fixed', bottom: 80, left: 20, right: 20, background: '#0f1787', color: '#fff', border: 'none', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
           <Plus size={18} /> Registrar {tab === 'ingresos' ? 'ingreso' : 'egreso'}
         </button>
