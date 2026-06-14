@@ -462,7 +462,7 @@ export default function FichaCaminante() {
                   <div style={{ marginBottom: 16 }}>
                     {/* Vista previa */}
                     <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', marginBottom: 10 }}>
-                      <img src={previsualizacion!} alt="Comprobante" style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 12 }} />
+                      <img src={previsualizacion!} alt="Comprobante" style={{ width: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 12, background: '#f3f4f6' }} />
                       <button
                         onClick={() => { setArchivo(null); setPrevisualizacion(null); setValorDetectado(''); setValorManual(''); setPaso('subir') }}
                         style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
