@@ -20,7 +20,10 @@ export async function POST(request: NextRequest) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const extension = file.name.split('.').pop()
     const nombreArchivo = `comprobante_${timestamp}.${extension}`
-    const carpeta = caminanteNombre.trim().replace(/\s+/g, '_')
+    const carpeta = caminanteNombre.trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
     const filePath = `${carpeta}/${nombreArchivo}`
 
     const bytes = await file.arrayBuffer()
