@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { google } from 'googleapis'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,75 +17,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Faltan datos requeridos' }, { status: 400 })
     }
 
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      },
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    })
-
-    const drive = google.drive({ version: 'v3', auth })
-    const carpetaPadreId = process.env.GOOGLE_DRIVE_FOLDER_ID!
-    const carpetaNombre = caminanteNombre.trim()
-
-    // Buscar carpeta del caminante dentro de la Unidad Compartida
-    const buscarCarpeta = await drive.files.list({
-      q: `name='${carpetaNombre}' and mimeType='application/vnd.google-apps.folder' and '${carpetaPadreId}' in parents and trashed=false`,
-      fields: 'files(id, name)',
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    })
-
-    let carpetaId: string
-
-    if (buscarCarpeta.data.files && buscarCarpeta.data.files.length > 0) {
-      carpetaId = buscarCarpeta.data.files[0].id!
-    } else {
-      // Crear carpeta del caminante
-      const nuevaCarpeta = await drive.files.create({
-        requestBody: {
-          name: carpetaNombre,
-          mimeType: 'application/vnd.google-apps.folder',
-          parents: [carpetaPadreId],
-        },
-        fields: 'id',
-        supportsAllDrives: true,
-      })
-      carpetaId = nuevaCarpeta.data.id!
-    }
-
-    // Subir archivo
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
-    const { Readable } = require('stream')
-    const stream = Readable.from(buffer)
-
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const extension = file.name.split('.').pop()
     const nombreArchivo = `comprobante_${timestamp}.${extension}`
+    const carpeta = caminanteNombre.trim().replace(/\s+/g, '_')
+    const filePath = `${carpeta}/${nombreArchivo}`
 
-    const archivoSubido = await drive.files.create({
-      requestBody: {
-        name: nombreArchivo,
-        parents: [carpetaId],
-      },
-      media: {
-        mimeType: file.type,
-        body: stream,
-      },
-      fields: 'id, webViewLink',
-      supportsAllDrives: true,
-    })
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+
+    const { error: uploadError } = await supabase.storage
+      .from('comprobantes-pagos')
+      .upload(filePath, buffer, {
+        contentType: file.type,
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error('Error subiendo a Supabase Storage:', uploadError)
+      return NextResponse.json({ error: 'Error al subir archivo' }, { status: 500 })
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('comprobantes-pagos')
+      .getPublicUrl(filePath)
 
     return NextResponse.json({
       success: true,
-      fileId: archivoSubido.data.id,
-      fileUrl: archivoSubido.data.webViewLink,
+      fileId: filePath,
+      fileUrl: urlData.publicUrl,
       fileName: nombreArchivo,
     })
   } catch (error) {
-    console.error('Error subiendo a Drive:', error)
+    console.error('Error en upload:', error)
     return NextResponse.json({ error: 'Error al subir archivo' }, { status: 500 })
   }
 }
