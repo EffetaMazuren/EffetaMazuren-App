@@ -109,7 +109,7 @@ export default function CategoriaPage() {
         </button>
         <div>
           <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>{categoria?.nombre}</div>
-          {categoria?.presupuesto > 0 && (
+          {(categoria?.presupuesto ?? 0) > 0 && (
             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>Presupuesto: {fmt(categoria.presupuesto)}</div>
           )}
         </div>
