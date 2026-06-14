@@ -1,4 +1,4 @@
-'use client' 
+'use client'
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -56,15 +56,11 @@ export default function FichaCaminante() {
   const [enviandoCorreo, setEnviandoCorreo] = useState(false)
   const [modalPago, setModalPago] = useState(false)
 
-  // Estados del nuevo modal
   const [paso, setPaso] = useState<'subir' | 'revisar' | 'guardando'>('subir')
   const [archivo, setArchivo] = useState<File | null>(null)
   const [previsualizacion, setPrevisualizacion] = useState<string | null>(null)
-  const [valorDetectado, setValorDetectado] = useState<string>('')
   const [valorManual, setValorManual] = useState<string>('')
   const [notas, setNotas] = useState<string>('')
-  const [analizando, setAnalizando] = useState(false)
-  const [errorAnalisis, setErrorAnalisis] = useState<string | null>(null)
   const inputFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -106,10 +102,8 @@ export default function FichaCaminante() {
     setPaso('subir')
     setArchivo(null)
     setPrevisualizacion(null)
-    setValorDetectado('')
     setValorManual('')
     setNotas('')
-    setErrorAnalisis(null)
     setModalPago(true)
   }
 
@@ -118,59 +112,17 @@ export default function FichaCaminante() {
     setPaso('subir')
     setArchivo(null)
     setPrevisualizacion(null)
-    setValorDetectado('')
     setValorManual('')
     setNotas('')
-    setErrorAnalisis(null)
   }
 
-  async function seleccionarArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+  function seleccionarArchivo(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
     setArchivo(f)
     const url = URL.createObjectURL(f)
     setPrevisualizacion(url)
-    setErrorAnalisis(null)
-    await analizarComprobante(f)
-  }
-
-async function analizarComprobante(f: File) {
-    // Sin OCR — el líder ingresa el valor manualmente
-    setAnalizando(false)
     setPaso('revisar')
-  }
-          resolve(b64)
-        }
-        reader.onerror = () => reject(new Error('Error leyendo archivo'))
-        reader.readAsDataURL(f)
-      })
-
-      // Verificar que el mediaType sea válido para Vision API
-      const mediaType = f.type.startsWith('image/') ? f.type : 'image/jpeg'
-
-      // Llamar a Claude para detectar el valor
-      const response = await fetch('/api/pagos/analizar-comprobante', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: base64,
-          mediaType: f.type,
-        }),
-      })
-
-      const data = await response.json()
-      if (data.valor) {
-        setValorDetectado(data.valor.toString())
-        setValorManual(data.valor.toString())
-      } else {
-        setErrorAnalisis('No se pudo detectar el valor automáticamente. Ingrésalo manualmente.')
-      }
-    } catch (err) {
-      setErrorAnalisis('Error analizando imagen. Ingresa el valor manualmente.')
-    } finally {
-      setAnalizando(false)
-      setPaso('revisar')
-    }
   }
 
   async function confirmarYGuardar() {
@@ -205,7 +157,7 @@ async function analizarComprobante(f: File) {
       // 3. Obtener usuario actual
       const { data: { user } } = await supabase.auth.getUser()
 
-      // 4. Registrar pago vía API
+      // 4. Registrar pago
       const pagoRes = await fetch('/api/pagos/registrar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -331,7 +283,7 @@ async function analizarComprobante(f: File) {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13 }}>
             <span style={{ color: '#6b7280' }}>Saldo pendiente</span>
-            <span style={{ fontWeight: 500, color: cam.saldo_pendiente > 0 ? '#92400e' : '#166534' }}>{fmt(Math.max(cam.saldo_pendiente, 0))}</span>
+            <span style={{ fontWeight: 500, color: cam.saldo_pendiente > 0 ? '#92400e' : '#166634' }}>{fmt(Math.max(cam.saldo_pendiente, 0))}</span>
           </div>
           <div style={{ margin: '10px 0 6px' }}>
             <div style={{ height: 7, background: '#e8eaf6', borderRadius: 4 }}>
@@ -422,12 +374,11 @@ async function analizarComprobante(f: File) {
         </Accordion>
       </div>
 
-      {/* Modal nuevo abono con comprobante */}
+      {/* Modal nuevo abono */}
       {modalPago && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
           <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
 
-            {/* Header modal */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: '#0d0d14' }}>Registrar abono</div>
               <button onClick={cerrarModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
@@ -436,96 +387,69 @@ async function analizarComprobante(f: File) {
             </div>
             <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>{detalle.nombre}</div>
 
-            {/* PASO 1: Subir comprobante */}
-            {(paso === 'subir' || paso === 'revisar') && (
+            <input
+              ref={inputFileRef}
+              type="file"
+              accept="image/*"
+              onChange={seleccionarArchivo}
+              style={{ display: 'none' }}
+            />
+
+            {/* Paso 1: subir foto */}
+            {paso === 'subir' && (
+              <div
+                onClick={() => inputFileRef.current?.click()}
+                style={{ border: '1.5px dashed #e5e7eb', borderRadius: 12, padding: '32px 20px', textAlign: 'center', cursor: 'pointer', background: '#fafafa', marginBottom: 16 }}
+              >
+                <Upload size={24} color="#9ca3af" style={{ margin: '0 auto 8px' }} />
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Subir comprobante</div>
+                <div style={{ fontSize: 12, color: '#9ca3af' }}>Foto o captura de pantalla de la transferencia</div>
+              </div>
+            )}
+
+            {/* Paso 2: revisar y confirmar */}
+            {paso === 'revisar' && (
               <>
-                {/* Zona de subida */}
-                <input
-                  ref={inputFileRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={seleccionarArchivo}
-                  style={{ display: 'none' }}
-                />
-
-                {!archivo ? (
-                  <div
-                    onClick={() => inputFileRef.current?.click()}
-                    style={{ border: '1.5px dashed #e5e7eb', borderRadius: 12, padding: '32px 20px', textAlign: 'center', cursor: 'pointer', background: '#fafafa', marginBottom: 16 }}
+                <div style={{ position: 'relative', marginBottom: 16 }}>
+                  <img
+                    src={previsualizacion!}
+                    alt="Comprobante"
+                    style={{ width: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 12, background: '#f3f4f6' }}
+                  />
+                  <button
+                    onClick={() => { setArchivo(null); setPrevisualizacion(null); setValorManual(''); setPaso('subir') }}
+                    style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                   >
-                    <Upload size={24} color="#9ca3af" style={{ margin: '0 auto 8px' }} />
-                    <div style={{ fontSize: 14, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Subir comprobante</div>
-                    <div style={{ fontSize: 12, color: '#9ca3af' }}>Foto o captura de pantalla de la transferencia</div>
-                  </div>
-                ) : (
-                  <div style={{ marginBottom: 16 }}>
-                    {/* Vista previa */}
-                    <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', marginBottom: 10 }}>
-                      <img src={previsualizacion!} alt="Comprobante" style={{ width: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 12, background: '#f3f4f6' }} />
-                      <button
-                        onClick={() => { setArchivo(null); setPrevisualizacion(null); setValorDetectado(''); setValorManual(''); setPaso('subir') }}
-                        style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                      >
-                        <X size={14} color="#fff" />
-                      </button>
-                    </div>
+                    <X size={14} color="#fff" />
+                  </button>
+                </div>
 
-                    {/* Estado análisis */}
-                    {analizando && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0f4ff', borderRadius: 10, marginBottom: 12 }}>
-                        <Loader size={14} color="#0f1787" style={{ animation: 'spin 1s linear infinite' }} />
-                        <span style={{ fontSize: 13, color: '#0f1787' }}>Analizando comprobante...</span>
-                      </div>
-                    )}
-
-                    {!analizando && valorDetectado && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, marginBottom: 12, border: '0.5px solid #bbf7d0' }}>
-                        <CheckCircle size={14} color="#16a34a" />
-                        <span style={{ fontSize: 13, color: '#166534' }}>Valor detectado: <strong>{fmt(parseFloat(valorDetectado))}</strong></span>
-                      </div>
-                    )}
-
-                    {!analizando && errorAnalisis && (
-                      <div style={{ padding: '10px 14px', background: '#fff7ed', borderRadius: 10, marginBottom: 12, border: '0.5px solid #fed7aa' }}>
-                        <span style={{ fontSize: 12, color: '#92400e' }}>{errorAnalisis}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Campo valor — siempre visible en paso revisar */}
-                {paso === 'revisar' && !analizando && (
-                  <>
-                    <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>
-                      {valorDetectado ? 'Confirmar o corregir valor (COP)' : 'Valor del abono (COP)'}
-                    </div>
-                    <input
-                      type="number"
-                      value={valorManual}
-                      onChange={e => setValorManual(e.target.value)}
-                      placeholder="Ej: 250000"
-                      style={{ width: '100%', height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 16, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }}
-                    />
-                    <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Notas (opcional)</div>
-                    <input
-                      type="text"
-                      value={notas}
-                      onChange={e => setNotas(e.target.value)}
-                      placeholder="Ej: Transferencia Nequi"
-                      style={{ width: '100%', height: 40, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 14, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }}
-                    />
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={cerrarModal} style={{ flex: 1, height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancelar</button>
-                      <button onClick={confirmarYGuardar} style={{ flex: 2, height: 44, border: 'none', borderRadius: 10, background: '#0f1787', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
-                        Confirmar y guardar
-                      </button>
-                    </div>
-                  </>
-                )}
+                <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Valor del abono (COP)</div>
+                <input
+                  type="number"
+                  value={valorManual}
+                  onChange={e => setValorManual(e.target.value)}
+                  placeholder="Ej: 250000"
+                  style={{ width: '100%', height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 16, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }}
+                />
+                <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Notas (opcional)</div>
+                <input
+                  type="text"
+                  value={notas}
+                  onChange={e => setNotas(e.target.value)}
+                  placeholder="Ej: Transferencia Nequi"
+                  style={{ width: '100%', height: 40, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 14, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }}
+                />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={cerrarModal} style={{ flex: 1, height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancelar</button>
+                  <button onClick={confirmarYGuardar} style={{ flex: 2, height: 44, border: 'none', borderRadius: 10, background: '#0f1787', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+                    Confirmar y guardar
+                  </button>
+                </div>
               </>
             )}
 
-            {/* PASO: Guardando */}
+            {/* Paso 3: guardando */}
             {paso === 'guardando' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: 12 }}>
                 <Loader size={28} color="#0f1787" style={{ animation: 'spin 1s linear infinite' }} />
@@ -533,7 +457,6 @@ async function analizarComprobante(f: File) {
                 <div style={{ fontSize: 12, color: '#9ca3af' }}>Registrando el abono, por favor espera</div>
               </div>
             )}
-
           </div>
         </div>
       )}
