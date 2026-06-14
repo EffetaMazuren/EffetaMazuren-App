@@ -2,7 +2,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Upload, X, Image } from 'lucide-react'
 
 type Categoria = { id: string; nombre: string }
 
@@ -21,6 +21,8 @@ function RegistrarContent() {
   const [valor, setValor] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [previsualizacion, setPrevisualizacion] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [retiroId, setRetiroId] = useState('')
   const [usuarioId, setUsuarioId] = useState('')
@@ -46,9 +48,43 @@ function RegistrarContent() {
     cargar()
   }, [])
 
+  function seleccionarArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setArchivo(file)
+    const reader = new FileReader()
+    reader.onload = () => setPrevisualizacion(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  function quitarArchivo() {
+    setArchivo(null)
+    setPrevisualizacion(null)
+  }
+
   async function guardar() {
     if (!categoriaId || !valor || !descripcion) return
     setGuardando(true)
+
+    let comprobante_url = null
+    let comprobante_nombre = null
+
+    // Subir comprobante si hay archivo
+    if (archivo) {
+      const ext = archivo.name.split('.').pop()
+      const nombreArchivo = `finanzas/${retiroId}/${Date.now()}.${ext}`
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('comprobantes-pagos')
+        .upload(nombreArchivo, archivo, { contentType: archivo.type, upsert: false })
+
+      if (!uploadError && uploadData) {
+        const { data: urlData } = supabase.storage
+          .from('comprobantes-pagos')
+          .getPublicUrl(nombreArchivo)
+        comprobante_url = urlData.publicUrl
+        comprobante_nombre = archivo.name
+      }
+    }
 
     const { error } = await supabase.from('transacciones').insert({
       retiro_id: retiroId,
@@ -58,6 +94,8 @@ function RegistrarContent() {
       valor: Number(valor.replace(/\D/g, '')),
       descripcion,
       fecha,
+      comprobante_url,
+      comprobante_nombre,
     })
 
     setGuardando(false)
@@ -65,9 +103,11 @@ function RegistrarContent() {
   }
 
   const valorNum = Number(valor.replace(/\D/g, ''))
+  const listo = categoriaId && valor && descripcion
 
   return (
-    <div style={{ background: '#f7f8fc', minHeight: '100vh' }}>
+    <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 40 }}>
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '18px 20px 14px' }}>
         <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -144,20 +184,43 @@ function RegistrarContent() {
           />
         </div>
 
+        {/* Comprobante */}
+        <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Comprobante <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(opcional)</span></div>
+
+          {!previsualizacion ? (
+            <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '24px', borderRadius: 12, border: '1.5px dashed #e5e7eb', cursor: 'pointer', background: '#f7f8fc' }}>
+              <input type="file" accept="image/*" onChange={seleccionarArchivo} style={{ display: 'none' }} />
+              <Upload size={22} color="#9ca3af" />
+              <span style={{ fontSize: 13, color: '#9ca3af' }}>Toca para subir imagen</span>
+              <span style={{ fontSize: 11, color: '#d1d5db' }}>JPG, PNG, HEIC</span>
+            </label>
+          ) : (
+            <div style={{ position: 'relative' }}>
+              <img src={previsualizacion} alt="Comprobante" style={{ width: '100%', borderRadius: 10, maxHeight: 220, objectFit: 'cover' }} />
+              <button onClick={quitarArchivo} style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <X size={14} color="#fff" />
+              </button>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#9ca3af' }}>{archivo?.name}</div>
+            </div>
+          )}
+        </div>
+
         {/* Botón guardar */}
         <button
           onClick={guardar}
-          disabled={!categoriaId || !valor || !descripcion || guardando}
+          disabled={!listo || guardando}
           style={{
-            background: !categoriaId || !valor || !descripcion ? '#e5e7eb' : '#0f1787',
-            color: !categoriaId || !valor || !descripcion ? '#9ca3af' : '#fff',
+            background: !listo ? '#e5e7eb' : '#0f1787',
+            color: !listo ? '#9ca3af' : '#fff',
             border: 'none', borderRadius: 14, padding: 16,
-            fontSize: 15, fontWeight: 500, cursor: !categoriaId || !valor || !descripcion ? 'not-allowed' : 'pointer',
+            fontSize: 15, fontWeight: 500, cursor: !listo ? 'not-allowed' : 'pointer',
             marginTop: 4
           }}
         >
           {guardando ? 'Guardando...' : 'Guardar movimiento'}
         </button>
+
       </div>
     </div>
   )
