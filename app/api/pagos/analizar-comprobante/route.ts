@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Faltan datos' }, { status: 400 })
     }
 
-    // Autenticación con Google
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -20,7 +19,6 @@ export async function POST(request: NextRequest) {
 
     const token = await auth.getAccessToken()
 
-    // Llamar a Vision API
     const visionRes = await fetch(
       'https://vision.googleapis.com/v1/images:annotate',
       {
@@ -48,7 +46,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ valor: null, confianza: 'baja' })
     }
 
-    // Extraer valor del texto detectado
     const valor = extraerValorPago(textoCompleto)
 
     return NextResponse.json({
@@ -63,60 +60,63 @@ export async function POST(request: NextRequest) {
 }
 
 function extraerValorPago(texto: string): number | null {
-  // Palabras clave que indican el valor transferido
-  const lineas = texto.split('\n').map(l => l.trim())
+  const lineas = texto.split('\n').map(l => l.trim()).filter(Boolean)
 
-  // Patrones de montos colombianos: 50.000, 500.000, 1.500.000, $250000, etc
-  const patronMonto = /\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{5,9})/g
-
-  // Buscar cerca de palabras clave como "valor", "monto", "total", "transferencia", "pagaste"
+  // Palabras clave colombianas que indican el monto
   const palabrasClave = [
-    'valor', 'monto', 'total', 'transferenci', 'pagaste',
-    'enviaste', 'recibiste', 'pagado', 'transaccion', 'transacción',
-    'por valor de', 'cantidad'
+    'cuánto', 'cuanto', 'valor', 'monto', 'total', 'transferenci',
+    'pagaste', 'enviaste', 'recibiste', 'pagado', 'transaccion',
+    'transacción', 'por valor de', 'cantidad', 'importe'
   ]
 
-  // Primero buscar en líneas con palabras clave
-  for (const linea of lineas) {
-    const lineaLower = linea.toLowerCase()
+  // Función para parsear monto colombiano: $500.000,00 → 500000
+  function parsearMonto(str: string): number | null {
+    // Quitar signo $ y espacios
+    let limpio = str.replace(/\$/g, '').replace(/\s/g, '')
+    // Formato colombiano: 500.000,00 → quitar puntos y coma decimal
+    limpio = limpio.replace(/\.(\d{3})/g, '$1').replace(',\d+$', '').replace(/,\d+$/, '')
+    // Quitar cualquier punto restante
+    limpio = limpio.replace(/\./g, '')
+    const num = parseInt(limpio)
+    if (!isNaN(num) && num >= 5000 && num <= 10000000) return num
+    return null
+  }
+
+  // Buscar en líneas con palabras clave y la línea siguiente
+  for (let i = 0; i < lineas.length; i++) {
+    const lineaLower = lineas[i].toLowerCase()
     const tienePalabraClave = palabrasClave.some(p => lineaLower.includes(p))
 
     if (tienePalabraClave) {
-      const matches = [...linea.matchAll(patronMonto)]
-      if (matches.length > 0) {
-        const valorStr = matches[0][1].replace(/\./g, '').replace(',', '')
-        const valor = parseInt(valorStr)
-        if (valor >= 10000 && valor <= 5000000) return valor
+      // Buscar monto en la misma línea
+      const matchEnLinea = lineas[i].match(/\$?\s*[\d.,]+/)
+      if (matchEnLinea) {
+        const v = parsearMonto(matchEnLinea[0])
+        if (v) return v
       }
-
-      // Buscar también en la siguiente línea
-      const idx = lineas.indexOf(linea)
-      if (idx < lineas.length - 1) {
-        const siguiente = lineas[idx + 1]
-        const matchesSig = [...siguiente.matchAll(patronMonto)]
-        if (matchesSig.length > 0) {
-          const valorStr = matchesSig[0][1].replace(/\./g, '').replace(',', '')
-          const valor = parseInt(valorStr)
-          if (valor >= 10000 && valor <= 5000000) return valor
+      // Buscar en la línea siguiente
+      if (i + 1 < lineas.length) {
+        const matchSiguiente = lineas[i + 1].match(/\$?\s*[\d.,]+/)
+        if (matchSiguiente) {
+          const v = parsearMonto(matchSiguiente[0])
+          if (v) return v
         }
       }
     }
   }
 
-  // Si no encontró con palabras clave, buscar el monto más grande en el texto
-  // (suele ser el valor principal en comprobantes)
+  // Buscar todos los montos y retornar el más grande dentro de rango razonable
   const todosLosMontos: number[] = []
-  const matchesGlobal = [...texto.matchAll(patronMonto)]
-  for (const m of matchesGlobal) {
-    const valorStr = m[1].replace(/\./g, '').replace(',', '')
-    const valor = parseInt(valorStr)
-    if (valor >= 10000 && valor <= 5000000) {
-      todosLosMontos.push(valor)
+  for (const linea of lineas) {
+    const matches = linea.matchAll(/\$?\s*(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d{5,9})/g)
+    for (const m of matches) {
+      const v = parsearMonto(m[0])
+      if (v) todosLosMontos.push(v)
     }
   }
 
   if (todosLosMontos.length > 0) {
-    // Retornar el monto que más se repite, o el más grande
+    // Retornar el más frecuente
     const frecuencia: Record<number, number> = {}
     for (const v of todosLosMontos) {
       frecuencia[v] = (frecuencia[v] || 0) + 1
