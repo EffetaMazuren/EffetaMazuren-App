@@ -12,7 +12,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Faltan datos requeridos' }, { status: 400 })
     }
 
-    // Autenticación con Google
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -22,14 +21,15 @@ export async function POST(request: NextRequest) {
     })
 
     const drive = google.drive({ version: 'v3', auth })
-
-    // Buscar o crear carpeta del caminante
+    const carpetaPadreId = process.env.GOOGLE_DRIVE_FOLDER_ID!
     const carpetaNombre = caminanteNombre.trim()
-    const carpetaPadreId = process.env.GOOGLE_DRIVE_FOLDER_ID
 
+    // Buscar carpeta del caminante dentro de la Unidad Compartida
     const buscarCarpeta = await drive.files.list({
       q: `name='${carpetaNombre}' and mimeType='application/vnd.google-apps.folder' and '${carpetaPadreId}' in parents and trashed=false`,
       fields: 'files(id, name)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     })
 
     let carpetaId: string
@@ -37,13 +37,15 @@ export async function POST(request: NextRequest) {
     if (buscarCarpeta.data.files && buscarCarpeta.data.files.length > 0) {
       carpetaId = buscarCarpeta.data.files[0].id!
     } else {
+      // Crear carpeta del caminante
       const nuevaCarpeta = await drive.files.create({
         requestBody: {
           name: carpetaNombre,
           mimeType: 'application/vnd.google-apps.folder',
-          parents: [carpetaPadreId!],
+          parents: [carpetaPadreId],
         },
         fields: 'id',
+        supportsAllDrives: true,
       })
       carpetaId = nuevaCarpeta.data.id!
     }
@@ -68,15 +70,7 @@ export async function POST(request: NextRequest) {
         body: stream,
       },
       fields: 'id, webViewLink',
-    })
-
-    // Hacer el archivo público para poder verlo
-    await drive.permissions.create({
-      fileId: archivoSubido.data.id!,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone',
-      },
+      supportsAllDrives: true,
     })
 
     return NextResponse.json({
