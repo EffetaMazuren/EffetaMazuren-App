@@ -1,205 +1,572 @@
 'use client'
+
 import { useEffect, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import BottomNav from '@/components/BottomNav'
-import { Bell, UserCircle, ChevronRight, Mail, EyeOff, HeartPulse } from 'lucide-react'
 
-export default function Dashboard() {
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+const META_RECAUDO = 50_000_000
+
+interface DashboardData {
+  // Caminantes
+  totalCaminantes: number
+  caminantesInscritos: number
+  caminantesPagoCompleto: number
+  caminantesCorreoEnviado: number
+  caminantesConAbono: number
+  cuposDisponibles: number
+  // Servidores
+  servidoresPagoCompleto: number
+  servidoresConAbono: number
+  // Finanzas
+  totalRecaudado: number
+  // Retiro
+  nombreRetiro: string
+  fechaInicio: string
+  fechaFin: string
+  diasRestantes: number
+}
+
+function formatCOP(value: number): string {
+  if (value >= 1_000_000) {
+    const m = value / 1_000_000
+    return `$${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`
+  }
+  if (value >= 1_000) {
+    return `$${(value / 1_000).toFixed(0)}K`
+  }
+  return `$${value.toLocaleString('es-CO')}`
+}
+
+function formatCOPFull(value: number): string {
+  return `$${value.toLocaleString('es-CO')}`
+}
+
+export default function DashboardPage() {
   const router = useRouter()
-  const [usuario, setUsuario] = useState<any>(null)
-  const [retiro, setRetiro] = useState<any>(null)
-  const [cupos, setCupos] = useState<any>(null)
-  const [balance, setBalance] = useState<any>(null)
-  const [stats, setStats] = useState({ total: 0, completos: 0, parciales: 0, sinPago: 0, sinCorreo: 0, sorpresas: 0, conMedicamentos: 0 })
+  const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [userName, setUserName] = useState('Líder')
+  const [expandedCard, setExpandedCard] = useState<'caminantes' | 'servidores' | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
 
-  useEffect(() => {
-    async function cargar() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/'); return }
+  async function fetchDashboard() {
+    try {
+      // Fetch retiro info
+      const { data: retiro } = await supabase
+        .from('retiros')
+        .select('nombre, fecha_inicio, fecha_fin')
+        .eq('id', RETIRO_ID)
+        .single()
 
-      const { data: u } = await supabase.from('usuarios').select('*').eq('id', user.id).single()
-      if (!u || u.rol !== 'lider') { router.push('/servidor'); return }
-      setUsuario(u)
+      const fechaInicio = retiro?.fecha_inicio ? new Date(retiro.fecha_inicio) : new Date('2026-07-03')
+      const fechaFin = retiro?.fecha_fin ? new Date(retiro.fecha_fin) : new Date('2026-07-05')
+      const hoy = new Date()
+      const diasRestantes = Math.max(0, Math.ceil((fechaInicio.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24)))
 
-      const { data: r } = await supabase.from('retiros').select('*').eq('estado', 'activo').single()
-      setRetiro(r)
+      // Fetch caminantes stats desde vista_pagos_caminantes
+      const { data: caminantes } = await supabase
+        .from('vista_pagos_caminantes')
+        .select('id, inscrito_oficialmente, estado_pago, estado_correo, total_pagado')
+        .eq('retiro_id', RETIRO_ID)
 
-      if (r) {
-        const { data: c } = await supabase.from('vista_cupos').select('*').eq('retiro_id', r.id).single()
-        setCupos(c)
+      const totalCaminantes = caminantes?.length ?? 0
+      const caminantesInscritos = caminantes?.filter(c => c.inscrito_oficialmente).length ?? 0
+      const caminantesPagoCompleto = caminantes?.filter(c => c.estado_pago === 'completo').length ?? 0
+      const caminantesCorreoEnviado = caminantes?.filter(c => c.estado_correo === 'enviado').length ?? 0
+      const caminantesConAbono = caminantes?.filter(c => c.total_pagado > 0).length ?? 0
+      const cuposDisponibles = Math.max(0, 50 - caminantesConAbono)
 
-        const { data: b } = await supabase.from('vista_balance_retiro').select('*').eq('retiro_id', r.id).single()
-        setBalance(b)
+      // Fetch servidores stats desde vista_pagos_servidores
+      const { data: servidores } = await supabase
+        .from('vista_pagos_servidores')
+        .select('id, estado_pago, total_pagado')
+        .eq('retiro_id', RETIRO_ID)
 
-        const { data: caminantes } = await supabase.from('vista_pagos_caminantes').select('*').eq('retiro_id', r.id)
-        if (caminantes) {
-          setStats({
-            total: caminantes.length,
-            completos: caminantes.filter(c => c.estado_pago === 'completo').length,
-            parciales: caminantes.filter(c => c.estado_pago === 'parcial').length,
-            sinPago: caminantes.filter(c => c.estado_pago === 'sin_pago').length,
-            sinCorreo: caminantes.filter(c => c.estado_correo === 'sin_enviar').length,
-            sorpresas: caminantes.filter(c => c.es_sorpresa).length,
-            conMedicamentos: 0,
-          })
-        }
-      }
+      const servidoresPagoCompleto = servidores?.filter(s => s.estado_pago === 'completo').length ?? 0
+      const servidoresConAbono = servidores?.filter(s => s.total_pagado > 0).length ?? 0
+
+      // Total recaudado: suma de todos los pagos del retiro (caminantes + servidores + otros ingresos)
+      const { data: pagos } = await supabase
+        .from('pagos')
+        .select('valor, estado')
+        .eq('retiro_id', RETIRO_ID)
+        .eq('estado', 'confirmado')
+
+      // También traer transacciones de ingresos financieros (categorías: Ventas, Rifa, Torneo, etc.)
+      const { data: transacciones } = await supabase
+        .from('transacciones')
+        .select('monto, tipo')
+        .eq('retiro_id', RETIRO_ID)
+        .eq('tipo', 'ingreso')
+
+      const totalPagos = pagos?.reduce((acc, p) => acc + (p.valor ?? 0), 0) ?? 0
+      const totalTransacciones = transacciones?.reduce((acc, t) => acc + (t.monto ?? 0), 0) ?? 0
+      const totalRecaudado = totalPagos + totalTransacciones
+
+      setData({
+        totalCaminantes,
+        caminantesInscritos,
+        caminantesPagoCompleto,
+        caminantesCorreoEnviado,
+        caminantesConAbono,
+        cuposDisponibles,
+        servidoresPagoCompleto,
+        servidoresConAbono,
+        totalRecaudado,
+        nombreRetiro: retiro?.nombre ?? 'Effetá Mazuren · Julio 2026',
+        fechaInicio: fechaInicio.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
+        fechaFin: fechaFin.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
+        diasRestantes,
+      })
+      setLastUpdated(new Date())
+    } catch (err) {
+      console.error('Error fetching dashboard:', err)
+    } finally {
       setLoading(false)
     }
-    cargar()
+  }
+
+  useEffect(() => {
+    // Get current user name
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase
+          .from('usuarios')
+          .select('nombre')
+          .eq('id', user.id)
+          .single()
+          .then(({ data: u }) => {
+            if (u?.nombre) setUserName(u.nombre.split(' ')[0])
+          })
+      }
+    })
+
+    fetchDashboard()
+
+    // Supabase Realtime subscriptions
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos' }, fetchDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transacciones' }, fetchDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'caminantes' }, fetchDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'servidores_inscripcion' }, fetchDashboard)
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
-  if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f7f8fc' }}>
-      <div style={{ color: '#9ca3af', fontSize: 14 }}>Cargando...</div>
-    </div>
-  )
+  const porcentajeMeta = data ? Math.min(100, (data.totalRecaudado / META_RECAUDO) * 100) : 0
+  const porcentajeCupos = data ? Math.min(100, (data.caminantesConAbono / 50) * 100) : 0
+  const metaServidores = data ? Math.min(100, ((data.servidoresPagoCompleto * 380_000) / (50 * 380_000)) * 100) : 0
 
-  const pctMeta = balance ? Math.round((balance.balance / balance.meta_financiera) * 100) : 0
-  const pctCupo = cupos ? Math.round((cupos.caminantes_con_abono / cupos.capacidad_caminantes) * 100) : 0
-  const nombre = usuario?.nombre?.split(' ')[0] || 'Líder'
+  const getHora = () => {
+    const h = new Date().getHours()
+    if (h < 12) return 'Buenos días'
+    if (h < 18) return 'Buenas tardes'
+    return 'Buenas noches'
+  }
 
-  const hoy = new Date()
-  const diasParaRetiro = retiro ? Math.ceil((new Date(retiro.fecha_inicio).getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24)) : 0
-
-  function fmt(n: number) {
-    if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`
-    if (n >= 1000) return `$${(n / 1000).toFixed(0)}K`
-    return `$${n.toLocaleString()}`
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f7f8fc] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#0f1787] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-400 font-medium">Cargando datos…</p>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 80 }}>
-      {/* Nav */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 10px' }}>
-        <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: 1.5, textTransform: 'uppercase', color: '#9ca3af' }}>
-          EFFETÁ · Mazuren
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <Bell size={16} color="#6b7280" />
+    <div className="min-h-screen bg-[#f7f8fc] pb-24">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
+        <span className="text-xs font-semibold tracking-[0.15em] text-[#0f1787] uppercase">
+          Effetá · Mazuren
+        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-gray-400 hidden sm:block">
+            Actualizado {lastUpdated.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+          <button
+            onClick={() => router.push('/notifications')}
+            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
           </button>
-          <button onClick={() => supabase.auth.signOut().then(() => router.push('/'))} style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <UserCircle size={16} color="#6b7280" />
+          <button
+            onClick={() => router.push('/perfil')}
+            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Saludo */}
-      <div style={{ padding: '4px 20px 20px' }}>
-        <div style={{ fontSize: 24, fontWeight: 500, color: '#0d0d14', letterSpacing: -0.4 }}>Hola, {nombre} 👋</div>
-        <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>
-          {diasParaRetiro > 0 ? `Retiro en ${diasParaRetiro} días` : 'Retiro en curso'}
-        </div>
-      </div>
-
-      {/* Retiro card */}
-      {retiro && (
-        <div style={{ margin: '0 20px 20px', background: '#0f1787', borderRadius: 20, padding: 22 }}>
-          <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>Retiro activo</div>
-          <div style={{ fontSize: 17, fontWeight: 500, color: '#fff', marginBottom: 2 }}>{retiro.nombre}</div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 18 }}>
-            {new Date(retiro.fecha_inicio).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })} — {new Date(retiro.fecha_fin).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
-          </div>
-          <div style={{ height: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 2, marginBottom: 10 }}>
-            <div style={{ height: 4, background: '#fff', borderRadius: 2, width: `${pctMeta}%` }} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontWeight: 500, color: '#fff' }}>{pctMeta}%</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Meta financiada</div>
-            </div>
-            <div style={{ width: 0.5, background: 'rgba(255,255,255,0.15)' }} />
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontWeight: 500, color: '#fff' }}>{balance ? fmt(balance.balance) : '$0'}</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Recaudado</div>
-            </div>
-            <div style={{ width: 0.5, background: 'rgba(255,255,255,0.15)' }} />
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontWeight: 500, color: '#fff' }}>{balance ? fmt(balance.falta_para_meta) : '$0'}</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Pendiente</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '0 20px 20px' }}>
-        {[
-          { val: stats.total, label: 'Caminantes', chip: `${stats.completos} pagos completos`, chipColor: '#dcfce7', chipText: '#166534' },
-          { val: stats.parciales, label: 'Abonos parciales', chip: `$${((stats.parciales * 500000) / 2).toLocaleString()} por cobrar`, chipColor: '#fef3c7', chipText: '#92400e' },
-          { val: stats.sinCorreo, label: 'Sin correo', chip: 'Pendientes de envío', chipColor: '#fef3c7', chipText: '#92400e' },
-          { val: cupos?.cupos_disponibles ?? 0, label: 'Cupos disponibles', chip: cupos?.cupo_lleno ? '🔒 Cupo lleno' : `${cupos?.caminantes_con_abono ?? 0}/50 inscritos`, chipColor: cupos?.cupo_lleno ? '#fee2e2' : '#e8eaf6', chipText: cupos?.cupo_lleno ? '#991b1b' : '#0f1787' },
-        ].map((k, i) => (
-          <div key={i} style={{ background: '#fff', borderRadius: 14, padding: 16, border: '0.5px solid #e5e7eb' }}>
-            <div style={{ fontSize: 26, fontWeight: 500, color: '#0d0d14', letterSpacing: -0.5, lineHeight: 1 }}>{k.val}</div>
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>{k.label}</div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', marginTop: 8, fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 20, background: k.chipColor, color: k.chipText }}>
-              {k.chip}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Cupo bar */}
-      {cupos && (
-        <div style={{ margin: '0 20px 20px', background: '#fff', borderRadius: 14, padding: 16, border: '0.5px solid #e5e7eb' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>Cupos de caminantes</div>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Se bloquea al llegar a 50 con abono</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 22, fontWeight: 500, color: '#0d0d14' }}>
-                {cupos.caminantes_con_abono}<span style={{ fontSize: 13, color: '#9ca3af', fontWeight: 400 }}>/50</span>
-              </div>
-              <div style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: cupos.cupo_lleno ? '#fee2e2' : '#fef3c7', color: cupos.cupo_lleno ? '#991b1b' : '#92400e', marginTop: 4 }}>
-                {cupos.cupo_lleno ? '🔒 Cupo lleno' : `${cupos.cupos_disponibles} disponibles`}
-              </div>
-            </div>
-          </div>
-          <div style={{ height: 6, background: '#f3f4f6', borderRadius: 3 }}>
-            <div style={{ height: 6, borderRadius: 3, background: pctCupo >= 100 ? '#dc2626' : pctCupo >= 80 ? '#d97706' : '#0f1787', width: `${Math.min(pctCupo, 100)}%`, transition: 'width 0.4s' }} />
-          </div>
-        </div>
-      )}
-
-      {/* Alertas */}
-      <div style={{ padding: '0 20px', marginBottom: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: '#0d0d14', marginBottom: 10 }}>Requieren atención</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {stats.sinCorreo > 0 && (
-            <div onClick={() => router.push('/dashboard/caminantes?filtro=sin_enviar')}
-              style={{ background: '#fff', borderRadius: 12, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
-              <div style={{ width: 32, height: 32, borderRadius: 9, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Mail size={15} color="#d97706" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>{stats.sinCorreo} caminante{stats.sinCorreo > 1 ? 's' : ''} sin correo</div>
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>Inscripción recibida, correo pendiente</div>
-              </div>
-              <ChevronRight size={16} color="#d1d5db" />
-            </div>
-          )}
-          {stats.sorpresas > 0 && (
-            <div onClick={() => router.push('/dashboard/caminantes?filtro=sorpresa')}
-              style={{ background: '#fff', borderRadius: 12, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
-              <div style={{ width: 32, height: 32, borderRadius: 9, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <EyeOff size={15} color="#7c3aed" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>{stats.sorpresas} retiros sorpresa</div>
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>Correo va al contacto, no al caminante</div>
-              </div>
-              <ChevronRight size={16} color="#d1d5db" />
-            </div>
+      <main className="px-5 pt-6 max-w-2xl mx-auto">
+        {/* Saludo */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
+            {getHora()}, {userName} 👋
+          </h1>
+          {data && (
+            <p className="text-sm text-gray-400 mt-0.5">
+              {data.diasRestantes > 0
+                ? `El retiro comienza en ${data.diasRestantes} días`
+                : 'El retiro ya comenzó'}
+            </p>
           )}
         </div>
-      </div>
 
-      <BottomNav />
+        {/* Hero — Meta de Recaudo */}
+        <div className="bg-[#0f1787] rounded-2xl p-5 mb-4 overflow-hidden relative">
+          {/* Decoración sutil */}
+          <div className="absolute -right-8 -top-8 w-32 h-32 bg-white/5 rounded-full" />
+          <div className="absolute -right-2 top-12 w-20 h-20 bg-white/5 rounded-full" />
+
+          <div className="relative z-10">
+            <p className="text-[10px] font-semibold tracking-[0.18em] text-blue-300 uppercase mb-1">
+              Meta de recaudo · {data?.nombreRetiro}
+            </p>
+            <p className="text-[11px] text-blue-200/60 mb-4">
+              {data?.fechaInicio} — {data?.fechaFin}
+            </p>
+
+            {/* Números principales */}
+            <div className="flex items-end justify-between mb-4">
+              <div>
+                <p className="text-3xl font-bold text-white tracking-tight">
+                  {data ? formatCOP(data.totalRecaudado) : '$0'}
+                </p>
+                <p className="text-xs text-blue-200/70 mt-0.5">recaudado en total</p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-blue-300/80">
+                  {formatCOP(META_RECAUDO)}
+                </p>
+                <p className="text-xs text-blue-200/50 mt-0.5">meta ideal</p>
+              </div>
+            </div>
+
+            {/* Barra de progreso */}
+            <div className="mb-3">
+              <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-300 to-white rounded-full transition-all duration-700"
+                  style={{ width: `${porcentajeMeta}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Stats en fila */}
+            <div className="flex items-center gap-0 divide-x divide-white/10">
+              <div className="pr-4">
+                <p className="text-lg font-bold text-white">{porcentajeMeta.toFixed(1)}%</p>
+                <p className="text-[10px] text-blue-200/60">financiado</p>
+              </div>
+              <div className="px-4">
+                <p className="text-lg font-bold text-white">
+                  {data ? formatCOP(META_RECAUDO - data.totalRecaudado) : formatCOP(META_RECAUDO)}
+                </p>
+                <p className="text-[10px] text-blue-200/60">pendiente</p>
+              </div>
+              <div className="pl-4">
+                <p className="text-lg font-bold text-white">
+                  {data ? formatCOP(data.totalRecaudado / Math.max(1, data.caminantesConAbono + data.servidoresConAbono)) : '$0'}
+                </p>
+                <p className="text-[10px] text-blue-200/60">promedio / persona</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tarjeta Caminantes */}
+        <div className="bg-white rounded-2xl mb-3 overflow-hidden shadow-sm border border-gray-100">
+          <button
+            onClick={() => setExpandedCard(expandedCard === 'caminantes' ? null : 'caminantes')}
+            className="w-full text-left p-5"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Caminantes</p>
+                </div>
+                <p className="text-4xl font-bold text-gray-900 tracking-tight leading-none">
+                  {data?.caminantesConAbono ?? 0}
+                </p>
+                <p className="text-sm text-gray-400 mt-1">con abono registrado</p>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-all duration-200 ${expandedCard === 'caminantes' ? 'bg-gray-100 rotate-180' : 'bg-gray-50'}`}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                  (data?.cuposDisponibles ?? 0) > 0
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-red-50 text-red-600'
+                }`}>
+                  {data?.cuposDisponibles ?? 0} cupos libres
+                </span>
+              </div>
+            </div>
+
+            {/* Mini barra cupos */}
+            <div className="mt-4">
+              <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-400 rounded-full transition-all duration-700"
+                  style={{ width: `${porcentajeCupos}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-[10px] text-gray-400">{data?.caminantesConAbono ?? 0} / 50 con abono</span>
+                <span className="text-[10px] text-gray-400">{porcentajeCupos.toFixed(0)}%</span>
+              </div>
+            </div>
+          </button>
+
+          {/* Detalle expandido */}
+          {expandedCard === 'caminantes' && (
+            <div className="border-t border-gray-50 px-5 pb-5 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <StatMini
+                  label="Inscritos totales"
+                  value={data?.totalCaminantes ?? 0}
+                  sub="en la plataforma"
+                  color="text-gray-900"
+                  onClick={() => router.push('/dashboard/caminantes')}
+                />
+                <StatMini
+                  label="Pago completo"
+                  value={data?.caminantesPagoCompleto ?? 0}
+                  sub="de 50 cupos"
+                  color="text-emerald-700"
+                  badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }}
+                />
+                <StatMini
+                  label="Correos enviados"
+                  value={data?.caminantesCorreoEnviado ?? 0}
+                  sub={`de ${data?.totalCaminantes ?? 0} inscritos`}
+                  color="text-blue-700"
+                />
+                <StatMini
+                  label="Con abono"
+                  value={data?.caminantesConAbono ?? 0}
+                  sub="bloquean cupo"
+                  color="text-amber-700"
+                />
+                <div
+                  className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => router.push('/dashboard/caminantes')}
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700">Cupos disponibles</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Se bloquea al llegar a 50 con abono</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-bold text-gray-900">{data?.cuposDisponibles ?? 0}</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Tarjeta Servidores */}
+        <div className="bg-white rounded-2xl mb-3 overflow-hidden shadow-sm border border-gray-100">
+          <button
+            onClick={() => setExpandedCard(expandedCard === 'servidores' ? null : 'servidores')}
+            className="w-full text-left p-5"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Servidores</p>
+                </div>
+                <p className="text-4xl font-bold text-gray-900 tracking-tight leading-none">
+                  {data?.servidoresConAbono ?? 0}
+                </p>
+                <p className="text-sm text-gray-400 mt-1">con abono registrado</p>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-all duration-200 ${expandedCard === 'servidores' ? 'bg-gray-100 rotate-180' : 'bg-gray-50'}`}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-violet-50 text-violet-700">
+                  {data?.servidoresPagoCompleto ?? 0} pago completo
+                </span>
+              </div>
+            </div>
+
+            {/* Mini barra meta servidores */}
+            <div className="mt-4">
+              <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-violet-400 rounded-full transition-all duration-700"
+                  style={{ width: `${metaServidores}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-[10px] text-gray-400">Meta: {data?.servidoresPagoCompleto ?? 0} / 50 pagos completos</span>
+                <span className="text-[10px] text-gray-400">{metaServidores.toFixed(0)}%</span>
+              </div>
+            </div>
+          </button>
+
+          {/* Detalle expandido */}
+          {expandedCard === 'servidores' && (
+            <div className="border-t border-gray-50 px-5 pb-5 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <StatMini
+                  label="Pago completo"
+                  value={data?.servidoresPagoCompleto ?? 0}
+                  sub={`de 50 × $380K`}
+                  color="text-violet-700"
+                  badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }}
+                  onClick={() => router.push('/dashboard/servidores')}
+                />
+                <StatMini
+                  label="Con abono"
+                  value={data?.servidoresConAbono ?? 0}
+                  sub="han pagado algo"
+                  color="text-amber-700"
+                  onClick={() => router.push('/dashboard/servidores')}
+                />
+                <div
+                  className="col-span-2 bg-violet-50/60 rounded-xl p-3 flex items-center justify-between"
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-violet-800">Meta de recolección servidores</p>
+                    <p className="text-[11px] text-violet-500 mt-0.5">
+                      {formatCOPFull((data?.servidoresPagoCompleto ?? 0) * 380_000)} de {formatCOPFull(50 * 380_000)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-violet-700">{metaServidores.toFixed(0)}%</p>
+                    <p className="text-[10px] text-violet-400">completado</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Indicador en tiempo real */}
+        <div className="flex items-center justify-center gap-1.5 mt-4 mb-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[11px] text-gray-400">Sincronizado en tiempo real</span>
+        </div>
+      </main>
+
+      {/* Bottom Nav */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-20">
+        <div className="flex items-center max-w-2xl mx-auto px-2">
+          {[
+            { label: 'Inicio', icon: 'home', href: '/dashboard', active: true },
+            { label: 'Personas', icon: 'users', href: '/dashboard/personas', active: false },
+            { label: 'Finanzas', icon: 'bar-chart', href: '/dashboard/finanzas', active: false },
+            { label: 'Retiro', icon: 'calendar', href: '/dashboard/retiro', active: false },
+            { label: 'Config', icon: 'settings', href: '/dashboard/config', active: false },
+          ].map(item => (
+            <button
+              key={item.href}
+              onClick={() => router.push(item.href)}
+              className="flex-1 flex flex-col items-center gap-1 py-3 transition-colors"
+            >
+              <NavIcon name={item.icon} active={item.active} />
+              <span className={`text-[10px] font-medium ${item.active ? 'text-[#0f1787]' : 'text-gray-400'}`}>
+                {item.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </nav>
     </div>
   )
+}
+
+// ---- Sub-components ----
+
+function StatMini({
+  label, value, sub, color, badge, onClick
+}: {
+  label: string
+  value: number
+  sub: string
+  color: string
+  badge?: { text: string; color: string }
+  onClick?: () => void
+}) {
+  return (
+    <div
+      className={`bg-gray-50 rounded-xl p-3 ${onClick ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`}
+      onClick={onClick}
+    >
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{label}</p>
+      <p className={`text-2xl font-bold ${color} leading-none`}>{value}</p>
+      <p className="text-[10px] text-gray-400 mt-1">{sub}</p>
+      {badge && (
+        <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-1.5 ${badge.color}`}>
+          {badge.text}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function NavIcon({ name, active }: { name: string; active: boolean }) {
+  const color = active ? '#0f1787' : '#9ca3af'
+  const w = 20
+
+  const icons: Record<string, JSX.Element> = {
+    home: (
+      <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
+      </svg>
+    ),
+    users: (
+      <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+    'bar-chart': (
+      <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" />
+      </svg>
+    ),
+    calendar: (
+      <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+      </svg>
+    ),
+    settings: (
+      <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    ),
+  }
+
+  return icons[name] ?? null
 }
