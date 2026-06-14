@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Error al registrar pago' }, { status: 500 })
     }
 
-    // Calcular total pagado por este caminante en este retiro
+    // Calcular total pagado
     const { data: pagos, error: errorPagos } = await supabase
       .from('pagos')
       .select('valor')
@@ -75,31 +75,56 @@ export async function POST(request: NextRequest) {
     }
 
     // ── CORREO DE CONFIRMACIÓN ──────────────────────────────────────────
-    // Obtener nombre y correo del caminante
     const { data: caminante } = await supabase
       .from('caminantes')
       .select('nombre, correo, es_sorpresa')
       .eq('id', caminanteId)
       .single()
 
-    // Solo enviar si tiene correo y NO es sorpresa
-    if (caminante?.correo && !caminante?.es_sorpresa) {
+    if (caminante) {
       try {
         const appsScriptUrl = process.env.APPS_SCRIPT_CORREOS_URL!
-        await fetch(appsScriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nombre: caminante.nombre,
-            correo: caminante.correo,
-            monto_abonado: Number(valor),
-            total_pagado: totalPagado,
-            valor_total: valorTotal,
-            es_pago_completo: inscritoOficialmente,
-          }),
-        })
+
+        if (caminante.es_sorpresa) {
+          // Obtener ambos contactos de emergencia
+          const { data: contactos } = await supabase
+            .from('contactos_emergencia')
+            .select('nombre, parentesco, celular, orden')
+            .eq('persona_id', caminanteId)
+            .eq('tipo_persona', 'caminante')
+            .order('orden', { ascending: true })
+
+          await fetch(appsScriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tipo: 'sorpresa_pago',
+              nombre_caminante: caminante.nombre,
+              monto_abonado: Number(valor),
+              total_pagado: totalPagado,
+              valor_total: valorTotal,
+              es_pago_completo: inscritoOficialmente,
+              contactos: contactos || [],
+              url_ficha: `https://effeta-mazuren-app.vercel.app/dashboard/caminantes/${caminanteId}`,
+            }),
+          })
+        } else if (caminante.correo) {
+          // Correo normal al caminante
+          await fetch(appsScriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tipo: 'confirmacion_pago',
+              nombre: caminante.nombre,
+              correo: caminante.correo,
+              monto_abonado: Number(valor),
+              total_pagado: totalPagado,
+              valor_total: valorTotal,
+              es_pago_completo: inscritoOficialmente,
+            }),
+          })
+        }
       } catch (errCorreo) {
-        // El correo falla silenciosamente — el pago ya quedó guardado
         console.error('Error enviando correo confirmación:', errCorreo)
       }
     }
