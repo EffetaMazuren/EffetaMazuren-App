@@ -105,19 +105,22 @@ export default function ServidorPage() {
 
     if (!error) {
       // Disparar correo de confirmación
+            // Disparar correo de confirmación
       try {
-        const appsScriptUrl = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL
-        if (appsScriptUrl) {
+        const appsScriptUrl = process.env.APPS_SCRIPT_CORREOS_URL
+        if (appsScriptUrl && servidor.correo) {
+          const nuevoTotal = servidor.total_pagado + Number(valorPago)
+          const esPagoCompleto = nuevoTotal >= VALOR_TOTAL
           await fetch(appsScriptUrl, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               tipo: 'confirmacion_pago_servidor',
               nombre: servidor.nombre,
               correo: servidor.correo,
-              celular: servidor.celular,
-              valor: Number(valorPago),
-              total_pagado: servidor.total_pagado + Number(valorPago),
-              saldo_pendiente: Math.max(0, servidor.saldo_pendiente - Number(valorPago)),
+              total_pagado: nuevoTotal,
+              valor_total: VALOR_TOTAL,
+              es_pago_completo: esPagoCompleto,
             })
           })
         }
