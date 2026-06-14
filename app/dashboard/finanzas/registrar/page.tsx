@@ -17,7 +17,8 @@ function RegistrarContent() {
 
   const [tipo, setTipo] = useState<'ingreso' | 'egreso'>(tipoInicial)
   const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [categoriaId, setCategoriaId] = useState('')
+  const categoriaInicial = searchParams.get('categoria') ?? ''  
+  const [categoriaId, setCategoriaId] = useState(categoriaInicial)
   const [valor, setValor] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
