@@ -130,6 +130,64 @@ export async function POST(request: NextRequest) {
     }
     // ────────────────────────────────────────────────────────────────────
 
+    // ── ACTUALIZAR HOJAS EXCEL ──────────────────────────────────────
+if (caminante) {
+  try {
+    // Obtener datos completos del caminante
+    const { data: camCompleto } = await supabase
+      .from('caminantes')
+      .select('*')
+      .eq('id', caminanteId)
+      .single()
+
+    // Obtener contactos de emergencia
+    const { data: contactosExcel } = await supabase
+      .from('contactos_emergencia')
+      .select('nombre, parentesco, celular, orden')
+      .eq('persona_id', caminanteId)
+      .eq('tipo_persona', 'caminante')
+      .order('orden', { ascending: true })
+
+    const c1 = contactosExcel?.find(c => c.orden === 1)
+    const c2 = contactosExcel?.find(c => c.orden === 2)
+
+    await fetch(process.env.APPS_SCRIPT_CORREOS_URL!, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tipo: 'actualizar_hojas',
+        nombre: camCompleto?.nombre,
+        tipo_documento: camCompleto?.tipo_documento,
+        numero_documento: camCompleto?.numero_documento,
+        celular: camCompleto?.celular,
+        direccion: camCompleto?.direccion,
+        barrio: camCompleto?.barrio,
+        telefono_fijo: camCompleto?.telefono_fijo,
+        correo: camCompleto?.correo,
+        edad: camCompleto?.edad,
+        fecha_nacimiento: camCompleto?.fecha_nacimiento,
+        talla_camiseta: camCompleto?.talla_camiseta,
+        sacramentos: Array.isArray(camCompleto?.sacramentos) ? camCompleto.sacramentos.join(', ') : '',
+        es_sorpresa: camCompleto?.es_sorpresa,
+        alergias: camCompleto?.alergias,
+        restricciones_alimentarias: camCompleto?.restricciones_alimentarias,
+        medicamentos: camCompleto?.medicamentos,
+        eps: camCompleto?.eps,
+        observaciones: camCompleto?.observaciones,
+        contacto1_nombre: c1?.nombre || '',
+        contacto1_parentesco: c1?.parentesco || '',
+        contacto1_celular: c1?.celular || '',
+        contacto2_nombre: c2?.nombre || '',
+        contacto2_parentesco: c2?.parentesco || '',
+        contacto2_celular: c2?.celular || '',
+      }),
+    })
+  } catch (errExcel) {
+    console.error('Error actualizando hojas Excel:', errExcel)
+  }
+}
+// ────────────────────────────────────────────────────────────────
+
     return NextResponse.json({
       success: true,
       pago,
