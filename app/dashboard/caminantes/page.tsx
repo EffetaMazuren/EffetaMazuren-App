@@ -14,6 +14,14 @@ type Caminante = {
   inscrito_oficialmente: boolean
 }
 
+type CaminanteSalud = {
+  id: string; nombre: string; edad: number
+  alergias: string | null
+  restricciones_alimentarias: string | null
+  medicamentos: string | null
+  eps: string | null
+}
+
 const FILTROS = [
   { key: 'todos', label: 'Todos' },
   { key: 'completo', label: 'Pago completo' },
@@ -21,6 +29,7 @@ const FILTROS = [
   { key: 'sin_pago', label: 'Sin pago' },
   { key: 'sorpresa', label: 'Sorpresa' },
   { key: 'sin_enviar', label: 'Sin correo' },
+  { key: 'salud', label: '🏥 Salud' },
 ]
 
 function iniciales(nombre: string) {
@@ -33,6 +42,7 @@ function CaminantesContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [caminantes, setCaminantes] = useState<Caminante[]>([])
+  const [caminantesSalud, setCaminantesSalud] = useState<CaminanteSalud[]>([])
   const [filtro, setFiltro] = useState(searchParams.get('filtro') || 'todos')
   const [busqueda, setBusqueda] = useState('')
   const [cupos, setCupos] = useState<any>(null)
@@ -42,23 +52,42 @@ function CaminantesContent() {
     async function cargar() {
       const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       if (!r) return
+
       const { data } = await supabase.from('vista_pagos_caminantes').select('*').eq('retiro_id', r.id).order('nombre')
       if (data) setCaminantes(data as Caminante[])
+
       const { data: c } = await supabase.from('vista_cupos').select('*').eq('retiro_id', r.id).single()
       setCupos(c)
+
+      // Cargar datos de salud — solo los que tienen al menos un campo
+      const { data: salud } = await supabase
+        .from('caminantes')
+        .select('id, nombre, edad, alergias, restricciones_alimentarias, medicamentos, eps')
+        .eq('retiro_id', r.id)
+        .or('alergias.not.is.null,restricciones_alimentarias.not.is.null,medicamentos.not.is.null')
+        .order('nombre')
+      if (salud) setCaminantesSalud(salud as CaminanteSalud[])
+
       setLoading(false)
     }
     cargar()
   }, [])
+
+  const esSalud = filtro === 'salud'
 
   const filtrados = caminantes.filter(c => {
     const matchBusqueda = c.nombre.toLowerCase().includes(busqueda.toLowerCase()) || c.numero_documento.includes(busqueda)
     const matchFiltro = filtro === 'todos' ? true
       : filtro === 'sorpresa' ? c.es_sorpresa
       : filtro === 'sin_enviar' ? c.estado_correo === 'sin_enviar'
+      : filtro === 'salud' ? true
       : c.estado_pago === filtro
     return matchBusqueda && matchFiltro
   })
+
+  const saludFiltrados = caminantesSalud.filter(c =>
+    c.nombre.toLowerCase().includes(busqueda.toLowerCase())
+  )
 
   const pctCupo = cupos ? Math.round((cupos.caminantes_con_abono / 50) * 100) : 0
 
@@ -76,17 +105,20 @@ function CaminantesContent() {
           <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Download size={16} color="#6b7280" /></button>
         </div>
       </div>
+
       <div style={{ padding: '0 20px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '10px 14px' }}>
           <Search size={16} color="#9ca3af" />
           <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar por nombre o documento…" style={{ border: 'none', outline: 'none', fontSize: 14, color: '#0d0d14', background: 'transparent', flex: 1 }} />
         </div>
       </div>
+
       <div style={{ display: 'flex', gap: 8, padding: '0 20px 16px', overflowX: 'auto', scrollbarWidth: 'none' }}>
         {FILTROS.map(f => {
           const count = f.key === 'todos' ? caminantes.length
             : f.key === 'sorpresa' ? caminantes.filter(c => c.es_sorpresa).length
             : f.key === 'sin_enviar' ? caminantes.filter(c => c.estado_correo === 'sin_enviar').length
+            : f.key === 'salud' ? caminantesSalud.length
             : caminantes.filter(c => c.estado_pago === f.key).length
           return (
             <button key={f.key} onClick={() => setFiltro(f.key)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtro === f.key ? '#0f1787' : '#fff', color: filtro === f.key ? '#fff' : '#6b7280' }}>
@@ -95,6 +127,7 @@ function CaminantesContent() {
           )
         })}
       </div>
+
       {cupos && (
         <div style={{ margin: '0 20px 16px', background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ flex: 1 }}>
@@ -112,28 +145,89 @@ function CaminantesContent() {
           </div>
         </div>
       )}
-      <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {loading ? <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando...</div>
-        : filtrados.length === 0 ? <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Sin resultados</div>
-        : filtrados.map(c => {
-          const av = colorAvatar(c.estado_pago)
-          return (
-            <div key={c.id} onClick={() => router.push(`/dashboard/caminantes/${c.id}`)} style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
-              <div style={{ width: 38, height: 38, borderRadius: '50%', background: av.bg, color: av.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
-                {iniciales(c.nombre)}
+
+      {/* ── VISTA SALUD ── */}
+      {esSalud ? (
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando...</div>
+          ) : saludFiltrados.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>
+              Ningún caminante tiene información médica registrada
+            </div>
+          ) : saludFiltrados.map(c => (
+            <div key={c.id} onClick={() => router.push(`/dashboard/caminantes/${c.id}`)}
+              style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
+
+              {/* Encabezado */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#fef3c7', color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
+                  {iniciales(c.nombre)}
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>{c.nombre}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{c.edad} años</div>
+                </div>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{c.edad} años · {c.talla_camiseta}</div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                {c.es_sorpresa && <div style={{ fontSize: 10, fontWeight: 500, padding: '2px 7px', borderRadius: 20, background: '#ede9fe', color: '#5b21b6' }}>Sorpresa</div>}
-                <div style={{ fontSize: 12, fontWeight: 500, color: c.estado_pago === 'completo' ? '#166534' : c.estado_pago === 'parcial' ? '#d97706' : '#9ca3af' }}>{fmt(c.total_pagado)}</div>
+
+              {/* Campos médicos */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {c.alergias && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#fee2e2', color: '#991b1b', whiteSpace: 'nowrap', marginTop: 1 }}>Alergias</span>
+                    <span style={{ fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{c.alergias}</span>
+                  </div>
+                )}
+                {c.restricciones_alimentarias && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap', marginTop: 1 }}>Alimentación</span>
+                    <span style={{ fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{c.restricciones_alimentarias}</span>
+                  </div>
+                )}
+                {c.medicamentos && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#ede9fe', color: '#5b21b6', whiteSpace: 'nowrap', marginTop: 1 }}>Medicamentos</span>
+                    <span style={{ fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{c.medicamentos}</span>
+                  </div>
+                )}
+                {c.eps && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#dbeafe', color: '#1e40af', whiteSpace: 'nowrap', marginTop: 1 }}>EPS</span>
+                    <span style={{ fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{c.eps}</span>
+                  </div>
+                )}
               </div>
             </div>
-          )
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        /* ── VISTA NORMAL ── */
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando...</div>
+          ) : filtrados.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Sin resultados</div>
+          ) : filtrados.map(c => {
+            const av = colorAvatar(c.estado_pago)
+            return (
+              <div key={c.id} onClick={() => router.push(`/dashboard/caminantes/${c.id}`)} style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
+                <div style={{ width: 38, height: 38, borderRadius: '50%', background: av.bg, color: av.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
+                  {iniciales(c.nombre)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{c.edad} años · {c.talla_camiseta}</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                  {c.es_sorpresa && <div style={{ fontSize: 10, fontWeight: 500, padding: '2px 7px', borderRadius: 20, background: '#ede9fe', color: '#5b21b6' }}>Sorpresa</div>}
+                  <div style={{ fontSize: 12, fontWeight: 500, color: c.estado_pago === 'completo' ? '#166534' : c.estado_pago === 'parcial' ? '#d97706' : '#9ca3af' }}>{fmt(c.total_pagado)}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {cupos && !cupos.cupo_lleno && (
         <button onClick={() => router.push('/dashboard/caminantes/nuevo')} style={{ position: 'fixed', bottom: 80, left: 20, right: 20, background: '#0f1787', color: '#fff', border: 'none', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
           <Plus size={18} /> Registrar caminante
