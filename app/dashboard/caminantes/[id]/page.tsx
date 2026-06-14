@@ -143,14 +143,11 @@ export default function FichaCaminante() {
   async function eliminarPago(pago: any) {
     if (!confirm(`¿Eliminar este abono de ${fmt(pago.valor)}? Esta acción no se puede deshacer.`)) return
     try {
-      // Eliminar comprobante de Storage si existe
       if (pago.comprobante_path) {
         await supabase.storage.from('comprobantes-pagos').remove([pago.comprobante_path])
       }
-      // Eliminar pago de BD
       const { error } = await supabase.from('pagos').delete().eq('id', pago.id)
       if (error) throw error
-      // Si el caminante estaba inscrito y ya no cumple, actualizar
       const totalRestante = pagos
         .filter(p => p.id !== pago.id)
         .reduce((sum, p) => sum + Number(p.valor), 0)
@@ -168,7 +165,6 @@ export default function FichaCaminante() {
     if (!valor || valor <= 0) return alert('Ingresa un valor válido')
     const { error } = await supabase.from('pagos').update({ valor }).eq('id', pagoEditando.id)
     if (error) return alert('Error: ' + error.message)
-    // Recalcular inscripción
     const totalNuevo = pagos
       .filter(p => p.id !== pagoEditando.id)
       .reduce((sum, p) => sum + Number(p.valor), 0) + valor
@@ -461,44 +457,4 @@ export default function FichaCaminante() {
       `}</style>
     </div>
   )
-}
-
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const { id } = params
-
-    if (!id) {
-      return NextResponse.json({ error: 'ID requerido' }, { status: 400 })
-    }
-
-    // Borrar en orden por foreign keys
-    await supabase.from('asignaciones_mesa').delete().eq('persona_id', id)
-    await supabase.from('asistencias').delete().eq('persona_id', id)
-    await supabase.from('contactos_emergencia').delete().eq('persona_id', id)
-    await supabase.from('pagos').delete().eq('persona_id', id)
-    await supabase.from('transacciones').delete().eq('persona_id', id)
-
-    const { error } = await supabase.from('caminantes').delete().eq('id', id)
-
-    if (error) {
-      console.error('Error borrando caminante:', error)
-      return NextResponse.json({ error: 'Error al eliminar' }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Error en DELETE caminante:', error)
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 })
-  }
 }
