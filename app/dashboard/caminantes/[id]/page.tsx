@@ -58,6 +58,8 @@ export default function FichaCaminante() {
   const [modalEditar, setModalEditar] = useState(false)
   const [pagoEditando, setPagoEditando] = useState<any>(null)
   const [valorEditar, setValorEditar] = useState('')
+  const [menuAbierto, setMenuAbierto] = useState(false)
+  const [eliminandoCaminante, setEliminandoCaminante] = useState(false)
 
   const [paso, setPaso] = useState<'subir' | 'revisar' | 'guardando'>('subir')
   const [archivo, setArchivo] = useState<File | null>(null)
@@ -65,8 +67,19 @@ export default function FichaCaminante() {
   const [valorManual, setValorManual] = useState<string>('')
   const [notas, setNotas] = useState<string>('')
   const inputFileRef = useRef<HTMLInputElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { cargar() }, [id])
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuAbierto(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   async function cargar() {
     const { data: vista } = await supabase.from('vista_pagos_caminantes').select('*').eq('id', id).single()
@@ -78,6 +91,21 @@ export default function FichaCaminante() {
     const { data: ct } = await supabase.from('contactos_emergencia').select('*').eq('persona_id', id).order('orden')
     setContactos(ct || [])
     setLoading(false)
+  }
+
+  async function eliminarCaminante() {
+    setMenuAbierto(false)
+    if (!confirm(`¿Eliminar a ${detalle.nombre} de la plataforma? Se borrarán sus pagos, contactos y todos sus datos. Esta acción no se puede deshacer.`)) return
+    setEliminandoCaminante(true)
+    try {
+      const res = await fetch(`/api/caminantes/${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Error al eliminar')
+      router.push('/dashboard/caminantes')
+    } catch (err: any) {
+      alert('Error: ' + err.message)
+      setEliminandoCaminante(false)
+    }
   }
 
   function abrirModal() {
@@ -197,6 +225,13 @@ export default function FichaCaminante() {
 
   if (!cam || !detalle) return <div style={{ padding: 20 }}>Caminante no encontrado</div>
 
+  if (eliminandoCaminante) return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 12 }}>
+      <Loader size={28} color="#0f1787" style={{ animation: 'spin 1s linear infinite' }} />
+      <div style={{ fontSize: 14, color: '#374151', fontWeight: 500 }}>Eliminando caminante...</div>
+    </div>
+  )
+
   const pct = Math.min(Math.round((cam.total_pagado / 500000) * 100), 100)
   const sacramentos = detalle.sacramentos?.join(', ') || '—'
 
@@ -206,13 +241,27 @@ export default function FichaCaminante() {
         <button onClick={() => router.back()} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#9ca3af', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}>
           <ArrowLeft size={16} /> Caminantes
         </button>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, position: 'relative' }} ref={menuRef}>
           <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Download size={16} color="#6b7280" />
           </button>
-          <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button
+            onClick={() => setMenuAbierto(!menuAbierto)}
+            style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
             <MoreHorizontal size={16} color="#6b7280" />
           </button>
+          {menuAbierto && (
+            <div style={{ position: 'absolute', top: 40, right: 0, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.08)', zIndex: 100, minWidth: 180, overflow: 'hidden' }}>
+              <button
+                onClick={eliminarCaminante}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#dc2626', textAlign: 'left' }}
+              >
+                <Trash2 size={14} color="#dc2626" />
+                Eliminar caminante
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -376,7 +425,6 @@ export default function FichaCaminante() {
         </Accordion>
       </div>
 
-      {/* Modal nuevo abono */}
       {modalPago && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
           <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -424,7 +472,6 @@ export default function FichaCaminante() {
         </div>
       )}
 
-      {/* Modal editar abono */}
       {modalEditar && pagoEditando && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
           <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%' }}>
