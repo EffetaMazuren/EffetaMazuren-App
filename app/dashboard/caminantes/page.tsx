@@ -12,7 +12,7 @@ type Caminante = {
   total_pagado: number; saldo_pendiente: number
   estado_pago: 'completo' | 'parcial' | 'sin_pago'
   inscrito_oficialmente: boolean
-  created_at?: string
+  fecha_inscripcion?: string
   fecha_ultimo_pago?: string | null
 }
 
@@ -52,15 +52,14 @@ function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 function aplicarOrden(lista: Caminante[], orden: Orden): Caminante[] {
   return [...lista].sort((a, b) => {
     if (orden === 'inscrito_reciente') {
-      return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+      return new Date(b.fecha_inscripcion ?? 0).getTime() - new Date(a.fecha_inscripcion ?? 0).getTime()
     }
     if (orden === 'inscrito_primero') {
-      return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+      return new Date(a.fecha_inscripcion ?? 0).getTime() - new Date(b.fecha_inscripcion ?? 0).getTime()
     }
     if (orden === 'pago_reciente') {
       const fa = a.fecha_ultimo_pago ? new Date(a.fecha_ultimo_pago).getTime() : 0
       const fb = b.fecha_ultimo_pago ? new Date(b.fecha_ultimo_pago).getTime() : 0
-      // Sin pago van al final
       if (fa === 0 && fb === 0) return a.nombre.localeCompare(b.nombre)
       if (fa === 0) return 1
       if (fb === 0) return -1
@@ -95,12 +94,11 @@ function CaminantesContent() {
       const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       if (!r) return
 
-      // Traemos todos los campos; el orden se aplica en cliente
       const { data } = await supabase
         .from('vista_pagos_caminantes')
         .select('*')
         .eq('retiro_id', r.id)
-        .order('nombre')
+        .order('fecha_inscripcion', { ascending: false })
 
       if (data) setCaminantes(data as Caminante[])
 
@@ -120,7 +118,6 @@ function CaminantesContent() {
     cargar()
   }, [])
 
-  // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     if (!mostrarOrden) return
     const cerrar = () => setMostrarOrden(false)
@@ -197,7 +194,7 @@ function CaminantesContent() {
             }}
           >
             <ArrowUpDown size={15} color={mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280'} />
-            <span style={{ fontSize: 12, fontWeight: 500, color: mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280' }}>
+            <span style={{ fontSize: 14, color: mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280' }}>
               {ordenActual.icono}
             </span>
           </button>
@@ -234,8 +231,8 @@ function CaminantesContent() {
                     gap: 10,
                     background: orden === o.key ? '#f0f1ff' : 'transparent',
                     border: 'none',
+                    borderTop: i === 2 ? '0.5px solid #f3f4f6' : 'none',
                     cursor: 'pointer',
-                    borderTop: i === 2 ? '0.5px solid #f3f4f6' : 'none', // separador visual entre inscripción y pago
                   }}
                 >
                   <span style={{ fontSize: 16 }}>{o.icono}</span>
