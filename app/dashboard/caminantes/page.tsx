@@ -95,12 +95,12 @@ function CaminantesContent() {
       const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       if (!r) return
 
-      // Traemos created_at y fecha_ultimo_pago para el ordenamiento
+      // Traemos todos los campos; el orden se aplica en cliente
       const { data } = await supabase
         .from('vista_pagos_caminantes')
         .select('*')
         .eq('retiro_id', r.id)
-        .order('created_at', { ascending: false })
+        .order('nombre')
 
       if (data) setCaminantes(data as Caminante[])
 
