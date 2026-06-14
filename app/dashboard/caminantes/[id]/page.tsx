@@ -143,11 +143,19 @@ export default function FichaCaminante() {
         const reader = new FileReader()
         reader.onload = () => {
           const result = reader.result as string
-          resolve(result.split(',')[1])
+          const b64 = result.split(',')[1]
+          if (!b64 || b64.length < 100) {
+            reject(new Error('Imagen inválida'))
+            return
+          }
+          resolve(b64)
         }
-        reader.onerror = reject
+        reader.onerror = () => reject(new Error('Error leyendo archivo'))
         reader.readAsDataURL(f)
       })
+
+      // Verificar que el mediaType sea válido para Vision API
+      const mediaType = f.type.startsWith('image/') ? f.type : 'image/jpeg'
 
       // Llamar a Claude para detectar el valor
       const response = await fetch('/api/pagos/analizar-comprobante', {
