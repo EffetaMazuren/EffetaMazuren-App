@@ -37,6 +37,7 @@ export default function FinanzasPage() {
   const [totalPagadoCaminantes, setTotalPagadoCaminantes] = useState(0)
   const [totalPagadoServidores, setTotalPagadoServidores] = useState(0)
   const [imagenAmpliada, setImagenAmpliada] = useState<Transaccion | null>(null)
+  const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
 
   useEffect(() => {
     async function cargar() {
@@ -266,28 +267,88 @@ export default function FinanzasPage() {
           </>
         )}
 
-        {/* ── COMPROBANTES ── */}
+{/* ── COMPROBANTES ── */}
         {tab === 'comprobantes' && (
           <>
-            <div style={{ fontSize: 13, color: '#6b7280' }}>{txConComprobante.length} comprobantes</div>
+            {/* Filtro por categoría */}
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 }}>
+              <button
+                onClick={() => setFiltroCategoria('todas')}
+                style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtroCategoria === 'todas' ? '#0f1787' : '#fff', color: filtroCategoria === 'todas' ? '#fff' : '#6b7280' }}>
+                Todas · {txConComprobante.length}
+              </button>
+              {categorias.filter(c => c.tipo_cuenta === 'effeta').filter(cat =>
+                txConComprobante.some(t => t.categoria_id === cat.id)
+              ).map(cat => {
+                const count = txConComprobante.filter(t => t.categoria_id === cat.id).length
+                return (
+                  <button key={cat.id}
+                    onClick={() => setFiltroCategoria(cat.id)}
+                    style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtroCategoria === cat.id ? '#0f1787' : '#fff', color: filtroCategoria === cat.id ? '#fff' : '#6b7280' }}>
+                    {cat.nombre} · {count}
+                  </button>
+                )
+              })}
+            </div>
+
             {txConComprobante.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>
-                <FileImage size={32} color="#e5e7eb" style={{ marginBottom: 8 }} />
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
                 <div>Sin comprobantes subidos</div>
               </div>
+            ) : filtroCategoria === 'todas' ? (
+              /* Vista todas — agrupadas por categoría con color */
+              <>
+                {categorias.filter(c => c.tipo_cuenta === 'effeta').filter(cat =>
+                  txConComprobante.some(t => t.categoria_id === cat.id)
+                ).map((cat, idx) => {
+                  const colores = [
+                    { bg: '#eff6ff', border: '#bfdbfe', texto: '#1e40af' },
+                    { bg: '#f0fdf4', border: '#bbf7d0', texto: '#166534' },
+                    { bg: '#fdf4ff', border: '#e9d5ff', texto: '#6b21a8' },
+                    { bg: '#fff7ed', border: '#fed7aa', texto: '#9a3412' },
+                    { bg: '#fef2f2', border: '#fecaca', texto: '#991b1b' },
+                    { bg: '#f0f9ff', border: '#bae6fd', texto: '#0c4a6e' },
+                    { bg: '#fafaf9', border: '#d6d3d1', texto: '#44403c' },
+                    { bg: '#f7fee7', border: '#d9f99d', texto: '#3f6212' },
+                    { bg: '#fff1f2', border: '#fecdd3', texto: '#9f1239' },
+                    { bg: '#ecfdf5', border: '#a7f3d0', texto: '#065f46' },
+                    { bg: '#eef2ff', border: '#c7d2fe', texto: '#3730a3' },
+                  ]
+                  const color = colores[idx % colores.length]
+                  const txCat = txConComprobante.filter(t => t.categoria_id === cat.id)
+                  return (
+                    <div key={cat.id} style={{ background: color.bg, border: `1px solid ${color.border}`, borderRadius: 14, padding: '14px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: color.texto, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {cat.nombre} · {txCat.length}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {txCat.map(t => (
+                          <div key={t.id} onClick={() => setImagenAmpliada(t)} style={{ background: '#fff', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', border: `0.5px solid ${color.border}` }}>
+                            <img src={t.comprobante_url!} alt={t.descripcion} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }} />
+                            <div style={{ padding: '8px 10px' }}>
+                              <div style={{ fontSize: 11, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626', marginTop: 2 }}>
+                                {t.tipo === 'egreso' ? '−' : '+'}{fmt(t.valor)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
             ) : (
+              /* Vista categoría individual */
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                {txConComprobante.map(t => (
+                {txConComprobante.filter(t => t.categoria_id === filtroCategoria).map(t => (
                   <div key={t.id} onClick={() => setImagenAmpliada(t)} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden', cursor: 'pointer' }}>
-                    <img
-                      src={t.comprobante_url!}
-                      alt={t.descripcion}
-                      style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }}
-                    />
+                    <img src={t.comprobante_url!} alt={t.descripcion} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
                     <div style={{ padding: '10px 12px' }}>
                       <div style={{ fontSize: 12, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                        <span style={{ fontSize: 11, color: '#9ca3af' }}>{t.categorias_financieras?.nombre}</span>
+                        <span style={{ fontSize: 11, color: '#9ca3af' }}>{new Date(t.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>
                           {t.tipo === 'egreso' ? '−' : '+'}{fmt(t.valor)}
                         </span>
@@ -299,7 +360,6 @@ export default function FinanzasPage() {
             )}
           </>
         )}
-      </div>
 
       {/* Modal imagen ampliada */}
       {imagenAmpliada && (
