@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
-import { Plus, TrendingUp, TrendingDown, Wallet, ChevronRight, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Plus, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 type Transaccion = {
   id: string
@@ -12,7 +12,6 @@ type Transaccion = {
   valor: number
   descripcion: string
   fecha: string
-  created_at: string
   categorias_financieras?: { nombre: string }
 }
 
@@ -33,25 +32,19 @@ export default function FinanzasPage() {
   const [transacciones, setTransacciones] = useState<Transaccion[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
-  const [retiroId, setRetiroId] = useState<string>('')
   const [totalPagadoCaminantes, setTotalPagadoCaminantes] = useState(0)
   const [totalPagadoServidores, setTotalPagadoServidores] = useState(0)
-  const [rol, setRol] = useState<string>('')
 
   useEffect(() => {
     async function cargar() {
-      // Verificar rol
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
       const { data: u } = await supabase.from('usuarios').select('rol').eq('id', user.id).single()
       if (!u || u.rol !== 'lider') { router.push('/dashboard'); return }
-      setRol(u.rol)
 
       const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       if (!r) return
-      setRetiroId(r.id)
 
-      // Categorías
       const { data: cats } = await supabase
         .from('categorias_financieras')
         .select('id, nombre, presupuesto')
@@ -65,7 +58,6 @@ export default function FinanzasPage() {
         })))
       }
 
-      // Transacciones manuales
       const { data: tx } = await supabase
         .from('transacciones')
         .select('*, categorias_financieras(nombre)')
@@ -73,33 +65,21 @@ export default function FinanzasPage() {
         .order('fecha', { ascending: false })
       if (tx) setTransacciones(tx as Transaccion[])
 
-      // Pagos caminantes
-      const { data: pagCam } = await supabase
-        .from('pagos')
-        .select('valor')
-        .eq('tipo_persona', 'caminante')
-      const sumCam = pagCam?.reduce((s, p) => s + Number(p.valor), 0) ?? 0
-      setTotalPagadoCaminantes(sumCam)
+      const { data: pagCam } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'caminante')
+      setTotalPagadoCaminantes(pagCam?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
 
-      // Pagos servidores
-      const { data: pagSer } = await supabase
-        .from('pagos')
-        .select('valor')
-        .eq('tipo_persona', 'servidor')
-      const sumSer = pagSer?.reduce((s, p) => s + Number(p.valor), 0) ?? 0
-      setTotalPagadoServidores(sumSer)
+      const { data: pagSer } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'servidor')
+      setTotalPagadoServidores(pagSer?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
 
       setLoading(false)
     }
     cargar()
   }, [])
 
-  // Calcular totales Nequi Effeta
   const ingresosEffeta = transacciones.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + Number(t.valor), 0)
   const egresosEffeta = transacciones.filter(t => t.tipo === 'egreso').reduce((s, t) => s + Number(t.valor), 0)
   const balanceEffeta = ingresosEffeta - egresosEffeta
 
-  // Calcular totales parroquia
   const totalParroquia = totalPagadoCaminantes + totalPagadoServidores
   const casaRetiros = categorias.find(c => c.nombre === 'Casa de retiros')?.presupuesto ?? 39000000
   const saldoParroquia = totalParroquia - casaRetiros
@@ -125,8 +105,6 @@ export default function FinanzasPage() {
         <div style={{ fontSize: 12, color: balanceEffeta >= 0 ? '#86efac' : '#fca5a5', marginTop: 4 }}>
           {balanceEffeta >= 0 ? '↑' : '↓'} Balance disponible
         </div>
-
-        {/* Mini stats */}
         <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
           <div style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px' }}>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>Ingresos</div>
@@ -187,7 +165,6 @@ export default function FinanzasPage() {
                   <span style={{ fontSize: 13, color: '#6b7280' }}>Casa de retiros</span>
                   <span style={{ fontSize: 13, fontWeight: 500, color: '#dc2626' }}>− {fmt(casaRetiros)}</span>
                 </div>
-                {/* Barra progreso */}
                 <div style={{ marginTop: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ fontSize: 11, color: '#9ca3af' }}>Progreso pago</span>
@@ -204,13 +181,15 @@ export default function FinanzasPage() {
             <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 4 }}>
               Nequi Effetá · por categoría
             </div>
-            return (   <div key={cat.id} onClick={() => router.push(`/dashboard/finanzas/categoria/${cat.id}`)}     style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+            {categorias.filter(c => c.tipo_cuenta === 'effeta').map(cat => {
               const ingresos = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.valor), 0)
               const egresos = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'egreso').reduce((s, t) => s + Number(t.valor), 0)
               const balance = ingresos - egresos
               const hayMovimientos = ingresos > 0 || egresos > 0
               return (
-                <div key={cat.id} style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div key={cat.id}
+                  onClick={() => router.push(`/dashboard/finanzas/categoria/${cat.id}`)}
+                  style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>{cat.nombre}</div>
                     {hayMovimientos && (
@@ -224,7 +203,7 @@ export default function FinanzasPage() {
                     <div style={{ fontSize: 14, fontWeight: 600, color: !hayMovimientos ? '#9ca3af' : balance >= 0 ? '#166534' : '#dc2626' }}>
                       {hayMovimientos ? fmt(balance) : '—'}
                     </div>
-                    {cat.presupuesto > 0 && (
+                    {(cat.presupuesto ?? 0) > 0 && (
                       <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>de {fmt(cat.presupuesto)}</div>
                     )}
                   </div>
@@ -237,9 +216,7 @@ export default function FinanzasPage() {
         {/* ── INGRESOS ── */}
         {tab === 'ingresos' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 13, color: '#6b7280' }}>{txIngresos.length} movimientos · {fmt(ingresosEffeta)}</div>
-            </div>
+            <div style={{ fontSize: 13, color: '#6b7280' }}>{txIngresos.length} movimientos · {fmt(ingresosEffeta)}</div>
             {txIngresos.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Sin ingresos registrados</div>
             ) : txIngresos.map(t => (
@@ -262,9 +239,7 @@ export default function FinanzasPage() {
         {/* ── EGRESOS ── */}
         {tab === 'egresos' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 13, color: '#6b7280' }}>{txEgresos.length} movimientos · {fmt(egresosEffeta)}</div>
-            </div>
+            <div style={{ fontSize: 13, color: '#6b7280' }}>{txEgresos.length} movimientos · {fmt(egresosEffeta)}</div>
             {txEgresos.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Sin egresos registrados</div>
             ) : txEgresos.map(t => (
@@ -285,7 +260,7 @@ export default function FinanzasPage() {
         )}
       </div>
 
-      {/* Botón registrar — solo en ingresos y egresos */}
+      {/* Botón registrar */}
       {tab !== 'resumen' && (
         <button
           onClick={() => router.push(`/dashboard/finanzas/registrar?tipo=${tab === 'ingresos' ? 'ingreso' : 'egreso'}`)}
