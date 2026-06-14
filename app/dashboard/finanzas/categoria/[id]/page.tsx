@@ -71,11 +71,13 @@ export default function CategoriaPage() {
 
   async function guardarEdicion(t: Transaccion) {
     setGuardandoEdit(true)
-    await supabase.from('transacciones').update({
-      valor: Number(editValor),
+    const valorFinal = Number(String(editValor).replace(/\D/g, ''))
+    const { error } = await supabase.from('transacciones').update({
+      valor: valorFinal,
       descripcion: editDescripcion,
       fecha: editFecha,
     }).eq('id', t.id)
+    console.log('update error:', error, 'valor:', valorFinal)
     setGuardandoEdit(false)
     setEditandoId(null)
     cargar()
