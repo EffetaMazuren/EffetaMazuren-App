@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Download, MoreHorizontal, Plus, Mail, CheckCircle, EyeOff, ChevronDown, Upload, X, ExternalLink, Loader } from 'lucide-react'
+import { ArrowLeft, Download, MoreHorizontal, Plus, Mail, CheckCircle, EyeOff, ChevronDown, Upload, X, ExternalLink, Loader, Trash2, Pencil } from 'lucide-react'
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 
@@ -55,6 +55,9 @@ export default function FichaCaminante() {
   const [loading, setLoading] = useState(true)
   const [enviandoCorreo, setEnviandoCorreo] = useState(false)
   const [modalPago, setModalPago] = useState(false)
+  const [modalEditar, setModalEditar] = useState(false)
+  const [pagoEditando, setPagoEditando] = useState<any>(null)
+  const [valorEditar, setValorEditar] = useState('')
 
   const [paso, setPaso] = useState<'subir' | 'revisar' | 'guardando'>('subir')
   const [archivo, setArchivo] = useState<File | null>(null)
@@ -63,40 +66,19 @@ export default function FichaCaminante() {
   const [notas, setNotas] = useState<string>('')
   const inputFileRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    async function cargar() {
-      const { data: vista } = await supabase
-        .from('vista_pagos_caminantes')
-        .select('*')
-        .eq('id', id)
-        .single()
-      setCam(vista)
+  useEffect(() => { cargar() }, [id])
 
-      const { data: completo } = await supabase
-        .from('caminantes')
-        .select('*')
-        .eq('id', id)
-        .single()
-      setDetalle(completo)
-
-      const { data: p } = await supabase
-        .from('pagos')
-        .select('*')
-        .eq('persona_id', id)
-        .order('fecha')
-      setPagos(p || [])
-
-      const { data: ct } = await supabase
-        .from('contactos_emergencia')
-        .select('*')
-        .eq('persona_id', id)
-        .order('orden')
-      setContactos(ct || [])
-
-      setLoading(false)
-    }
-    cargar()
-  }, [id])
+  async function cargar() {
+    const { data: vista } = await supabase.from('vista_pagos_caminantes').select('*').eq('id', id).single()
+    setCam(vista)
+    const { data: completo } = await supabase.from('caminantes').select('*').eq('id', id).single()
+    setDetalle(completo)
+    const { data: p } = await supabase.from('pagos').select('*').eq('persona_id', id).order('fecha')
+    setPagos(p || [])
+    const { data: ct } = await supabase.from('contactos_emergencia').select('*').eq('persona_id', id).order('orden')
+    setContactos(ct || [])
+    setLoading(false)
+  }
 
   function abrirModal() {
     setPaso('subir')
@@ -120,8 +102,7 @@ export default function FichaCaminante() {
     const f = e.target.files?.[0]
     if (!f) return
     setArchivo(f)
-    const url = URL.createObjectURL(f)
-    setPrevisualizacion(url)
+    setPrevisualizacion(URL.createObjectURL(f))
     setPaso('revisar')
   }
 
@@ -129,53 +110,28 @@ export default function FichaCaminante() {
     const valor = parseFloat(valorManual.replace(/\./g, '').replace(',', '.'))
     if (!valor || valor <= 0) return alert('Ingresa un valor válido')
     if (!archivo) return alert('Debes subir un comprobante')
-
     setPaso('guardando')
-
     try {
-      // 1. Subir archivo a Google Drive
       const formData = new FormData()
       formData.append('file', archivo)
       formData.append('caminanteNombre', detalle.nombre)
       formData.append('caminanteId', id as string)
-
-      const driveRes = await fetch('/api/drive/upload', {
-        method: 'POST',
-        body: formData,
-      })
+      const driveRes = await fetch('/api/drive/upload', { method: 'POST', body: formData })
       const driveData = await driveRes.json()
-
-      if (!driveData.success) throw new Error('Error subiendo a Drive')
-
-      // 2. Obtener retiro activo
-      const { data: retiro } = await supabase
-        .from('retiros')
-        .select('id')
-        .eq('estado', 'activo')
-        .single()
-
-      // 3. Obtener usuario actual
+      if (!driveData.success) throw new Error('Error subiendo comprobante')
+      const { data: retiro } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       const { data: { user } } = await supabase.auth.getUser()
-
-      // 4. Registrar pago
       const pagoRes = await fetch('/api/pagos/registrar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          caminanteId: id,
-          retiroId: retiro?.id,
-          valor,
-          fileUrl: driveData.fileUrl,
-          fileName: driveData.fileName,
-          filePath: driveData.fileId,
-          registradoPor: user?.id,
-          notas: notas || null,
+          caminanteId: id, retiroId: retiro?.id, valor,
+          fileUrl: driveData.fileUrl, fileName: driveData.fileName,
+          filePath: driveData.fileId, registradoPor: user?.id, notas: notas || null,
         }),
       })
-
       const pagoData = await pagoRes.json()
       if (!pagoData.success) throw new Error('Error registrando pago')
-
       cerrarModal()
       window.location.reload()
     } catch (err: any) {
@@ -184,12 +140,52 @@ export default function FichaCaminante() {
     }
   }
 
+  async function eliminarPago(pago: any) {
+    if (!confirm(`¿Eliminar este abono de ${fmt(pago.valor)}? Esta acción no se puede deshacer.`)) return
+    try {
+      // Eliminar comprobante de Storage si existe
+      if (pago.comprobante_path) {
+        await supabase.storage.from('comprobantes-pagos').remove([pago.comprobante_path])
+      }
+      // Eliminar pago de BD
+      const { error } = await supabase.from('pagos').delete().eq('id', pago.id)
+      if (error) throw error
+      // Si el caminante estaba inscrito y ya no cumple, actualizar
+      const totalRestante = pagos
+        .filter(p => p.id !== pago.id)
+        .reduce((sum, p) => sum + Number(p.valor), 0)
+      if (totalRestante < 500000) {
+        await supabase.from('caminantes').update({ inscrito_oficialmente: false }).eq('id', id)
+      }
+      window.location.reload()
+    } catch (err: any) {
+      alert('Error eliminando: ' + err.message)
+    }
+  }
+
+  async function guardarEdicion() {
+    const valor = parseFloat(valorEditar.replace(/\./g, '').replace(',', '.'))
+    if (!valor || valor <= 0) return alert('Ingresa un valor válido')
+    const { error } = await supabase.from('pagos').update({ valor }).eq('id', pagoEditando.id)
+    if (error) return alert('Error: ' + error.message)
+    // Recalcular inscripción
+    const totalNuevo = pagos
+      .filter(p => p.id !== pagoEditando.id)
+      .reduce((sum, p) => sum + Number(p.valor), 0) + valor
+    await supabase.from('caminantes')
+      .update({ inscrito_oficialmente: totalNuevo >= 500000 })
+      .eq('id', id)
+    setModalEditar(false)
+    setPagoEditando(null)
+    setValorEditar('')
+    window.location.reload()
+  }
+
   async function enviarCorreo() {
     if (!cam) return
     setEnviandoCorreo(true)
     const res = await fetch('/api/correos/inscripcion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ caminante_id: cam.id }),
     })
     if (res.ok) { alert('✅ Correo enviado'); window.location.reload() }
@@ -210,7 +206,6 @@ export default function FichaCaminante() {
 
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 40 }}>
-      {/* Nav */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px' }}>
         <button onClick={() => router.back()} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#9ca3af', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}>
           <ArrowLeft size={16} /> Caminantes
@@ -225,7 +220,6 @@ export default function FichaCaminante() {
         </div>
       </div>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '4px 20px 16px', gap: 12 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 500, color: '#0d0d14', letterSpacing: -0.3 }}>{detalle.nombre}</div>
@@ -249,7 +243,6 @@ export default function FichaCaminante() {
         </div>
       </div>
 
-      {/* Alerta sorpresa */}
       {detalle.es_sorpresa && contactos.length > 0 && (
         <div style={{ margin: '0 20px 14px', background: '#f5f3ff', border: '0.5px solid #c4b5fd', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           <EyeOff size={14} color="#5b21b6" style={{ marginTop: 1, flexShrink: 0 }} />
@@ -259,7 +252,6 @@ export default function FichaCaminante() {
         </div>
       )}
 
-      {/* Acciones */}
       <div style={{ display: 'flex', gap: 8, padding: '0 20px 16px', flexWrap: 'wrap' }}>
         <button onClick={enviarCorreo} disabled={enviandoCorreo} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: '#0f1787', color: '#fff' }}>
           <Mail size={14} /> {enviandoCorreo ? 'Enviando...' : detalle.es_sorpresa ? 'Correo al contacto' : 'Enviar correo'}
@@ -269,7 +261,6 @@ export default function FichaCaminante() {
         </button>
       </div>
 
-      {/* Card pago */}
       <div style={{ margin: '0 20px 12px', background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #edf0f7', background: '#f8fdf9' }}>
           <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: 0.8, textTransform: 'uppercase' as const, color: '#16a34a' }}>Estado de pago</span>
@@ -283,7 +274,7 @@ export default function FichaCaminante() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13 }}>
             <span style={{ color: '#6b7280' }}>Saldo pendiente</span>
-            <span style={{ fontWeight: 500, color: cam.saldo_pendiente > 0 ? '#92400e' : '#166634' }}>{fmt(Math.max(cam.saldo_pendiente, 0))}</span>
+            <span style={{ fontWeight: 500, color: cam.saldo_pendiente > 0 ? '#92400e' : '#166534' }}>{fmt(Math.max(cam.saldo_pendiente, 0))}</span>
           </div>
           <div style={{ margin: '10px 0 6px' }}>
             <div style={{ height: 7, background: '#e8eaf6', borderRadius: 4 }}>
@@ -298,7 +289,7 @@ export default function FichaCaminante() {
             <>
               <div style={{ fontSize: 11, fontWeight: 500, color: '#9ca3af', margin: '12px 0 6px', textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Historial de abonos</div>
               {pagos.map((p, i) => (
-                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '0.5px solid #f1f2f6' }}>
+                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '0.5px solid #f1f2f6' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 26, height: 26, borderRadius: 8, background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#6b7280' }}>{i + 1}</div>
                     <div>
@@ -306,13 +297,29 @@ export default function FichaCaminante() {
                       <div style={{ fontSize: 11, color: '#9ca3af' }}>{new Date(p.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: '#166534' }}>{fmt(p.valor)}</div>
-                    {p.comprobante_url && (
-                      <a href={p.comprobante_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#0f1787', display: 'inline-flex', alignItems: 'center', gap: 3, textDecoration: 'none' }}>
-                        Ver <ExternalLink size={10} />
-                      </a>
-                    )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#166534' }}>{fmt(p.valor)}</div>
+                      {p.comprobante_url && (
+                        <a href={p.comprobante_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: '#0f1787', display: 'inline-flex', alignItems: 'center', gap: 3, textDecoration: 'none' }}>
+                          Ver <ExternalLink size={10} />
+                        </a>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        onClick={() => { setPagoEditando(p); setValorEditar(p.valor.toString()); setModalEditar(true) }}
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid #e5e7eb', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                      >
+                        <Pencil size={12} color="#6b7280" />
+                      </button>
+                      <button
+                        onClick={() => eliminarPago(p)}
+                        style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid #fee2e2', background: '#fff5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                      >
+                        <Trash2 size={12} color="#dc2626" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -327,7 +334,6 @@ export default function FichaCaminante() {
         </div>
       </div>
 
-      {/* Acordeones */}
       <div style={{ padding: '0 20px' }}>
         <Accordion title="Datos personales" dot="#0f1787">
           <DataRow label="Celular" value={detalle.celular} />
@@ -378,7 +384,6 @@ export default function FichaCaminante() {
       {modalPago && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
           <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
-
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: '#0d0d14' }}>Registrar abono</div>
               <button onClick={cerrarModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
@@ -386,77 +391,67 @@ export default function FichaCaminante() {
               </button>
             </div>
             <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>{detalle.nombre}</div>
-
-            <input
-              ref={inputFileRef}
-              type="file"
-              accept="image/*"
-              onChange={seleccionarArchivo}
-              style={{ display: 'none' }}
-            />
-
-            {/* Paso 1: subir foto */}
+            <input ref={inputFileRef} type="file" accept="image/*" onChange={seleccionarArchivo} style={{ display: 'none' }} />
             {paso === 'subir' && (
-              <div
-                onClick={() => inputFileRef.current?.click()}
-                style={{ border: '1.5px dashed #e5e7eb', borderRadius: 12, padding: '32px 20px', textAlign: 'center', cursor: 'pointer', background: '#fafafa', marginBottom: 16 }}
-              >
+              <div onClick={() => inputFileRef.current?.click()} style={{ border: '1.5px dashed #e5e7eb', borderRadius: 12, padding: '32px 20px', textAlign: 'center', cursor: 'pointer', background: '#fafafa', marginBottom: 16 }}>
                 <Upload size={24} color="#9ca3af" style={{ margin: '0 auto 8px' }} />
                 <div style={{ fontSize: 14, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Subir comprobante</div>
                 <div style={{ fontSize: 12, color: '#9ca3af' }}>Foto o captura de pantalla de la transferencia</div>
               </div>
             )}
-
-            {/* Paso 2: revisar y confirmar */}
             {paso === 'revisar' && (
               <>
                 <div style={{ position: 'relative', marginBottom: 16 }}>
-                  <img
-                    src={previsualizacion!}
-                    alt="Comprobante"
-                    style={{ width: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 12, background: '#f3f4f6' }}
-                  />
-                  <button
-                    onClick={() => { setArchivo(null); setPrevisualizacion(null); setValorManual(''); setPaso('subir') }}
-                    style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                  >
+                  <img src={previsualizacion!} alt="Comprobante" style={{ width: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 12, background: '#f3f4f6' }} />
+                  <button onClick={() => { setArchivo(null); setPrevisualizacion(null); setValorManual(''); setPaso('subir') }} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <X size={14} color="#fff" />
                   </button>
                 </div>
-
                 <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Valor del abono (COP)</div>
-                <input
-                  type="number"
-                  value={valorManual}
-                  onChange={e => setValorManual(e.target.value)}
-                  placeholder="Ej: 250000"
-                  style={{ width: '100%', height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 16, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }}
-                />
+                <input type="number" value={valorManual} onChange={e => setValorManual(e.target.value)} placeholder="Ej: 250000" style={{ width: '100%', height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 16, marginBottom: 12, outline: 'none', boxSizing: 'border-box' }} />
                 <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Notas (opcional)</div>
-                <input
-                  type="text"
-                  value={notas}
-                  onChange={e => setNotas(e.target.value)}
-                  placeholder="Ej: Transferencia Nequi"
-                  style={{ width: '100%', height: 40, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 14, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }}
-                />
+                <input type="text" value={notas} onChange={e => setNotas(e.target.value)} placeholder="Ej: Transferencia Nequi" style={{ width: '100%', height: 40, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 14, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }} />
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={cerrarModal} style={{ flex: 1, height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancelar</button>
-                  <button onClick={confirmarYGuardar} style={{ flex: 2, height: 44, border: 'none', borderRadius: 10, background: '#0f1787', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
-                    Confirmar y guardar
-                  </button>
+                  <button onClick={confirmarYGuardar} style={{ flex: 2, height: 44, border: 'none', borderRadius: 10, background: '#0f1787', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Confirmar y guardar</button>
                 </div>
               </>
             )}
-
-            {/* Paso 3: guardando */}
             {paso === 'guardando' && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: 12 }}>
                 <Loader size={28} color="#0f1787" style={{ animation: 'spin 1s linear infinite' }} />
-                <div style={{ fontSize: 14, color: '#374151', fontWeight: 500 }}>Subiendo comprobante a Drive...</div>
+                <div style={{ fontSize: 14, color: '#374151', fontWeight: 500 }}>Subiendo comprobante...</div>
                 <div style={{ fontSize: 12, color: '#9ca3af' }}>Registrando el abono, por favor espera</div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar abono */}
+      {modalEditar && pagoEditando && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
+          <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <div style={{ fontSize: 16, fontWeight: 500, color: '#0d0d14' }}>Editar abono</div>
+              <button onClick={() => { setModalEditar(false); setPagoEditando(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <X size={18} color="#9ca3af" />
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>
+              {new Date(pagoEditando.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </div>
+            <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Nuevo valor (COP)</div>
+            <input
+              type="number"
+              value={valorEditar}
+              onChange={e => setValorEditar(e.target.value)}
+              style={{ width: '100%', height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 16, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setModalEditar(false); setPagoEditando(null) }} style={{ flex: 1, height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={guardarEdicion} style={{ flex: 2, height: 44, border: 'none', borderRadius: 10, background: '#0f1787', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Guardar cambio</button>
+            </div>
           </div>
         </div>
       )}
