@@ -204,7 +204,7 @@ export default function FinanzasPage() {
             <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 4 }}>
               Nequi Effetá · por categoría
             </div>
-            {categorias.filter(c => c.tipo_cuenta === 'effeta').map(cat => {
+            return (   <div key={cat.id} onClick={() => router.push(`/dashboard/finanzas/categoria/${cat.id}`)}     style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
               const ingresos = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'ingreso').reduce((s, t) => s + Number(t.valor), 0)
               const egresos = transacciones.filter(t => t.categoria_id === cat.id && t.tipo === 'egreso').reduce((s, t) => s + Number(t.valor), 0)
               const balance = ingresos - egresos
