@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, ReactElement } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
@@ -537,7 +537,7 @@ function NavIcon({ name, active }: { name: string; active: boolean }) {
   const color = active ? '#0f1787' : '#9ca3af'
   const w = 20
 
-  const icons: Record<string, JSX.Element> = {
+  const icons: Record<string, ReactElement> = {
     home: (
       <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
