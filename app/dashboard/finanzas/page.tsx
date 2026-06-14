@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
-import { Plus, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Plus, ArrowUpRight, ArrowDownRight, FileImage } from 'lucide-react'
 
 type Transaccion = {
   id: string
@@ -12,6 +12,8 @@ type Transaccion = {
   valor: number
   descripcion: string
   fecha: string
+  comprobante_url: string | null
+  comprobante_nombre: string | null
   categorias_financieras?: { nombre: string }
 }
 
@@ -28,12 +30,13 @@ const CATS_PARROQUIA = ['Inscripciones caminantes', 'Inscripciones servidores', 
 
 export default function FinanzasPage() {
   const router = useRouter()
-  const [tab, setTab] = useState<'resumen' | 'ingresos' | 'egresos'>('resumen')
+  const [tab, setTab] = useState<'resumen' | 'ingresos' | 'egresos' | 'comprobantes'>('resumen')
   const [transacciones, setTransacciones] = useState<Transaccion[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
   const [totalPagadoCaminantes, setTotalPagadoCaminantes] = useState(0)
   const [totalPagadoServidores, setTotalPagadoServidores] = useState(0)
+  const [imagenAmpliada, setImagenAmpliada] = useState<Transaccion | null>(null)
 
   useEffect(() => {
     async function cargar() {
@@ -86,6 +89,7 @@ export default function FinanzasPage() {
 
   const txIngresos = transacciones.filter(t => t.tipo === 'ingreso')
   const txEgresos = transacciones.filter(t => t.tipo === 'egreso')
+  const txConComprobante = transacciones.filter(t => t.comprobante_url)
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f7f8fc' }}>
@@ -119,14 +123,19 @@ export default function FinanzasPage() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, padding: '16px 20px 0', overflowX: 'auto', scrollbarWidth: 'none' }}>
-        {(['resumen', 'ingresos', 'egresos'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
+        {([
+          { key: 'resumen', label: 'Resumen' },
+          { key: 'ingresos', label: '↑ Ingresos' },
+          { key: 'egresos', label: '↓ Egresos' },
+          { key: 'comprobantes', label: `🧾 Comprobantes · ${txConComprobante.length}` },
+        ] as const).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: '7px 18px', borderRadius: 20, fontSize: 13, fontWeight: 500,
             whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb',
-            background: tab === t ? '#0f1787' : '#fff',
-            color: tab === t ? '#fff' : '#6b7280'
+            background: tab === t.key ? '#0f1787' : '#fff',
+            color: tab === t.key ? '#fff' : '#6b7280'
           }}>
-            {t === 'resumen' ? 'Resumen' : t === 'ingresos' ? '↑ Ingresos' : '↓ Egresos'}
+            {t.label}
           </button>
         ))}
       </div>
@@ -136,7 +145,6 @@ export default function FinanzasPage() {
         {/* ── RESUMEN ── */}
         {tab === 'resumen' && (
           <>
-            {/* Tarjeta parroquia */}
             <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <div>
@@ -148,20 +156,20 @@ export default function FinanzasPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 13, color: '#6b7280' }}>Pagos caminantes</span>
                   <span style={{ fontSize: 13, fontWeight: 500, color: '#166534' }}>{fmt(totalPagadoCaminantes)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 13, color: '#6b7280' }}>Pagos servidores</span>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: '#166534' }}>{fmt(totalPagadoServidores)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: '#166634' }}>{fmt(totalPagadoServidores)}</span>
                 </div>
                 <div style={{ height: '0.5px', background: '#f3f4f6' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 13, color: '#6b7280' }}>Total recaudado</span>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>{fmt(totalParroquia)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 13, color: '#6b7280' }}>Casa de retiros</span>
                   <span style={{ fontSize: 13, fontWeight: 500, color: '#dc2626' }}>− {fmt(casaRetiros)}</span>
                 </div>
@@ -177,7 +185,6 @@ export default function FinanzasPage() {
               </div>
             </div>
 
-            {/* Categorías Nequi Effeta */}
             <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 4 }}>
               Nequi Effetá · por categoría
             </div>
@@ -258,10 +265,69 @@ export default function FinanzasPage() {
             ))}
           </>
         )}
+
+        {/* ── COMPROBANTES ── */}
+        {tab === 'comprobantes' && (
+          <>
+            <div style={{ fontSize: 13, color: '#6b7280' }}>{txConComprobante.length} comprobantes</div>
+            {txConComprobante.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>
+                <FileImage size={32} color="#e5e7eb" style={{ marginBottom: 8 }} />
+                <div>Sin comprobantes subidos</div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {txConComprobante.map(t => (
+                  <div key={t.id} onClick={() => setImagenAmpliada(t)} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden', cursor: 'pointer' }}>
+                    <img
+                      src={t.comprobante_url!}
+                      alt={t.descripcion}
+                      style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }}
+                    />
+                    <div style={{ padding: '10px 12px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                        <span style={{ fontSize: 11, color: '#9ca3af' }}>{t.categorias_financieras?.nombre}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>
+                          {t.tipo === 'egreso' ? '−' : '+'}{fmt(t.valor)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
+      {/* Modal imagen ampliada */}
+      {imagenAmpliada && (
+        <div
+          onClick={() => setImagenAmpliada(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <img
+            src={imagenAmpliada.comprobante_url!}
+            alt={imagenAmpliada.descripcion}
+            style={{ maxWidth: '100%', maxHeight: '75vh', borderRadius: 12, objectFit: 'contain' }}
+            onClick={e => e.stopPropagation()}
+          />
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            <div style={{ fontSize: 15, fontWeight: 500, color: '#fff' }}>{imagenAmpliada.descripcion}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
+              {imagenAmpliada.categorias_financieras?.nombre} · {fmt(imagenAmpliada.valor)}
+            </div>
+            <a href={imagenAmpliada.comprobante_url!} target="_blank" rel="noopener noreferrer"
+              style={{ display: 'inline-block', marginTop: 12, fontSize: 13, color: '#a5b4fc', textDecoration: 'underline' }}>
+              Abrir en pantalla completa
+            </a>
+          </div>
+          <div style={{ marginTop: 20, fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Toca fuera para cerrar</div>
+        </div>
+      )}
+
       {/* Botón registrar */}
-      {tab !== 'resumen' && (
+      {tab !== 'resumen' && tab !== 'comprobantes' && (
         <button
           onClick={() => router.push(`/dashboard/finanzas/registrar?tipo=${tab === 'ingresos' ? 'ingreso' : 'egreso'}`)}
           style={{ position: 'fixed', bottom: 80, left: 20, right: 20, background: '#0f1787', color: '#fff', border: 'none', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
