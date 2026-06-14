@@ -134,20 +134,11 @@ export default function FichaCaminante() {
     await analizarComprobante(f)
   }
 
-  async function analizarComprobante(f: File) {
-    setAnalizando(true)
-    setErrorAnalisis(null)
-    try {
-      // Convertir imagen a base64
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const result = reader.result as string
-          const b64 = result.split(',')[1]
-          if (!b64 || b64.length < 100) {
-            reject(new Error('Imagen inválida'))
-            return
-          }
+async function analizarComprobante(f: File) {
+    // Sin OCR — el líder ingresa el valor manualmente
+    setAnalizando(false)
+    setPaso('revisar')
+  }
           resolve(b64)
         }
         reader.onerror = () => reject(new Error('Error leyendo archivo'))
