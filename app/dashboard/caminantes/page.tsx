@@ -3,7 +3,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
-import { Search, SlidersHorizontal, Download, Plus } from 'lucide-react'
+import { Search, SlidersHorizontal, Download, Plus, ArrowUpDown } from 'lucide-react'
 
 type Caminante = {
   id: string; nombre: string; numero_documento: string
@@ -12,6 +12,8 @@ type Caminante = {
   total_pagado: number; saldo_pendiente: number
   estado_pago: 'completo' | 'parcial' | 'sin_pago'
   inscrito_oficialmente: boolean
+  created_at?: string
+  fecha_ultimo_pago?: string | null
 }
 
 type CaminanteSalud = {
@@ -21,6 +23,8 @@ type CaminanteSalud = {
   medicamentos: string | null
   eps: string | null
 }
+
+type Orden = 'inscrito_reciente' | 'inscrito_primero' | 'pago_reciente' | 'pago_primero'
 
 const FILTROS = [
   { key: 'todos', label: 'Todos' },
@@ -32,11 +36,47 @@ const FILTROS = [
   { key: 'salud', label: '🏥 Salud' },
 ]
 
+const ORDENES: { key: Orden; label: string; icono: string }[] = [
+  { key: 'inscrito_reciente', label: 'Recién inscrito', icono: '🆕' },
+  { key: 'inscrito_primero',  label: 'Primer inscrito',  icono: '🕐' },
+  { key: 'pago_reciente',    label: 'Pago reciente',    icono: '💰' },
+  { key: 'pago_primero',     label: 'Primer pago',      icono: '💸' },
+]
+
 function iniciales(nombre: string) {
   return nombre.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
 }
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
+
+function aplicarOrden(lista: Caminante[], orden: Orden): Caminante[] {
+  return [...lista].sort((a, b) => {
+    if (orden === 'inscrito_reciente') {
+      return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+    }
+    if (orden === 'inscrito_primero') {
+      return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+    }
+    if (orden === 'pago_reciente') {
+      const fa = a.fecha_ultimo_pago ? new Date(a.fecha_ultimo_pago).getTime() : 0
+      const fb = b.fecha_ultimo_pago ? new Date(b.fecha_ultimo_pago).getTime() : 0
+      // Sin pago van al final
+      if (fa === 0 && fb === 0) return a.nombre.localeCompare(b.nombre)
+      if (fa === 0) return 1
+      if (fb === 0) return -1
+      return fb - fa
+    }
+    if (orden === 'pago_primero') {
+      const fa = a.fecha_ultimo_pago ? new Date(a.fecha_ultimo_pago).getTime() : 0
+      const fb = b.fecha_ultimo_pago ? new Date(b.fecha_ultimo_pago).getTime() : 0
+      if (fa === 0 && fb === 0) return a.nombre.localeCompare(b.nombre)
+      if (fa === 0) return 1
+      if (fb === 0) return -1
+      return fa - fb
+    }
+    return 0
+  })
+}
 
 function CaminantesContent() {
   const router = useRouter()
@@ -45,6 +85,8 @@ function CaminantesContent() {
   const [caminantesSalud, setCaminantesSalud] = useState<CaminanteSalud[]>([])
   const [filtro, setFiltro] = useState(searchParams.get('filtro') || 'todos')
   const [busqueda, setBusqueda] = useState('')
+  const [orden, setOrden] = useState<Orden>('inscrito_reciente')
+  const [mostrarOrden, setMostrarOrden] = useState(false)
   const [cupos, setCupos] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -53,13 +95,18 @@ function CaminantesContent() {
       const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       if (!r) return
 
-      const { data } = await supabase.from('vista_pagos_caminantes').select('*').eq('retiro_id', r.id).order('nombre')
+      // Traemos created_at y fecha_ultimo_pago para el ordenamiento
+      const { data } = await supabase
+        .from('vista_pagos_caminantes')
+        .select('*')
+        .eq('retiro_id', r.id)
+        .order('created_at', { ascending: false })
+
       if (data) setCaminantes(data as Caminante[])
 
       const { data: c } = await supabase.from('vista_cupos').select('*').eq('retiro_id', r.id).single()
       setCupos(c)
 
-      // Cargar datos de salud — solo los que tienen al menos un campo
       const { data: salud } = await supabase
         .from('caminantes')
         .select('id, nombre, edad, alergias, restricciones_alimentarias, medicamentos, eps')
@@ -73,6 +120,14 @@ function CaminantesContent() {
     cargar()
   }, [])
 
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    if (!mostrarOrden) return
+    const cerrar = () => setMostrarOrden(false)
+    window.addEventListener('click', cerrar)
+    return () => window.removeEventListener('click', cerrar)
+  }, [mostrarOrden])
+
   const esSalud = filtro === 'salud'
 
   const filtrados = caminantes.filter(c => {
@@ -85,6 +140,8 @@ function CaminantesContent() {
     return matchBusqueda && matchFiltro
   })
 
+  const ordenados = aplicarOrden(filtrados, orden)
+
   const saludFiltrados = caminantesSalud.filter(c =>
     c.nombre.toLowerCase().includes(busqueda.toLowerCase())
   )
@@ -96,8 +153,12 @@ function CaminantesContent() {
     : estado === 'parcial' ? { bg: '#fef3c7', color: '#92400e' }
     : { bg: '#f3f4f6', color: '#6b7280' }
 
+  const ordenActual = ORDENES.find(o => o.key === orden)!
+
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 80 }}>
+
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 14px' }}>
         <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>Caminantes</div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -106,13 +167,92 @@ function CaminantesContent() {
         </div>
       </div>
 
-      <div style={{ padding: '0 20px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '10px 14px' }}>
+      {/* Buscador + Ordenar */}
+      <div style={{ padding: '0 20px 14px', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '10px 14px' }}>
           <Search size={16} color="#9ca3af" />
-          <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar por nombre o documento…" style={{ border: 'none', outline: 'none', fontSize: 14, color: '#0d0d14', background: 'transparent', flex: 1 }} />
+          <input
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre o documento…"
+            style={{ border: 'none', outline: 'none', fontSize: 14, color: '#0d0d14', background: 'transparent', flex: 1 }}
+          />
+        </div>
+
+        {/* Botón ordenar */}
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={e => { e.stopPropagation(); setMostrarOrden(v => !v) }}
+            style={{
+              height: 42,
+              padding: '0 12px',
+              borderRadius: 12,
+              background: mostrarOrden || orden !== 'inscrito_reciente' ? '#0f1787' : '#fff',
+              border: '0.5px solid #e5e7eb',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <ArrowUpDown size={15} color={mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280'} />
+            <span style={{ fontSize: 12, fontWeight: 500, color: mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280' }}>
+              {ordenActual.icono}
+            </span>
+          </button>
+
+          {/* Dropdown */}
+          {mostrarOrden && (
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 48,
+                right: 0,
+                background: '#fff',
+                border: '0.5px solid #e5e7eb',
+                borderRadius: 14,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+                zIndex: 50,
+                minWidth: 200,
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ padding: '10px 14px 6px', fontSize: 11, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                Ordenar por
+              </div>
+              {ORDENES.map((o, i) => (
+                <button
+                  key={o.key}
+                  onClick={() => { setOrden(o.key); setMostrarOrden(false) }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    background: orden === o.key ? '#f0f1ff' : 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    borderTop: i === 2 ? '0.5px solid #f3f4f6' : 'none', // separador visual entre inscripción y pago
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>{o.icono}</span>
+                  <span style={{ fontSize: 13, fontWeight: orden === o.key ? 600 : 400, color: orden === o.key ? '#0f1787' : '#374151' }}>
+                    {o.label}
+                  </span>
+                  {orden === o.key && (
+                    <span style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: '#0f1787' }} />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, padding: '0 20px 16px', overflowX: 'auto', scrollbarWidth: 'none' }}>
         {FILTROS.map(f => {
           const count = f.key === 'todos' ? caminantes.length
@@ -128,6 +268,7 @@ function CaminantesContent() {
         })}
       </div>
 
+      {/* Cupos */}
       {cupos && (
         <div style={{ margin: '0 20px 16px', background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ flex: 1 }}>
@@ -158,8 +299,6 @@ function CaminantesContent() {
           ) : saludFiltrados.map(c => (
             <div key={c.id} onClick={() => router.push(`/dashboard/caminantes/${c.id}`)}
               style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
-
-              {/* Encabezado */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                 <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#fef3c7', color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
                   {iniciales(c.nombre)}
@@ -169,8 +308,6 @@ function CaminantesContent() {
                   <div style={{ fontSize: 11, color: '#9ca3af' }}>{c.edad} años</div>
                 </div>
               </div>
-
-              {/* Campos médicos */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {c.alergias && (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -205,9 +342,9 @@ function CaminantesContent() {
         <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando...</div>
-          ) : filtrados.length === 0 ? (
+          ) : ordenados.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Sin resultados</div>
-          ) : filtrados.map(c => {
+          ) : ordenados.map(c => {
             const av = colorAvatar(c.estado_pago)
             return (
               <div key={c.id} onClick={() => router.push(`/dashboard/caminantes/${c.id}`)} style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
