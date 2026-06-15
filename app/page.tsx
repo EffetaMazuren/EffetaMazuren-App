@@ -8,6 +8,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [modoRecuperar, setModoRecuperar] = useState(false)
+  const [correoRecuperar, setCorreoRecuperar] = useState('')
+  const [mensajeRecuperar, setMensajeRecuperar] = useState('')
+  const [loadingRecuperar, setLoadingRecuperar] = useState(false)
   const router = useRouter()
 
   async function handleLogin(e: React.FormEvent) {
@@ -26,7 +30,6 @@ export default function LoginPage() {
       return
     }
 
-    // Verificar rol en tabla usuarios
     const { data: usuario } = await supabase
       .from('usuarios')
       .select('rol')
@@ -36,9 +39,27 @@ export default function LoginPage() {
     if (usuario?.rol === 'lider') {
       router.push('/dashboard')
     } else {
-      // Es servidor o no tiene fila en usuarios — va al portal servidor
       router.push('/servidor')
     }
+  }
+
+  async function handleRecuperar(e: React.FormEvent) {
+    e.preventDefault()
+    setLoadingRecuperar(true)
+    setMensajeRecuperar('')
+    setError('')
+
+    const { error } = await supabase.auth.resetPasswordForEmail(correoRecuperar, {
+      redirectTo: 'https://effeta-mazuren-app.vercel.app/reset-password',
+    })
+
+    if (error) {
+      setError('No se pudo enviar el correo. Verifica la dirección.')
+    } else {
+      setMensajeRecuperar('Te enviamos un enlace de recuperación. Revisa tu correo.')
+    }
+
+    setLoadingRecuperar(false)
   }
 
   return (
@@ -73,74 +94,159 @@ export default function LoginPage() {
 
           <div style={{ width: 40, height: 1, background: '#e5e7eb', margin: '0 auto 24px' }} />
 
-          <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>
-                Correo electrónico
-              </div>
-              <input
-                type="email"
-                value={correo}
-                onChange={e => setCorreo(e.target.value)}
-                placeholder="tucorreo@email.com"
-                required
-                style={{
-                  width: '100%', height: 40, border: '0.5px solid #d0d4e8',
-                  borderRadius: 8, padding: '0 12px', fontSize: 14,
-                  color: '#0d0d14', background: '#f8f9fd', outline: 'none',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>
-                Contraseña
-              </div>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                style={{
-                  width: '100%', height: 40, border: '0.5px solid #d0d4e8',
-                  borderRadius: 8, padding: '0 12px', fontSize: 14,
-                  color: '#0d0d14', background: '#f8f9fd', outline: 'none',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+          {!modoRecuperar ? (
+            <>
+              <form onSubmit={handleLogin}>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>
+                    Correo electrónico
+                  </div>
+                  <input
+                    type="email"
+                    value={correo}
+                    onChange={e => setCorreo(e.target.value)}
+                    placeholder="tucorreo@email.com"
+                    required
+                    style={{
+                      width: '100%', height: 40, border: '0.5px solid #d0d4e8',
+                      borderRadius: 8, padding: '0 12px', fontSize: 14,
+                      color: '#0d0d14', background: '#f8f9fd', outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>
+                    Contraseña
+                  </div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    style={{
+                      width: '100%', height: 40, border: '0.5px solid #d0d4e8',
+                      borderRadius: 8, padding: '0 12px', fontSize: 14,
+                      color: '#0d0d14', background: '#f8f9fd', outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
 
-            {error && (
-              <div style={{
-                background: '#fee2e2', color: '#991b1b', borderRadius: 8,
-                padding: '10px 14px', fontSize: 13, marginBottom: 12,
-              }}>
-                {error}
+                {error && (
+                  <div style={{
+                    background: '#fee2e2', color: '#991b1b', borderRadius: 8,
+                    padding: '10px 14px', fontSize: 13, marginBottom: 12,
+                  }}>
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    width: '100%', height: 42,
+                    background: loading ? '#9ca3af' : '#0f1787',
+                    color: '#fff', border: 'none', borderRadius: 8,
+                    fontSize: 14, fontWeight: 500,
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    marginTop: 8,
+                  }}
+                >
+                  {loading ? 'Ingresando...' : 'Ingresar'}
+                </button>
+              </form>
+
+              <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#9ca3af' }}>
+                <button
+                  onClick={() => { setModoRecuperar(true); setError(''); }}
+                  style={{
+                    background: 'none', border: 'none', color: '#0f1787',
+                    fontSize: 12, cursor: 'pointer', padding: 0,
+                  }}
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
               </div>
-            )}
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#0f1787', marginBottom: 6 }}>
+                Recuperar contraseña
+              </div>
+              <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+                Ingresa tu correo y te enviaremos un enlace para restablecerla.
+              </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: '100%', height: 42,
-                background: loading ? '#9ca3af' : '#0f1787',
-                color: '#fff', border: 'none', borderRadius: 8,
-                fontSize: 14, fontWeight: 500,
-                cursor: loading ? 'not-allowed' : 'pointer',
-                marginTop: 8,
-              }}
-            >
-              {loading ? 'Ingresando...' : 'Ingresar'}
-            </button>
-          </form>
+              <form onSubmit={handleRecuperar}>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>
+                    Correo electrónico
+                  </div>
+                  <input
+                    type="email"
+                    value={correoRecuperar}
+                    onChange={e => setCorreoRecuperar(e.target.value)}
+                    placeholder="tucorreo@email.com"
+                    required
+                    style={{
+                      width: '100%', height: 40, border: '0.5px solid #d0d4e8',
+                      borderRadius: 8, padding: '0 12px', fontSize: 14,
+                      color: '#0d0d14', background: '#f8f9fd', outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
 
-          <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#9ca3af' }}>
-            <a href="#" style={{ color: '#0f1787', textDecoration: 'none' }}>
-              ¿Olvidaste tu contraseña?
-            </a>
-          </div>
+                {error && (
+                  <div style={{
+                    background: '#fee2e2', color: '#991b1b', borderRadius: 8,
+                    padding: '10px 14px', fontSize: 13, marginBottom: 12,
+                  }}>
+                    {error}
+                  </div>
+                )}
+
+                {mensajeRecuperar && (
+                  <div style={{
+                    background: '#dcfce7', color: '#166534', borderRadius: 8,
+                    padding: '10px 14px', fontSize: 13, marginBottom: 12,
+                  }}>
+                    {mensajeRecuperar}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loadingRecuperar}
+                  style={{
+                    width: '100%', height: 42,
+                    background: loadingRecuperar ? '#9ca3af' : '#0f1787',
+                    color: '#fff', border: 'none', borderRadius: 8,
+                    fontSize: 14, fontWeight: 500,
+                    cursor: loadingRecuperar ? 'not-allowed' : 'pointer',
+                    marginTop: 8,
+                  }}
+                >
+                  {loadingRecuperar ? 'Enviando...' : 'Enviar enlace'}
+                </button>
+              </form>
+
+              <div style={{ textAlign: 'center', marginTop: 16 }}>
+                <button
+                  onClick={() => { setModoRecuperar(false); setMensajeRecuperar(''); setError(''); }}
+                  style={{
+                    background: 'none', border: 'none', color: '#6b7280',
+                    fontSize: 12, cursor: 'pointer', padding: 0,
+                  }}
+                >
+                  ← Volver al inicio de sesión
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         <div style={{
