@@ -115,9 +115,9 @@ export default function RegistroServidor() {
       .from('usuarios')
       .upsert({
         id: userId,
-        email: email.trim().toLowerCase(),
-        nombre_completo: seleccionado.nombre,
-        rol_global: 'servidor'
+        correo: email.trim().toLowerCase(),
+        nombre: seleccionado.nombre,
+        rol: 'servidor'
       })
 
     if (usuErr) {
