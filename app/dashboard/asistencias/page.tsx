@@ -48,7 +48,7 @@ export default function AlertasAsistenciasPage() {
         .order('fecha_registro', { ascending: false })
         .limit(100),
     ])
-    setAlertas((alts || []) as Alerta[])
+    setAlertas((alts || []) as unknown as Alerta[])
     setTodas(tod || [])
     setLoading(false)
   }
