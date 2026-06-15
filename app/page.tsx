@@ -149,7 +149,7 @@ export default function LoginPage() {
   <button
     onClick={() => router.push('/servidor/registro')}
     style={{
-      background: 'none', border: '1.5px solid #0f1787',
+      background: 'white', border: '1.5px solid #0f1787',
       color: '#0f1787', padding: '8px 20px', borderRadius: 8,
       fontSize: 13, fontWeight: 600, cursor: 'pointer', width: '100%'
     }}
