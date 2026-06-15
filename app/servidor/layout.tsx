@@ -76,7 +76,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
     { href: '/servidor', label: '🏠 Inicio' },
     { href: '/servidor/pago', label: '💳 Mi pago' },
     { href: '/servidor/asistencias', label: '📅 Asistencias' },
-    { href: '/servidor/reembolso', label: '🧾 Reembolsos' },
+    { href: '/servidor/reembolso', label: '🧾 Facturas' },
   ]
 
   const handleLogout = async () => {
