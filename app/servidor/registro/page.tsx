@@ -109,32 +109,9 @@ export default function RegistroServidor() {
       return
     }
 
-    const userId = authData.user.id
-
-    const userId = authData.user.id
-
     const { error: vinErr } = await supabase
       .from('servidores_inscripcion')
-      .update({ usuario_id: userId })
-      .eq('id', seleccionado.id)
-
-    if (vinErr) {
-      setError('Error al vincular perfil: ' + vinErr.message)
-      setLoading(false)
-      return
-    }
-
-    setLoading(false)
-    setPaso('listo')
-    if (usuErr) {
-      setError('Error al guardar perfil: ' + usuErr.message)
-      setLoading(false)
-      return
-    }
-
-    const { error: vinErr } = await supabase
-      .from('servidores_inscripcion')
-      .update({ usuario_id: userId })
+      .update({ usuario_id: authData.user.id })
       .eq('id', seleccionado.id)
 
     if (vinErr) {
@@ -147,7 +124,6 @@ export default function RegistroServidor() {
     setPaso('listo')
   }
 
-  // PANTALLA BUSCAR
   if (paso === 'buscar') return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
@@ -170,7 +146,6 @@ export default function RegistroServidor() {
             Búscate en la lista
           </h2>
 
-          {/* Toggle nombre / cédula */}
           <div style={{
             display: 'flex', background: '#f3f4f6',
             borderRadius: 10, padding: 4, marginBottom: 20, gap: 4
@@ -242,7 +217,6 @@ export default function RegistroServidor() {
     </div>
   )
 
-  // PANTALLA CONFIRMAR
   if (paso === 'confirmar') return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
@@ -309,7 +283,6 @@ export default function RegistroServidor() {
     </div>
   )
 
-  // PANTALLA CREAR CUENTA
   if (paso === 'crear') return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
@@ -425,7 +398,6 @@ export default function RegistroServidor() {
     </div>
   )
 
-  // PANTALLA LISTO
   return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
