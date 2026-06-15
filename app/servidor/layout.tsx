@@ -13,35 +13,58 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      
-      // Si no hay sesión y no estamos en registro, redirigir a login
+
       if (!session && pathname !== '/servidor/registro') {
         router.push('/')
         return
       }
 
       if (session) {
-        // Verificar que NO sea líder (líderes van a /dashboard)
+        const userId = session.user.id
+        const userMeta = session.user.user_metadata
+
+        // Verificar que NO sea líder
         const { data: usuario } = await supabase
           .from('usuarios')
-          .select('rol_global')
-          .eq('id', session.user.id)
+          .select('rol')
+          .eq('id', userId)
           .single()
 
-        if (usuario?.rol_global === 'lider') {
+        if (usuario?.rol === 'lider') {
           router.push('/dashboard')
           return
         }
 
-        // Obtener nombre del servidor
-        const { data: servidor } = await supabase
-          .from('servidores_inscripcion')
-          .select('nombre_completo')
-          .eq('usuario_id', session.user.id)
-          .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
-          .single()
+        // Intentar vincular si tiene servidor_inscripcion_id en metadata
+        // y aún no está vinculado
+        const inscripcionId = userMeta?.servidor_inscripcion_id
+        if (inscripcionId) {
+          const { data: srv } = await supabase
+            .from('servidores_inscripcion')
+            .select('id, usuario_id, nombre')
+            .eq('id', inscripcionId)
+            .single()
 
-        if (servidor) setNombre(servidor.nombre_completo)
+          if (srv && !srv.usuario_id) {
+            await supabase
+              .from('servidores_inscripcion')
+              .update({ usuario_id: userId })
+              .eq('id', inscripcionId)
+            setNombre(srv.nombre)
+          } else if (srv?.nombre) {
+            setNombre(srv.nombre)
+          }
+        } else {
+          // Buscar por usuario_id directamente
+          const { data: srv } = await supabase
+            .from('servidores_inscripcion')
+            .select('nombre')
+            .eq('usuario_id', userId)
+            .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
+            .single()
+
+          if (srv?.nombre) setNombre(srv.nombre)
+        }
       }
 
       setLoading(false)
@@ -50,7 +73,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
   }, [router, pathname])
 
   const navItems = [
-    { href: '/servidor', label: '🏠 Inicio', icon: '⌂' },
+    { href: '/servidor', label: '🏠 Inicio' },
     { href: '/servidor/pago', label: '💳 Mi pago' },
     { href: '/servidor/asistencias', label: '📅 Asistencias' },
     { href: '/servidor/reembolso', label: '🧾 Reembolsos' },
@@ -74,7 +97,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
             animation: 'spin 0.8s linear infinite', margin: '0 auto 12px'
           }} />
           <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-          <p style={{ color: '#6b7280', fontSize: 14 }}>Cargando...</p>
+          <p style={{ color: '#6b7280', fontSize: 14, margin: 0 }}>Cargando...</p>
         </div>
       </div>
     )
@@ -112,7 +135,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
         </div>
       </nav>
 
-      {/* Bottom Nav — Mobile */}
+      {/* Bottom Nav */}
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0,
         background: 'white', borderTop: '1px solid #e8eaf0',
@@ -149,7 +172,6 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
         })}
       </div>
 
-      {/* Content */}
       <main style={{ paddingBottom: 80 }}>
         {children}
       </main>
