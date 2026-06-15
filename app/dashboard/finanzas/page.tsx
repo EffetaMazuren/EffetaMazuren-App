@@ -156,6 +156,27 @@ export default function FinanzasPage() {
         {/* ── RESUMEN ── */}
         {tab === 'resumen' && (
           <>
+            {/* Botón Categorías */}
+            <button
+              onClick={() => router.push('/dashboard/finanzas/categorias')}
+              style={{
+                width: '100%', background: '#fff', border: '0.5px solid #e5e7eb',
+                borderRadius: 12, padding: '12px 16px', display: 'flex',
+                alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                  🗂
+                </div>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>Categorías</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>Crear, activar o desactivar</div>
+                </div>
+              </div>
+              <span style={{ fontSize: 20, color: '#d1d5db' }}>›</span>
+            </button>
+
+            {/* Card Parroquia */}
             <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <div>
@@ -279,7 +300,6 @@ export default function FinanzasPage() {
         {/* ── COMPROBANTES ── */}
         {tab === 'comprobantes' && (
           <>
-            {/* Filtros */}
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 }}>
               <button onClick={() => setFiltroCategoria('todas')} style={{
                 padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500,
@@ -307,7 +327,6 @@ export default function FinanzasPage() {
                 <div>Sin comprobantes subidos</div>
               </div>
             ) : filtroCategoria === 'todas' ? (
-              /* Vista todas — agrupadas por categoría con color */
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {categorias.filter(c => c.tipo_cuenta === 'effeta' && txConComprobante.some(t => t.categoria_id === c.id)).map((cat, idx) => {
                   const color = COLORES[idx % COLORES.length]
@@ -335,7 +354,6 @@ export default function FinanzasPage() {
                 })}
               </div>
             ) : (
-              /* Vista categoría individual */
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {txConComprobante.filter(t => t.categoria_id === filtroCategoria).map(t => (
                   <div key={t.id} onClick={() => setImagenAmpliada(t)} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden', cursor: 'pointer' }}>
