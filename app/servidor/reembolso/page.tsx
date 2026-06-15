@@ -33,7 +33,7 @@ export default function ReembolsoPage() {
   async function cargarCategorias() {
     const { data } = await supabase
       .from('categorias_financieras')
-      .select('id, nombre, tipo_movimiento')
+      .select('id, nombre')
       .eq('retiro_id', RETIRO_ID)
       .eq('activa', true)
       .order('nombre');
@@ -48,11 +48,6 @@ export default function ReembolsoPage() {
       .order('created_at', { ascending: false });
     setHistorial(data || []);
   }
-
-  // Filtrar categorías según tipo seleccionado
-  const categoriasFiltradas = categorias.filter(c =>
-    !c.tipo_movimiento || c.tipo_movimiento === tipo || c.tipo_movimiento === 'ambos'
-  );
 
   async function enviar() {
     setError(''); setExito('');
@@ -115,11 +110,10 @@ export default function ReembolsoPage() {
     <div style={{ minHeight: '100vh', background: '#f7f8fc', paddingBottom: 100 }}>
       <div style={{ maxWidth: 480, margin: '0 auto', padding: '24px 16px' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f1787', marginBottom: 24 }}>
-          🧾 Facturas y reembolsos
+          Facturas y reembolsos
         </h1>
 
-        {/* Formulario */}
-        <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 24, boxShadow: '0 1px 8px rgba(0,0,0,0.07)' }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 24, border: '0.5px solid #e8eaf0' }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1e293b', marginBottom: 20 }}>
             Nueva solicitud
           </h2>
@@ -128,7 +122,7 @@ export default function ReembolsoPage() {
           <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
             ¿Es un ingreso o un egreso?
           </label>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <button
               onClick={() => { setTipo('egreso'); setCategoriaId(''); }}
               style={{ flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'egreso' ? '#dc2626' : '#e2e8f0'}`, background: tipo === 'egreso' ? '#fef2f2' : '#fff', color: tipo === 'egreso' ? '#dc2626' : '#94a3b8', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
@@ -137,6 +131,16 @@ export default function ReembolsoPage() {
               onClick={() => { setTipo('ingreso'); setCategoriaId(''); }}
               style={{ flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'ingreso' ? '#16a34a' : '#e2e8f0'}`, background: tipo === 'ingreso' ? '#f0fdf4' : '#fff', color: tipo === 'ingreso' ? '#16a34a' : '#94a3b8', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
             >↑ Ingreso</button>
+          </div>
+
+          {/* Nota explicativa */}
+          <div style={{
+            background: '#f8f9fd', border: '0.5px solid #e8eaf0',
+            borderRadius: 8, padding: '10px 14px', marginBottom: 16,
+            fontSize: 12, color: '#6b7280', lineHeight: 1.5,
+          }}>
+            <span style={{ color: '#dc2626', fontWeight: 600 }}>Egreso:</span> plata que sale del Nequi Effetá para pagar algo.{'  '}
+            <span style={{ color: '#16a34a', fontWeight: 600 }}>Ingreso:</span> plata que entra al Nequi Effetá.
           </div>
 
           {/* Categoría */}
@@ -149,7 +153,7 @@ export default function ReembolsoPage() {
             style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, marginBottom: 16, background: '#fff', boxSizing: 'border-box' }}
           >
             <option value="">Seleccionar categoría...</option>
-            {categoriasFiltradas.map(c => (
+            {categorias.map(c => (
               <option key={c.id} value={c.id}>{c.nombre}</option>
             ))}
           </select>
@@ -215,7 +219,7 @@ export default function ReembolsoPage() {
 
         {/* Historial */}
         {historial.length > 0 && (
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 1px 8px rgba(0,0,0,0.07)' }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '0.5px solid #e8eaf0' }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1e293b', marginBottom: 16 }}>
               Mis solicitudes
             </h2>
