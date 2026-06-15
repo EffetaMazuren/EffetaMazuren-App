@@ -34,6 +34,82 @@ function iniciales(nombre: string) {
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 
+function BadgeTipo({ id, esInterno, onChange }: { id: string; esInterno: boolean; onChange: (nuevoValor: boolean) => void }) {
+  const [abierto, setAbierto] = useState(false)
+  const [cargando, setCargando] = useState(false)
+
+  const opciones = [
+    { valor: true, label: 'Interno', bg: '#eff6ff', color: '#1d4ed8' },
+    { valor: false, label: 'Externo', bg: '#f3f4f6', color: '#6b7280' },
+  ]
+  const actual = opciones.find(o => o.valor === esInterno)!
+
+  async function cambiar(nuevoValor: boolean) {
+    if (nuevoValor === esInterno) { setAbierto(false); return }
+    setCargando(true)
+    try {
+      const res = await fetch(`/api/servidores/${id}/tipo`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ es_interno: nuevoValor }),
+      })
+      if (res.ok) onChange(nuevoValor)
+    } finally {
+      setCargando(false)
+      setAbierto(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={e => { e.stopPropagation(); setAbierto(v => !v) }}
+        disabled={cargando}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 500,
+          background: actual.bg, color: actual.color,
+          border: 'none', cursor: 'pointer', opacity: cargando ? 0.5 : 1,
+        }}
+      >
+        {cargando ? '...' : actual.label}
+        {!cargando && (
+          <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+          </svg>
+        )}
+      </button>
+      {abierto && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={e => { e.stopPropagation(); setAbierto(false) }} />
+          <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 20, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.10)', border: '0.5px solid #e5e7eb', padding: '4px 0', minWidth: 110 }}>
+            {opciones.map(op => (
+              <button
+                key={String(op.valor)}
+                onClick={e => { e.stopPropagation(); cambiar(op.valor) }}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12,
+                  fontWeight: op.valor === esInterno ? 600 : 400,
+                  color: op.valor === esInterno ? '#0f1787' : '#374151',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                <span style={{
+                  width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                  background: op.valor === esInterno ? '#0f1787' : 'transparent',
+                  border: op.valor === esInterno ? 'none' : '1.5px solid #d1d5db',
+                }} />
+                {op.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function ServidoresPage() {
   const router = useRouter()
   const [servidores, setServidores] = useState<Servidor[]>([])
@@ -56,6 +132,11 @@ export default function ServidoresPage() {
     }
     cargar()
   }, [])
+
+  // Cambia es_interno localmente → el servidor se mueve de sección al instante
+  function cambiarTipo(id: string, nuevoInterno: boolean) {
+    setServidores(prev => prev.map(s => s.id === id ? { ...s, es_interno: nuevoInterno } : s))
+  }
 
   const internos = servidores.filter(s => s.es_interno)
   const externos = servidores.filter(s => !s.es_interno)
@@ -80,8 +161,10 @@ export default function ServidoresPage() {
   const CardServidor = ({ s }: { s: Servidor }) => {
     const av = colorAvatar(s.estado_pago)
     return (
-      <div onClick={() => router.push(`/dashboard/servidores/${s.id}`)}
-        style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
+      <div
+        onClick={() => router.push(`/dashboard/servidores/${s.id}`)}
+        style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer' }}
+      >
         <div style={{ width: 38, height: 38, borderRadius: '50%', background: av.bg, color: av.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
           {iniciales(s.nombre)}
         </div>
@@ -89,15 +172,31 @@ export default function ServidoresPage() {
           <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</div>
           <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{s.edad} años · {s.talla_camiseta}</div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+          <BadgeTipo id={s.id} esInterno={s.es_interno} onChange={v => cambiarTipo(s.id, v)} />
           <div style={{ fontSize: 12, fontWeight: 500, color: s.estado_pago === 'completo' ? '#166534' : s.estado_pago === 'parcial' ? '#d97706' : '#9ca3af' }}>
             {fmt(s.total_pagado)}
           </div>
-          <div style={{ fontSize: 10, color: '#9ca3af' }}>de $380.000</div>
         </div>
       </div>
     )
   }
+
+  const CardExterno = ({ s }: { s: Servidor }) => (
+    <div
+      onClick={() => router.push(`/dashboard/servidores/${s.id}`)}
+      style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer', opacity: 0.8 }}
+    >
+      <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#f3f4f6', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
+        {iniciales(s.nombre)}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</div>
+        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{s.edad} años · {s.talla_camiseta}</div>
+      </div>
+      <BadgeTipo id={s.id} esInterno={s.es_interno} onChange={v => cambiarTipo(s.id, v)} />
+    </div>
+  )
 
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 100 }}>
@@ -136,7 +235,7 @@ export default function ServidoresPage() {
           <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>Servidores internos</div>
           <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Pago $380.000</div>
           <div style={{ height: 4, background: '#f3f4f6', borderRadius: 2, marginTop: 8 }}>
-            <div style={{ height: 4, borderRadius: 2, background: '#0f1787', width: `${Math.min((pagadosInternos / totalInternos) * 100, 100)}%` }} />
+            <div style={{ height: 4, borderRadius: 2, background: '#0f1787', width: `${Math.min((pagadosInternos / (totalInternos || 1)) * 100, 100)}%` }} />
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -169,21 +268,7 @@ export default function ServidoresPage() {
                 </button>
                 {mostrarExternos && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {externosFiltrados.map(s => (
-                      <div key={s.id} onClick={() => router.push(`/dashboard/servidores/${s.id}`)}
-                        style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, border: '0.5px solid #e5e7eb', cursor: 'pointer', opacity: 0.75 }}>
-                        <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#f3f4f6', color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
-                          {iniciales(s.nombre)}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</div>
-                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{s.edad} años · {s.talla_camiseta}</div>
-                        </div>
-                        <div style={{ fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: '#f3f4f6', color: '#9ca3af' }}>
-                          Externo
-                        </div>
-                      </div>
-                    ))}
+                    {externosFiltrados.map(s => <CardExterno key={s.id} s={s} />)}
                   </div>
                 )}
               </div>
