@@ -33,63 +33,15 @@ export default function ServidorHome() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const cargar = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (!session) {
-        router.push('/')
-        return
-      }
-
-      const userId = session.user.id
-
-      // Buscar servidor por usuario_id
-      const { data: srv } = await supabase
-        .from('servidores_inscripcion')
-        .select('id, nombre, es_interno, usuario_id')
-        .eq('usuario_id', userId)
+    const cargarDatos = async (
+      srv: { id: string; nombre: string; es_interno: boolean; usuario_id: string | null },
+    ) => {
+      const { data: pagosData } = await supabase
+        .from('pagos')
+        .select('valor, estado')
+        .eq('persona_id', srv.id)
+        .eq('tipo_persona', 'servidor')
         .eq('retiro_id', RETIRO_ID)
-        .single()
-
-      // Si no está vinculado, intentar vincular por metadata
-      if (!srv) {
-        const inscripcionId = session.user.user_metadata?.servidor_inscripcion_id
-        if (inscripcionId) {
-          await supabase
-            .from('servidores_inscripcion')
-            .update({ usuario_id: userId })
-            .eq('id', inscripcionId)
-            .is('usuario_id', null)
-
-          // Recargar después de vincular
-          const { data: srvNuevo } = await supabase
-            .from('servidores_inscripcion')
-            .select('id, nombre, es_interno, usuario_id')
-            .eq('usuario_id', userId)
-            .eq('retiro_id', RETIRO_ID)
-            .single()
-
-          if (!srvNuevo) {
-            setLoading(false)
-            return
-          }
-
-          await cargarDatos(srvNuevo, userId)
-          return
-        }
-        setLoading(false)
-        return
-      }
-
-      await cargarDatos(srv, userId)
-    }
-
-    const cargarDatos = async (srv: { id: string; nombre: string; es_interno: boolean; usuario_id: string | null }, userId: string) => {
-      const { data: pagoData } = await supabase
-        .from('vista_pagos_servidores')
-        .select('*')
-        .eq('servidor_id', srv.id)
-        .single()
 
       const { data: asistencias } = await supabase
         .from('asistencias')
@@ -111,13 +63,14 @@ export default function ServidorHome() {
       const totalReuniones = asistencias?.length ?? 0
       const asistidas = asistencias?.filter(a => a.asistio).length ?? 0
       const costo = srv.es_interno ? 380000 : 0
-      const pagado: number = pagoData?.total_pagado ?? 0
+
+      const pagado: number = pagosData
+        ?.filter(p => p.estado === 'confirmado')
+        .reduce((sum, p) => sum + (p.valor || 0), 0) ?? 0
       const pendiente: number = Math.max(0, costo - pagado)
 
       let estado: DatoServidor['estado_pago'] = 'sin_pago'
-      if (pagoData?.estado_pago) {
-        estado = pagoData.estado_pago as DatoServidor['estado_pago']
-      } else if (pagado >= costo && costo > 0) {
+      if (pagado >= costo && costo > 0) {
         estado = 'completo'
       } else if (pagado > 0) {
         estado = 'parcial'
@@ -138,6 +91,54 @@ export default function ServidorHome() {
       })
 
       setLoading(false)
+    }
+
+    const cargar = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        router.push('/')
+        return
+      }
+
+      const userId = session.user.id
+
+      const { data: srv } = await supabase
+        .from('servidores_inscripcion')
+        .select('id, nombre, es_interno, usuario_id')
+        .eq('usuario_id', userId)
+        .eq('retiro_id', RETIRO_ID)
+        .single()
+
+      if (!srv) {
+        const inscripcionId = session.user.user_metadata?.servidor_inscripcion_id
+        if (inscripcionId) {
+          await supabase
+            .from('servidores_inscripcion')
+            .update({ usuario_id: userId })
+            .eq('id', inscripcionId)
+            .is('usuario_id', null)
+
+          const { data: srvNuevo } = await supabase
+            .from('servidores_inscripcion')
+            .select('id, nombre, es_interno, usuario_id')
+            .eq('usuario_id', userId)
+            .eq('retiro_id', RETIRO_ID)
+            .single()
+
+          if (!srvNuevo) {
+            setLoading(false)
+            return
+          }
+
+          await cargarDatos(srvNuevo)
+          return
+        }
+        setLoading(false)
+        return
+      }
+
+      await cargarDatos(srv)
     }
 
     cargar()
