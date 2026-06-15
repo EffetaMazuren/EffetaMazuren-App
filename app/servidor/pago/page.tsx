@@ -50,30 +50,29 @@ export default function PagoServidor() {
 
       setInscripcionId(srv.id)
 
-      // Resumen de pagos
       const { data: pagoData } = await supabase
         .from('vista_pagos_servidores')
         .select('*')
         .eq('servidor_id', srv.id)
         .single()
 
-      const costo = srv.es_interno ? 380000 : 0
-      const pagado = pagoData?.total_pagado || 0
+      const costo: number = srv.es_interno ? 380000 : 0
+      const pagado: number = pagoData?.total_pagado ?? 0
+
       setResumen({
         total_pagado: pagado,
         costo_retiro: costo,
-        estado_pago: pagoData?.estado_pago || 'sin_pago',
+        estado_pago: pagoData?.estado_pago ?? 'sin_pago',
         saldo_pendiente: Math.max(0, costo - pagado)
       })
 
-      // Lista de transacciones/comprobantes
       const { data: transacciones } = await supabase
         .from('transacciones')
         .select('id, monto, fecha, url_comprobante, descripcion, estado')
         .eq('servidor_inscripcion_id', srv.id)
         .order('fecha', { ascending: false })
 
-      setComprobantes(transacciones || [])
+      setComprobantes(transacciones ?? [])
       setLoading(false)
     }
     cargar()
@@ -92,6 +91,7 @@ export default function PagoServidor() {
 
     setSubiendo(true)
     setError('')
+    setExito('')
 
     const ext = archivo.name.split('.').pop()
     const nombre = `servidores/${inscripcionId}/${Date.now()}.${ext}`
@@ -108,13 +108,12 @@ export default function PagoServidor() {
 
     const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(nombre)
 
-    // Guardar en transacciones con estado pendiente
     const { error: txErr } = await supabase
       .from('transacciones')
       .insert({
         servidor_inscripcion_id: inscripcionId,
         retiro_id: RETIRO_ID,
-        monto: 0, // el líder ajusta el monto
+        monto: 0,
         fecha: new Date().toISOString().split('T')[0],
         url_comprobante: urlData.publicUrl,
         descripcion: 'Comprobante subido por servidor — pendiente verificación',
@@ -126,13 +125,12 @@ export default function PagoServidor() {
       setError('Error al registrar: ' + txErr.message)
     } else {
       setExito('✅ Comprobante enviado. Un líder lo verificará pronto.')
-      // Recargar comprobantes
       const { data } = await supabase
         .from('transacciones')
         .select('id, monto, fecha, url_comprobante, descripcion, estado')
         .eq('servidor_inscripcion_id', inscripcionId)
         .order('fecha', { ascending: false })
-      setComprobantes(data || [])
+      setComprobantes(data ?? [])
     }
 
     setSubiendo(false)
@@ -168,12 +166,10 @@ export default function PagoServidor() {
         💳 Mi Pago
       </h1>
 
-      {/* Resumen */}
       {resumen && (
         <div style={{
           background: 'white', borderRadius: 14,
-          border: '1.5px solid #e8eaf0', padding: '20px',
-          marginBottom: 20
+          border: '1.5px solid #e8eaf0', padding: '20px', marginBottom: 20
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
@@ -184,7 +180,10 @@ export default function PagoServidor() {
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>PENDIENTE</div>
-              <div style={{ fontSize: 26, fontWeight: 700, color: resumen.saldo_pendiente > 0 ? '#d97706' : '#16a34a' }}>
+              <div style={{
+                fontSize: 26, fontWeight: 700,
+                color: resumen.saldo_pendiente > 0 ? '#d97706' : '#16a34a'
+              }}>
                 ${resumen.saldo_pendiente.toLocaleString('es-CO')}
               </div>
             </div>
@@ -206,17 +205,15 @@ export default function PagoServidor() {
         </div>
       )}
 
-      {/* Subir comprobante */}
       <div style={{
         background: 'white', borderRadius: 14,
-        border: '1.5px dashed #c7d0ff', padding: '20px',
-        marginBottom: 20
+        border: '1.5px dashed #c7d0ff', padding: '20px', marginBottom: 20
       }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 15, color: '#111827', fontWeight: 600 }}>
           📎 Subir comprobante de pago
         </h3>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
-          Sube tu screenshot o PDF del comprobante de transferencia. 
+          Sube tu screenshot o PDF del comprobante de transferencia.
           Un líder lo verificará y actualizará tu saldo.
         </p>
 
@@ -261,34 +258,40 @@ export default function PagoServidor() {
         </p>
       </div>
 
-      {/* Lista de comprobantes */}
-      {comprobantes.length > 0 && (
+      {comprobantes.length > 0 ? (
         <div>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, color: '#374151', fontWeight: 600 }}>
             Historial de pagos
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {comprobantes.map(c => (
-              <div key={c.id} style={{
-                background: 'white', border: '1.5px solid #e8eaf0',
-                borderRadius: 12, padding: '14px 16px',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-              }}>
+              <div
+                key={c.id}
+                style={{
+                  background: 'white', border: '1.5px solid #e8eaf0',
+                  borderRadius: 12, padding: '14px 16px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                }}
+              >
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>
-                    {c.monto > 0 ? `$${c.monto.toLocaleString('es-CO')}` : 'Monto por verificar'}
+                    {c.monto > 0
+                      ? `$${c.monto.toLocaleString('es-CO')}`
+                      : 'Monto por verificar'}
                   </div>
                   <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                    {c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-CO', {
-                      day: 'numeric', month: 'long', year: 'numeric'
-                    }) : '—'}
+                    {c.fecha
+                      ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-CO', {
+                          day: 'numeric', month: 'long', year: 'numeric'
+                        })
+                      : '—'}
                   </div>
                   {c.estado && (
                     <div style={{
                       display: 'inline-block', marginTop: 4,
                       fontSize: 11, padding: '2px 8px', borderRadius: 20,
                       background: c.estado === 'pendiente_verificacion' ? '#fffbeb' : '#f0fdf4',
-                      color: estadoPagoColor[c.estado] || '#6b7280',
+                      color: estadoPagoColor[c.estado] ?? '#6b7280',
                       fontWeight: 600
                     }}>
                       {c.estado === 'pendiente_verificacion' ? '⏳ Pendiente' : '✅ Verificado'}
@@ -303,17 +306,18 @@ export default function PagoServidor() {
                     style={{
                       padding: '8px 12px', background: '#f0f2ff',
                       color: '#0f1787', borderRadius: 8, fontSize: 12,
-                      fontWeight: 600, textDecoration: 'none'
+                      fontWeight: 600, textDecoration: 'none',
+                      flexShrink: 0, marginLeft: 12
                     }}
-                  >Ver →</a>
+                  >
+                    Ver →
+                  </a>
                 )}
               </div>
             ))}
           </div>
         </div>
-      )}
-
-      {comprobantes.length === 0 && (
+      ) : (
         <div style={{
           textAlign: 'center', padding: '32px 20px',
           color: '#9ca3af', fontSize: 14
