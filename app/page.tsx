@@ -142,6 +142,22 @@ export default function LoginPage() {
           </div>
         </div>
 
+        <div style={{ textAlign: 'center', marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f4' }}>
+  <p style={{ margin: '0 0 8px', fontSize: 13, color: '#6b7280' }}>
+    ¿Eres servidor y no tienes cuenta?
+  </p>
+  <button
+    onClick={() => router.push('/servidor/registro')}
+    style={{
+      background: 'none', border: '1.5px solid #0f1787',
+      color: '#0f1787', padding: '8px 20px', borderRadius: 8,
+      fontSize: 13, fontWeight: 600, cursor: 'pointer', width: '100%'
+    }}
+  >
+    Crear cuenta de servidor
+  </button>
+</div>
+
         <div style={{
           textAlign: 'center', marginTop: 20, fontSize: 11,
           color: 'rgba(255,255,255,0.3)', letterSpacing: 1,
