@@ -1,99 +1,150 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Plus, Trash2, Pencil, X, Check } from 'lucide-react'
 
-type Transaccion = {
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+
+type Categoria = {
   id: string
-  tipo: 'ingreso' | 'egreso'
-  valor: number
-  descripcion: string
-  fecha: string
-  comprobante_url: string | null
-  comprobante_nombre: string | null
+  nombre: string
+  tipo_cuenta: string
+  tipo_movimiento: 'ingreso' | 'egreso' | 'ambos'
+  activa: boolean
+  presupuesto?: number
+  orden?: number
+}
+
+type TipoMovimiento = 'ingreso' | 'egreso' | 'ambos'
+
+const TIPO_LABELS: Record<TipoMovimiento, { label: string; color: string; text: string }> = {
+  ingreso:  { label: 'Ingreso',  color: '#f0fdf4', text: '#166534' },
+  egreso:   { label: 'Egreso',   color: '#fef2f2', text: '#991b1b' },
+  ambos:    { label: 'Ambos',    color: '#f9fafb', text: '#374151' },
 }
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 
-export default function CategoriaPage() {
+export default function CategoriasPage() {
   const router = useRouter()
-  const { id } = useParams<{ id: string }>()
-
-  const [categoria, setCategoria] = useState<{ nombre: string; presupuesto: number } | null>(null)
-  const [transacciones, setTransacciones] = useState<Transaccion[]>([])
-  const [tab, setTab] = useState<'ingresos' | 'egresos'>('ingresos')
+  const [retiroId, setRetiroId] = useState<string | null>(null)
+  const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
+  const [guardando, setGuardando] = useState<string | null>(null)
+  const [eliminando, setEliminando] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [mostrarForm, setMostrarForm] = useState(false)
 
-  // Edición
-  const [editandoId, setEditandoId] = useState<string | null>(null)
-  const [editValor, setEditValor] = useState('')
-  const [editDescripcion, setEditDescripcion] = useState('')
-  const [editFecha, setEditFecha] = useState('')
-  const [guardandoEdit, setGuardandoEdit] = useState(false)
+  // Form
+  const [nombre, setNombre] = useState('')
+  const [tipoCuenta, setTipoCuenta] = useState('Nequi Effetá')
+  const [tipoMovimiento, setTipoMovimiento] = useState<TipoMovimiento>('egreso')
+  const [presupuesto, setPresupuesto] = useState('')
+  const [creando, setCreando] = useState(false)
 
-  // Confirmación borrado
-  const [borrandoId, setBorrandoId] = useState<string | null>(null)
+  useEffect(() => {
+    async function cargar() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/'); return }
 
-  useEffect(() => { cargar() }, [id])
+      const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
+      if (!r) return
+      setRetiroId(r.id)
 
-  async function cargar() {
-    const { data: cat } = await supabase
+      const { data: cats } = await supabase
+        .from('categorias_financieras')
+        .select('*')
+        .eq('retiro_id', r.id)
+        .order('tipo_cuenta', { ascending: true })
+        .order('activa', { ascending: false })
+        .order('nombre', { ascending: true })
+
+      if (cats) setCategorias(cats as Categoria[])
+      setLoading(false)
+    }
+    cargar()
+  }, [])
+
+  const toggleActiva = async (cat: Categoria) => {
+    setGuardando(cat.id)
+    setError(null)
+    const { error } = await supabase
       .from('categorias_financieras')
-      .select('nombre, presupuesto')
-      .eq('id', id)
-      .single()
-    if (cat) setCategoria(cat)
+      .update({ activa: !cat.activa })
+      .eq('id', cat.id)
+    if (error) {
+      setError('No se pudo actualizar.')
+    } else {
+      setCategorias(prev => prev.map(c => c.id === cat.id ? { ...c, activa: !cat.activa } : c))
+    }
+    setGuardando(null)
+  }
 
-    const { data: tx } = await supabase
+  const eliminar = async (cat: Categoria) => {
+    if (!confirm(`¿Eliminar "${cat.nombre}"?\nSolo es posible si no tiene movimientos registrados.`)) return
+    setEliminando(cat.id)
+    setError(null)
+
+    const { count } = await supabase
       .from('transacciones')
-      .select('id, tipo, valor, descripcion, fecha, comprobante_url, comprobante_nombre')
-      .eq('categoria_id', id)
-      .order('fecha', { ascending: false })
-    if (tx) setTransacciones(tx as Transaccion[])
+      .select('id', { count: 'exact', head: true })
+      .eq('categoria_id', cat.id)
 
-    setLoading(false)
+    if ((count ?? 0) > 0) {
+      setError(`"${cat.nombre}" tiene ${count} movimiento(s). Desactívala en lugar de eliminarla.`)
+      setEliminando(null)
+      return
+    }
+
+    const { error } = await supabase.from('categorias_financieras').delete().eq('id', cat.id)
+    if (error) {
+      setError('No se pudo eliminar.')
+    } else {
+      setCategorias(prev => prev.filter(c => c.id !== cat.id))
+    }
+    setEliminando(null)
   }
 
-  function iniciarEdicion(t: Transaccion) {
-    setEditandoId(t.id)
-    setEditValor(String(t.valor))
-    setEditDescripcion(t.descripcion)
-    setEditFecha(t.fecha.split('T')[0])
+  const crear = async () => {
+    if (!nombre.trim()) { setError('El nombre es obligatorio.'); return }
+    if (!retiroId) return
+    setCreando(true)
+    setError(null)
+
+    const { data, error } = await supabase
+      .from('categorias_financieras')
+      .insert({
+        nombre: nombre.trim(),
+        tipo_cuenta: tipoCuenta,
+        tipo_movimiento: tipoMovimiento,
+        activa: true,
+        retiro_id: retiroId,
+        presupuesto: presupuesto ? Number(presupuesto.replace(/\D/g, '')) : 0,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      setError('No se pudo crear la categoría.')
+    } else {
+      setCategorias(prev => [...prev, data as Categoria]
+        .sort((a, b) => a.tipo_cuenta.localeCompare(b.tipo_cuenta) || a.nombre.localeCompare(b.nombre)))
+      setNombre('')
+      setPresupuesto('')
+      setMostrarForm(false)
+    }
+    setCreando(false)
   }
 
-  function cancelarEdicion() {
-    setEditandoId(null)
-    setEditValor('')
-    setEditDescripcion('')
-    setEditFecha('')
-  }
+  // Agrupar por tipo_cuenta
+  const grupos = categorias.reduce<Record<string, Categoria[]>>((acc, cat) => {
+    const key = cat.tipo_cuenta ?? 'Sin cuenta'
+    if (!acc[key]) acc[key] = []
+    acc[key].push(cat)
+    return acc
+  }, {})
 
-  async function guardarEdicion(t: Transaccion) {
-    setGuardandoEdit(true)
-    const valorFinal = Number(String(editValor).replace(/\D/g, ''))
-    const { error } = await supabase.from('transacciones').update({
-      valor: valorFinal,
-      descripcion: editDescripcion,
-      fecha: editFecha,
-    }).eq('id', t.id)
-    console.log('update error:', error, 'valor:', valorFinal)
-    setGuardandoEdit(false)
-    setEditandoId(null)
-    cargar()
-  }
-
-  async function borrar(txId: string) {
-    await supabase.from('transacciones').delete().eq('id', txId)
-    setBorrandoId(null)
-    cargar()
-  }
-
-  const ingresos = transacciones.filter(t => t.tipo === 'ingreso')
-  const egresos = transacciones.filter(t => t.tipo === 'egreso')
-  const totalIngresos = ingresos.reduce((s, t) => s + Number(t.valor), 0)
-  const totalEgresos = egresos.reduce((s, t) => s + Number(t.valor), 0)
-  const lista = tab === 'ingresos' ? ingresos : egresos
+  const activas = categorias.filter(c => c.activa).length
+  const inactivas = categorias.filter(c => !c.activa).length
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f7f8fc' }}>
@@ -102,160 +153,178 @@ export default function CategoriaPage() {
   )
 
   return (
-    <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 100 }}>
+    <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 40 }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '18px 20px 14px' }}>
-        <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ChevronLeft size={18} color="#6b7280" />
+      <div style={{ background: '#0f1787', padding: '28px 20px 24px' }}>
+        <button onClick={() => router.push('/dashboard/finanzas')}
+          style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 14, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
+          ← Finanzas
         </button>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>{categoria?.nombre}</div>
-          {(categoria?.presupuesto ?? 0) > 0 && (
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>Presupuesto: {fmt(categoria?.presupuesto ?? 0)}</div>
-          )}
+        <div style={{ fontSize: 22, fontWeight: 600, color: '#fff' }}>Categorías</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+          {activas} activas · {inactivas} inactivas
         </div>
       </div>
 
-      {/* Mini resumen */}
-      <div style={{ display: 'flex', gap: 10, padding: '0 20px 16px' }}>
-        <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '12px 14px', border: '0.5px solid #e5e7eb' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Ingresos</div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#166534' }}>{fmt(totalIngresos)}</div>
-        </div>
-        <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '12px 14px', border: '0.5px solid #e5e7eb' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Egresos</div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#dc2626' }}>{fmt(totalEgresos)}</div>
-        </div>
-        <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '12px 14px', border: '0.5px solid #e5e7eb' }}>
-          <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Balance</div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: totalIngresos - totalEgresos >= 0 ? '#0f1787' : '#dc2626' }}>
-            {fmt(totalIngresos - totalEgresos)}
+      <div style={{ padding: '20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+        {/* Error */}
+        {error && (
+          <div style={{ background: '#fef2f2', border: '0.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: '#991b1b' }}>{error}</span>
+            <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, padding: '0 20px 16px' }}>
-        {(['ingresos', 'egresos'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            padding: '7px 18px', borderRadius: 20, fontSize: 13, fontWeight: 500,
-            whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb',
-            background: tab === t ? '#0f1787' : '#fff',
-            color: tab === t ? '#fff' : '#6b7280'
-          }}>
-            {t === 'ingresos' ? `↑ Ingresos · ${ingresos.length}` : `↓ Egresos · ${egresos.length}`}
-          </button>
-        ))}
-      </div>
+        {/* Botón crear */}
+        <button
+          onClick={() => { setMostrarForm(p => !p); setError(null) }}
+          style={{ background: mostrarForm ? '#f3f4f6' : '#0f1787', color: mostrarForm ? '#374151' : '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '13px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+          {mostrarForm ? '✕ Cancelar' : '+ Nueva categoría'}
+        </button>
 
-      {/* Lista */}
-      <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {lista.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>
-            Sin {tab} registrados
-          </div>
-        ) : lista.map(t => (
-          <div key={t.id} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+        {/* Form */}
+        {mostrarForm && (
+          <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: '20px' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14', marginBottom: 16 }}>Nueva categoría</div>
 
-            {/* Modal confirmación borrado */}
-            {borrandoId === t.id && (
-              <div style={{ padding: '14px 16px', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 500 }}>¿Borrar este movimiento?</span>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => setBorrandoId(null)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, background: '#fff', border: '0.5px solid #e5e7eb', cursor: 'pointer', color: '#6b7280' }}>
-                    Cancelar
-                  </button>
-                  <button onClick={() => borrar(t.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, background: '#dc2626', border: 'none', cursor: 'pointer', color: '#fff', fontWeight: 500 }}>
-                    Sí, borrar
-                  </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Nombre *</div>
+                <input
+                  type="text"
+                  value={nombre}
+                  onChange={e => setNombre(e.target.value)}
+                  placeholder="Ej. Palancas, Pinares, Decoración…"
+                  onKeyDown={e => e.key === 'Enter' && crear()}
+                  style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Cuenta</div>
+                  <select
+                    value={tipoCuenta}
+                    onChange={e => setTipoCuenta(e.target.value)}
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                    <option value="Nequi Effetá">Nequi Effetá</option>
+                    <option value="Parroquia">Parroquia</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tipo</div>
+                  <select
+                    value={tipoMovimiento}
+                    onChange={e => setTipoMovimiento(e.target.value as TipoMovimiento)}
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                    <option value="egreso">Egreso</option>
+                    <option value="ingreso">Ingreso</option>
+                    <option value="ambos">Ambos</option>
+                  </select>
                 </div>
               </div>
-            )}
 
-            {/* Vista normal */}
-            {editandoId !== t.id && borrandoId !== t.id && (
-              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>{t.descripcion}</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                    {new Date(t.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </div>
-                  {t.comprobante_url && (
-                    <a href={t.comprobante_url} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 11, color: '#0f1787', marginTop: 4, display: 'inline-block', textDecoration: 'underline' }}>
-                      Ver comprobante
-                    </a>
+              <div>
+                <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Presupuesto (opcional)</div>
+                <input
+                  type="text"
+                  value={presupuesto}
+                  onChange={e => setPresupuesto(e.target.value)}
+                  placeholder="Ej. 500000"
+                  style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }}
+                />
+              </div>
+
+              <button
+                onClick={crear}
+                disabled={creando || !nombre.trim()}
+                style={{ background: creando || !nombre.trim() ? '#e5e7eb' : '#0f1787', color: creando || !nombre.trim() ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: '12px', fontSize: 14, fontWeight: 500, cursor: creando || !nombre.trim() ? 'not-allowed' : 'pointer', marginTop: 4 }}>
+                {creando ? 'Creando…' : 'Crear categoría'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Lista agrupada */}
+        {Object.entries(grupos).map(([cuenta, cats]) => (
+          <div key={cuenta}>
+            <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8, paddingLeft: 2 }}>
+              {cuenta}
+            </div>
+            <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+              {cats.map((cat, i) => (
+                <div key={cat.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '13px 16px',
+                  borderTop: i > 0 ? '0.5px solid #f3f4f6' : 'none',
+                  opacity: cat.activa ? 1 : 0.4,
+                  transition: 'opacity 0.2s',
+                }}>
+                  {/* Toggle */}
+                  <button
+                    onClick={() => toggleActiva(cat)}
+                    disabled={guardando === cat.id}
+                    aria-label={cat.activa ? 'Desactivar' : 'Activar'}
+                    style={{
+                      position: 'relative', width: 40, height: 22, borderRadius: 11,
+                      background: cat.activa ? '#0f1787' : '#d1d5db',
+                      border: 'none', cursor: 'pointer', flexShrink: 0,
+                      opacity: guardando === cat.id ? 0.5 : 1, transition: 'background 0.2s',
+                    }}>
+                    <span style={{
+                      position: 'absolute', top: 3, left: cat.activa ? 21 : 3,
+                      width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                      transition: 'left 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                    }} />
+                  </button>
+
+                  {/* Nombre */}
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>
+                    {cat.nombre}
+                  </span>
+
+                  {/* Badge tipo */}
+                  <span style={{
+                    fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 6,
+                    background: TIPO_LABELS[cat.tipo_movimiento]?.color ?? '#f9fafb',
+                    color: TIPO_LABELS[cat.tipo_movimiento]?.text ?? '#374151',
+                    flexShrink: 0,
+                  }}>
+                    {TIPO_LABELS[cat.tipo_movimiento]?.label}
+                  </span>
+
+                  {/* Presupuesto si existe */}
+                  {(cat.presupuesto ?? 0) > 0 && (
+                    <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>
+                      {fmt(cat.presupuesto!)}
+                    </span>
                   )}
-                </div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: tab === 'ingresos' ? '#166534' : '#dc2626', flexShrink: 0 }}>
-                  {fmt(t.valor)}
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button onClick={() => iniciarEdicion(t)} style={{ width: 30, height: 30, borderRadius: '50%', background: '#f0f1ff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <Pencil size={13} color="#0f1787" />
-                  </button>
-                  <button onClick={() => setBorrandoId(t.id)} style={{ width: 30, height: 30, borderRadius: '50%', background: '#fee2e2', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <Trash2 size={13} color="#dc2626" />
-                  </button>
-                </div>
-              </div>
-            )}
 
-            {/* Vista edición */}
-            {editandoId === t.id && (
-              <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#0f1787', marginBottom: 2 }}>Editando</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Descripción</div>
-                    <input
-                      value={editDescripcion}
-                      onChange={e => setEditDescripcion(e.target.value)}
-                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 8, padding: '8px 10px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Valor</div>
-                      <input
-                        type="number"
-                        value={editValor}
-                        onChange={e => setEditValor(e.target.value)}
-                        style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 8, padding: '8px 10px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box' }}
-                      />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Fecha</div>
-                      <input
-                        type="date"
-                        value={editFecha}
-                        onChange={e => setEditFecha(e.target.value)}
-                        style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 8, padding: '8px 10px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box' }}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                  <button onClick={cancelarEdicion} style={{ flex: 1, padding: '9px', borderRadius: 10, fontSize: 13, background: '#f3f4f6', border: 'none', cursor: 'pointer', color: '#6b7280', fontWeight: 500 }}>
-                    Cancelar
-                  </button>
-                  <button onClick={() => guardarEdicion(t)} disabled={guardandoEdit} style={{ flex: 1, padding: '9px', borderRadius: 10, fontSize: 13, background: '#0f1787', border: 'none', cursor: 'pointer', color: '#fff', fontWeight: 500 }}>
-                    {guardandoEdit ? 'Guardando...' : 'Guardar'}
+                  {/* Eliminar */}
+                  <button
+                    onClick={() => eliminar(cat)}
+                    disabled={eliminando === cat.id}
+                    aria-label="Eliminar"
+                    style={{ background: 'none', border: 'none', color: '#d1d5db', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 0 0 4px', flexShrink: 0 }}>
+                    {eliminando === cat.id ? '…' : '×'}
                   </button>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         ))}
-      </div>
 
-      {/* Botón registrar */}
-      <button
-        onClick={() => router.push(`/dashboard/finanzas/registrar?tipo=${tab === 'ingresos' ? 'ingreso' : 'egreso'}&categoria=${id}`)}
-        style={{ position: 'fixed', bottom: 28, left: 20, right: 20, background: '#0f1787', color: '#fff', border: 'none', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
-        <Plus size={18} /> Registrar {tab === 'ingresos' ? 'ingreso' : 'egreso'}
-      </button>
+        {/* Nota */}
+        <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px', marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+            <strong>Categorías inactivas</strong> no aparecen al registrar movimientos pero conservan su historial.<br />
+            Solo puedes <strong>eliminar</strong> categorías sin movimientos.
+          </div>
+        </div>
+
+      </div>
     </div>
   )
 }
