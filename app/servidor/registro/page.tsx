@@ -405,10 +405,10 @@ export default function RegistroServidor() {
           Ya puedes acceder a tu portal.
         </p>
         <div style={{
-          background: '#fef9c3', borderRadius: 10, padding: '12px 16px',
-          fontSize: 13, color: '#92400e', marginBottom: 28, lineHeight: 1.5
+          background: '#f0fdf4', borderRadius: 10, padding: '12px 16px',
+          fontSize: 13, color: '#166534', marginBottom: 28, lineHeight: 1.5
         }}>
-          📧 Revisa tu correo y confirma tu cuenta antes de iniciar sesión.
+          ✅ ¡Listo! Ya puedes iniciar sesión.
         </div>
         <button
           onClick={() => router.push('/')}
