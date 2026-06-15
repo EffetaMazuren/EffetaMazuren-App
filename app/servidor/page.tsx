@@ -35,56 +35,32 @@ export default function ServidorHome() {
   useEffect(() => {
     const cargar = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/'); return }
-
-      const userId = session.user.id
-
-      const { data: srv } = await supabase
-        .from('servidores_inscripcion')
-        .select('id, nombre_completo, es_interno, usuario_id')
-        .eq('usuario_id', userId)
-        .eq('retiro_id', RETIRO_ID)
-        .single()
-
-      if (!srv) { router.push('/'); return }
-
-      const { data: pagoData } = await supabase
-        .from('vista_pagos_servidores')
-        .select('*')
-        .eq('servidor_id', srv.id)
-        .single()
-
-      const { data: asistencias } = await supabase
-        .from('asistencias')
-        .select('asistio')
-        .eq('servidor_inscripcion_id', srv.id)
-
-      const { data: rolesData } = await supabase
-        .from('roles_retiro')
-        .select('nombre_rol')
-        .eq('servidor_inscripcion_id', srv.id)
-        .eq('retiro_id', RETIRO_ID)
-
-      const { data: mesaData } = await supabase
-        .from('asignaciones_mesa')
-        .select('mesas(nombre)')
-        .eq('servidor_inscripcion_id', srv.id)
-        .single()
-
-      const totalReuniones = asistencias?.length ?? 0
-      const asistidas = asistencias?.filter(a => a.asistio).length ?? 0
-      const costo = srv.es_interno ? 380000 : 0
-      const pagado: number = pagoData?.total_pagado ?? 0
-      const pendiente: number = Math.max(0, costo - pagado)
-
-      let estado: DatoServidor['estado_pago'] = 'sin_pago'
-      if (pagoData?.estado_pago) {
-        estado = pagoData.estado_pago as DatoServidor['estado_pago']
-      } else if (pagado >= costo && costo > 0) {
-        estado = 'completo'
-      } else if (pagado > 0) {
-        estado = 'parcial'
+      console.log('SESSION:', session)
+      
+      if (!session) { 
+        console.log('NO SESSION - redirigiendo a login')
+        router.push('/'); 
+        return 
       }
+
+      const { data: srv, error: srvErr } = await supabase
+        .from('servidores_inscripcion')
+        .select('id, nombre, es_interno, usuario_id')
+        .eq('usuario_id', session.user.id)
+        .eq('retiro_id', RETIRO_ID)
+        .single()
+
+      console.log('SERVIDOR:', srv, 'ERROR:', srvErr)
+
+      if (!srv) { 
+        console.log('NO SERVIDOR - redirigiendo a login')
+        router.push('/'); 
+        return 
+      }
+      // ... resto del código
+    }
+    cargar()
+  }, [router])
 
       setDatos({
         nombre_completo: srv.nombre_completo,
