@@ -165,7 +165,7 @@ export default function ReembolsoServidor() {
   return (
     <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 20px' }}>
-        🧾 Reembolsos
+        🧾 Facturas
       </h1>
 
       {facturas.length > 0 && (
@@ -356,7 +356,7 @@ export default function ReembolsoServidor() {
           color: '#9ca3af', fontSize: 14
         }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>🧾</div>
-          <p style={{ margin: 0 }}>No tienes solicitudes de reembolso aún</p>
+          <p style={{ margin: 0 }}>No tienes facturas registradas aún</p>
         </div>
       )}
     </div>
