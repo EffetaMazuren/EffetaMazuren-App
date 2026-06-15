@@ -329,7 +329,7 @@ export default function ServidorHome() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
-              REEMBOLSOS
+              FACTURAS
             </div>
             <div style={{ fontSize: 15, color: '#111827' }}>Subir facturas de compras</div>
             <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
