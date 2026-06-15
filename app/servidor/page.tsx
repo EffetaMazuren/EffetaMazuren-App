@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 interface DatoServidor {
   nombre_completo: string
   es_interno: boolean
-  saldo_pendiente: number | null
+  saldo_pendiente: number
   estado_pago: 'completo' | 'parcial' | 'sin_pago' | 'sorpresa'
   total_pagado: number
   costo_retiro: number
@@ -39,7 +39,6 @@ export default function ServidorHome() {
 
       const userId = session.user.id
 
-      // Datos del servidor
       const { data: srv } = await supabase
         .from('servidores_inscripcion')
         .select('id, nombre_completo, es_interno, usuario_id')
@@ -49,42 +48,38 @@ export default function ServidorHome() {
 
       if (!srv) { router.push('/'); return }
 
-      // Pagos
       const { data: pagoData } = await supabase
         .from('vista_pagos_servidores')
         .select('*')
         .eq('servidor_id', srv.id)
         .single()
 
-      // Racha asistencias
       const { data: asistencias } = await supabase
         .from('asistencias')
         .select('asistio')
         .eq('servidor_inscripcion_id', srv.id)
 
-      // Roles
       const { data: rolesData } = await supabase
         .from('roles_retiro')
         .select('nombre_rol')
         .eq('servidor_inscripcion_id', srv.id)
         .eq('retiro_id', RETIRO_ID)
 
-      // Mesa
       const { data: mesaData } = await supabase
         .from('asignaciones_mesa')
         .select('mesas(nombre)')
         .eq('servidor_inscripcion_id', srv.id)
         .single()
 
-      const totalReuniones = asistencias?.length || 0
-      const asistidas = asistencias?.filter(a => a.asistio).length || 0
+      const totalReuniones = asistencias?.length ?? 0
+      const asistidas = asistencias?.filter(a => a.asistio).length ?? 0
       const costo = srv.es_interno ? 380000 : 0
-      const pagado = pagoData?.total_pagado || 0
-      const pendiente = Math.max(0, costo - pagado)
+      const pagado: number = pagoData?.total_pagado ?? 0
+      const pendiente: number = Math.max(0, costo - pagado)
 
       let estado: DatoServidor['estado_pago'] = 'sin_pago'
       if (pagoData?.estado_pago) {
-        estado = pagoData.estado_pago
+        estado = pagoData.estado_pago as DatoServidor['estado_pago']
       } else if (pagado >= costo && costo > 0) {
         estado = 'completo'
       } else if (pagado > 0) {
@@ -100,8 +95,8 @@ export default function ServidorHome() {
         costo_retiro: costo,
         racha_asistencias: asistidas,
         total_reuniones: totalReuniones,
-        roles: rolesData?.map(r => r.nombre_rol) || [],
-        mesa: (mesaData?.mesas as any)?.nombre || null,
+        roles: rolesData?.map(r => r.nombre_rol) ?? [],
+        mesa: (mesaData?.mesas as { nombre: string } | null)?.nombre ?? null,
         inscripcion_id: srv.id,
       })
 
@@ -141,10 +136,7 @@ export default function ServidorHome() {
     <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
       {/* Bienvenida */}
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{
-          fontSize: 22, fontWeight: 700, color: '#111827',
-          margin: '0 0 4px'
-        }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>
           Hola, {datos.nombre_completo.split(' ')[0]} 👋
         </h1>
         <p style={{ color: '#6b7280', fontSize: 14, margin: 0 }}>
@@ -153,11 +145,14 @@ export default function ServidorHome() {
       </div>
 
       {/* Card estado pago */}
-      <div style={{
-        background: cfg.bg, border: `1.5px solid ${cfg.color}30`,
-        borderRadius: 14, padding: '18px 20px', marginBottom: 14,
-        cursor: 'pointer'
-      }} onClick={() => router.push('/servidor/pago')}>
+      <div
+        style={{
+          background: cfg.bg, border: `1.5px solid ${cfg.color}30`,
+          borderRadius: 14, padding: '18px 20px', marginBottom: 14,
+          cursor: 'pointer'
+        }}
+        onClick={() => router.push('/servidor/pago')}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
@@ -185,13 +180,10 @@ export default function ServidorHome() {
 
         {datos.es_interno && datos.costo_retiro > 0 && (
           <div style={{ marginTop: 12 }}>
-            <div style={{
-              height: 6, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden'
-            }}>
+            <div style={{ height: 6, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
               <div style={{
                 height: '100%', width: `${porcentajePagado}%`,
-                background: cfg.color, borderRadius: 4,
-                transition: 'width 0.6s ease'
+                background: cfg.color, borderRadius: 4, transition: 'width 0.6s ease'
               }} />
             </div>
             <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, textAlign: 'right' }}>
@@ -206,11 +198,14 @@ export default function ServidorHome() {
       </div>
 
       {/* Card asistencias */}
-      <div style={{
-        background: 'white', border: '1.5px solid #e8eaf0',
-        borderRadius: 14, padding: '18px 20px', marginBottom: 14,
-        cursor: 'pointer'
-      }} onClick={() => router.push('/servidor/asistencias')}>
+      <div
+        style={{
+          background: 'white', border: '1.5px solid #e8eaf0',
+          borderRadius: 14, padding: '18px 20px', marginBottom: 14,
+          cursor: 'pointer'
+        }}
+        onClick={() => router.push('/servidor/asistencias')}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
@@ -224,11 +219,10 @@ export default function ServidorHome() {
             </div>
           </div>
           <div style={{
-            width: 48, height: 48,
-            background: porcentajeAsist >= 80 ? '#f0fdf4' : porcentajeAsist >= 50 ? '#fffbeb' : '#f9fafb',
-            borderRadius: '50%', display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
+            width: 48, height: 48, borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontWeight: 700, fontSize: 14,
+            background: porcentajeAsist >= 80 ? '#f0fdf4' : porcentajeAsist >= 50 ? '#fffbeb' : '#f9fafb',
             color: porcentajeAsist >= 80 ? '#16a34a' : porcentajeAsist >= 50 ? '#d97706' : '#6b7280'
           }}>
             {porcentajeAsist}%
@@ -274,11 +268,14 @@ export default function ServidorHome() {
       )}
 
       {/* Card reembolso */}
-      <div style={{
-        background: 'white', border: '1.5px solid #e8eaf0',
-        borderRadius: 14, padding: '18px 20px', marginBottom: 14,
-        cursor: 'pointer'
-      }} onClick={() => router.push('/servidor/reembolso')}>
+      <div
+        style={{
+          background: 'white', border: '1.5px solid #e8eaf0',
+          borderRadius: 14, padding: '18px 20px', marginBottom: 14,
+          cursor: 'pointer'
+        }}
+        onClick={() => router.push('/servidor/reembolso')}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
