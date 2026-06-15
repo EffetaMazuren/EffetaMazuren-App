@@ -28,6 +28,7 @@ interface DashboardData {
   fechaFin: string
   diasRestantes: number
   reembolsosPendientes: number
+  alertasAsistencia: number
 }
 
 function formatCOP(value: number): string {
@@ -106,6 +107,11 @@ export default function DashboardPage() {
         .eq('tipo', 'egreso')
         .eq('estado', 'pendiente')
 
+      const { data: alertas } = await supabase
+        .from('asistencias')
+        .select('id')
+        .eq('fuera_de_horario', true)
+
       const totalPagos = pagos?.reduce((acc, p) => acc + (p.valor ?? 0), 0) ?? 0
       const totalTransacciones = transacciones?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
       const totalRecaudado = totalPagos + totalTransacciones
@@ -126,6 +132,7 @@ export default function DashboardPage() {
         fechaFin: fechaFin.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         diasRestantes,
         reembolsosPendientes: reembolsos?.length ?? 0,
+        alertasAsistencia: alertas?.length ?? 0,
       })
       setLastUpdated(new Date())
     } catch (err) {
@@ -157,6 +164,7 @@ export default function DashboardPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transacciones' }, fetchDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'caminantes' }, fetchDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'servidores_inscripcion' }, fetchDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'asistencias' }, fetchDashboard)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -306,7 +314,6 @@ export default function DashboardPage() {
                 <StatMini label="Pago completo" value={data?.caminantesPagoCompleto ?? 0} sub="de 50 cupos" color="text-emerald-700" badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }} />
                 <StatMini label="Correos enviados" value={data?.caminantesCorreoEnviado ?? 0} sub={`de ${data?.totalCaminantes ?? 0} inscritos`} color="text-blue-700" />
                 <StatMini label="Con abono" value={data?.caminantesConAbono ?? 0} sub="bloquean cupo" color="text-amber-700" />
-
                 <div className="col-span-2 bg-emerald-50/60 rounded-xl p-3 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold text-emerald-800">Total recaudado caminantes</p>
@@ -317,7 +324,6 @@ export default function DashboardPage() {
                     <p className="text-[10px] text-emerald-400">recaudado</p>
                   </div>
                 </div>
-
                 <div className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => router.push('/dashboard/caminantes')}>
                   <div>
                     <p className="text-xs font-semibold text-gray-700">Cupos disponibles</p>
@@ -407,6 +413,7 @@ export default function DashboardPage() {
               </span>
             )}
           </button>
+
           <button
             onClick={() => router.push('/dashboard/reuniones')}
             className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
@@ -416,6 +423,22 @@ export default function DashboardPage() {
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Reuniones</span>
             </div>
             <p className="text-sm text-gray-600 leading-tight">Martes y días especiales</p>
+          </button>
+
+          <button
+            onClick={() => router.push('/dashboard/asistencias')}
+            className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xl">📸</span>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Asistencias</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Ver fotos y alertas de registros fuera de horario</p>
+            {(data?.alertasAsistencia ?? 0) > 0 && (
+              <span className="absolute top-3 right-3 bg-amber-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {data?.alertasAsistencia}
+              </span>
+            )}
           </button>
         </div>
 
