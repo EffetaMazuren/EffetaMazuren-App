@@ -5,17 +5,20 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 type Paso = 'buscar' | 'confirmar' | 'crear' | 'listo'
+type ModoBusqueda = 'nombre' | 'cedula'
 
 interface ServidorEncontrado {
   id: string
-  nombre_completo: string
+  nombre: string
   es_interno: boolean
   usuario_id: string | null
+  numero_documento: string | null
 }
 
 export default function RegistroServidor() {
   const router = useRouter()
   const [paso, setPaso] = useState<Paso>('buscar')
+  const [modo, setModo] = useState<ModoBusqueda>('nombre')
   const [busqueda, setBusqueda] = useState('')
   const [resultados, setResultados] = useState<ServidorEncontrado[]>([])
   const [seleccionado, setSeleccionado] = useState<ServidorEncontrado | null>(null)
@@ -27,22 +30,33 @@ export default function RegistroServidor() {
 
   const buscarServidor = async () => {
     if (busqueda.trim().length < 3) {
-      setError('Escribe al menos 3 letras de tu nombre')
+      setError(modo === 'nombre'
+        ? 'Escribe al menos 3 letras de tu nombre'
+        : 'Escribe al menos 3 dígitos de tu cédula')
       return
     }
     setLoading(true)
     setError('')
 
-    const { data, error: err } = await supabase
+    let query = supabase
       .from('servidores_inscripcion')
-      .select('id, nombre_completo, es_interno, usuario_id')
+      .select('id, nombre, es_interno, usuario_id, numero_documento')
       .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
-      .ilike('nombre_completo', `%${busqueda.trim()}%`)
+
+    if (modo === 'nombre') {
+      query = query.ilike('nombre', `%${busqueda.trim()}%`)
+    } else {
+      query = query.ilike('numero_documento', `%${busqueda.trim()}%`)
+    }
+
+    const { data, error: err } = await query
 
     setLoading(false)
 
     if (err || !data?.length) {
-      setError('No encontramos ese nombre. Verifica con tu líder que estés inscrito.')
+      setError(modo === 'nombre'
+        ? 'No encontramos ese nombre. Verifica con tu líder que estés inscrito.'
+        : 'No encontramos esa cédula. Verifica con tu líder que estés inscrito.')
       setResultados([])
       return
     }
@@ -79,12 +93,11 @@ export default function RegistroServidor() {
     setLoading(true)
     setError('')
 
-    // 1. Crear usuario en Supabase Auth
     const { data: authData, error: authErr } = await supabase.auth.signUp({
       email: email.trim().toLowerCase(),
       password,
       options: {
-        data: { nombre_completo: seleccionado.nombre_completo }
+        data: { nombre_completo: seleccionado.nombre }
       }
     })
 
@@ -98,13 +111,12 @@ export default function RegistroServidor() {
 
     const userId = authData.user.id
 
-    // 2. Crear registro en usuarios
     const { error: usuErr } = await supabase
       .from('usuarios')
       .upsert({
         id: userId,
         email: email.trim().toLowerCase(),
-        nombre_completo: seleccionado.nombre_completo,
+        nombre_completo: seleccionado.nombre,
         rol_global: 'servidor'
       })
 
@@ -114,7 +126,6 @@ export default function RegistroServidor() {
       return
     }
 
-    // 3. Vincular servidores_inscripcion con usuario_id
     const { error: vinErr } = await supabase
       .from('servidores_inscripcion')
       .update({ usuario_id: userId })
@@ -130,39 +141,58 @@ export default function RegistroServidor() {
     setPaso('listo')
   }
 
-  // Pantalla: buscar nombre
+  // PANTALLA BUSCAR
   if (paso === 'buscar') return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
     }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
-        {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{
             fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 700,
             color: '#0f1787', letterSpacing: 4, marginBottom: 8
           }}>EFFETÁ</div>
-          <p style={{ color: '#6b7280', fontSize: 15 }}>Crear cuenta de servidor</p>
+          <p style={{ color: '#6b7280', fontSize: 15, margin: 0 }}>Crear cuenta de servidor</p>
         </div>
 
         <div style={{
           background: 'white', borderRadius: 16,
           padding: 28, boxShadow: '0 2px 16px rgba(0,0,0,0.06)'
         }}>
-          <h2 style={{ margin: '0 0 8px', fontSize: 18, color: '#111827', fontWeight: 600 }}>
-            ¿Cuál es tu nombre?
+          <h2 style={{ margin: '0 0 16px', fontSize: 18, color: '#111827', fontWeight: 600 }}>
+            Búscate en la lista
           </h2>
-          <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.5 }}>
-            Escribe tu nombre como aparece en la lista de servidores del retiro.
-          </p>
+
+          {/* Toggle nombre / cédula */}
+          <div style={{
+            display: 'flex', background: '#f3f4f6',
+            borderRadius: 10, padding: 4, marginBottom: 20, gap: 4
+          }}>
+            {(['nombre', 'cedula'] as ModoBusqueda[]).map(m => (
+              <button
+                key={m}
+                onClick={() => { setModo(m); setBusqueda(''); setError('') }}
+                style={{
+                  flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  background: modo === m ? 'white' : 'transparent',
+                  color: modo === m ? '#0f1787' : '#6b7280',
+                  boxShadow: modo === m ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                  transition: 'all 0.15s'
+                }}
+              >
+                {m === 'nombre' ? '👤 Por nombre' : '🪪 Por cédula'}
+              </button>
+            ))}
+          </div>
 
           <input
-            type="text"
+            type={modo === 'cedula' ? 'number' : 'text'}
             value={busqueda}
             onChange={e => { setBusqueda(e.target.value); setError('') }}
             onKeyDown={e => e.key === 'Enter' && buscarServidor()}
-            placeholder="Ej: María González"
+            placeholder={modo === 'nombre' ? 'Ej: María González' : 'Ej: 1000181545'}
             style={{
               width: '100%', padding: '12px 14px', borderRadius: 10,
               border: '1.5px solid #e2e4f0', fontSize: 16,
@@ -183,12 +213,13 @@ export default function RegistroServidor() {
             onClick={buscarServidor}
             disabled={loading}
             style={{
-              width: '100%', padding: '13px', background: loading ? '#9ca3af' : '#0f1787',
+              width: '100%', padding: '13px',
+              background: loading ? '#9ca3af' : '#0f1787',
               color: 'white', border: 'none', borderRadius: 10,
-              fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s'
+              fontSize: 15, fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer'
             }}
-          >{loading ? 'Buscando...' : 'Buscar mi nombre'}</button>
+          >{loading ? 'Buscando...' : 'Buscar'}</button>
         </div>
 
         <p style={{ textAlign: 'center', marginTop: 24, fontSize: 14, color: '#6b7280' }}>
@@ -205,7 +236,7 @@ export default function RegistroServidor() {
     </div>
   )
 
-  // Pantalla: confirmar quién eres
+  // PANTALLA CONFIRMAR
   if (paso === 'confirmar') return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
@@ -217,7 +248,7 @@ export default function RegistroServidor() {
             fontFamily: 'Georgia, serif', fontSize: 28, fontWeight: 700,
             color: '#0f1787', letterSpacing: 4, marginBottom: 6
           }}>EFFETÁ</div>
-          <p style={{ color: '#6b7280', fontSize: 14 }}>Selecciona tu nombre</p>
+          <p style={{ color: '#6b7280', fontSize: 14, margin: 0 }}>¿Cuál eres tú?</p>
         </div>
 
         <div style={{
@@ -236,17 +267,16 @@ export default function RegistroServidor() {
                 style={{
                   padding: '14px 16px', border: '1.5px solid #e2e4f0',
                   borderRadius: 12, background: 'white', cursor: 'pointer',
-                  textAlign: 'left', transition: 'all 0.15s'
+                  textAlign: 'left'
                 }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = '#0f1787')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = '#e2e4f0')}
               >
                 <div style={{ fontWeight: 600, color: '#111827', fontSize: 15 }}>
-                  {s.nombre_completo}
+                  {s.nombre}
                 </div>
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
+                  {s.numero_documento && `CC ${s.numero_documento} · `}
                   {s.es_interno ? 'Servidor interno' : 'Servidor externo'}
-                  {s.usuario_id && ' · Cuenta ya creada'}
+                  {s.usuario_id && ' · ⚠️ Cuenta ya creada'}
                 </div>
               </button>
             ))}
@@ -273,7 +303,7 @@ export default function RegistroServidor() {
     </div>
   )
 
-  // Pantalla: crear credenciales
+  // PANTALLA CREAR CUENTA
   if (paso === 'crear') return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
@@ -291,21 +321,22 @@ export default function RegistroServidor() {
           background: 'white', borderRadius: 16,
           padding: 28, boxShadow: '0 2px 16px rgba(0,0,0,0.06)'
         }}>
-          {/* Bienvenida */}
           <div style={{
-            background: '#f0f2ff', borderRadius: 10, padding: '12px 16px', marginBottom: 24
+            background: '#f0f2ff', borderRadius: 10,
+            padding: '12px 16px', marginBottom: 24
           }}>
             <p style={{ margin: 0, fontSize: 13, color: '#4b5563' }}>Creando cuenta para</p>
             <p style={{ margin: '2px 0 0', fontWeight: 700, color: '#0f1787', fontSize: 16 }}>
-              {seleccionado?.nombre_completo}
+              {seleccionado?.nombre}
             </p>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
-                Correo electrónico
-              </label>
+              <label style={{
+                display: 'block', fontSize: 13, fontWeight: 600,
+                color: '#374151', marginBottom: 6
+              }}>Correo electrónico</label>
               <input
                 type="email"
                 value={email}
@@ -320,9 +351,10 @@ export default function RegistroServidor() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
-                Contraseña
-              </label>
+              <label style={{
+                display: 'block', fontSize: 13, fontWeight: 600,
+                color: '#374151', marginBottom: 6
+              }}>Contraseña</label>
               <input
                 type="password"
                 value={password}
@@ -337,9 +369,10 @@ export default function RegistroServidor() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
-                Repetir contraseña
-              </label>
+              <label style={{
+                display: 'block', fontSize: 13, fontWeight: 600,
+                color: '#374151', marginBottom: 6
+              }}>Repetir contraseña</label>
               <input
                 type="password"
                 value={password2}
@@ -378,8 +411,7 @@ export default function RegistroServidor() {
             style={{
               marginTop: 10, width: '100%', padding: '11px',
               background: 'none', border: '1.5px solid #e2e4f0',
-              borderRadius: 10, color: '#6b7280', fontSize: 14,
-              cursor: 'pointer'
+              borderRadius: 10, color: '#6b7280', fontSize: 14, cursor: 'pointer'
             }}
           >← Elegir otro nombre</button>
         </div>
@@ -387,7 +419,7 @@ export default function RegistroServidor() {
     </div>
   )
 
-  // Pantalla: listo
+  // PANTALLA LISTO
   return (
     <div style={{
       minHeight: '100vh', background: '#f7f8fc',
@@ -399,22 +431,21 @@ export default function RegistroServidor() {
           ¡Cuenta creada!
         </h2>
         <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>
-          Bienvenido, <strong>{seleccionado?.nombre_completo.split(' ')[0]}</strong>.
-          Ya puedes acceder a tu portal de servidor.
+          Bienvenido, <strong>{seleccionado?.nombre.split(' ')[0]}</strong>.
+          Ya puedes acceder a tu portal.
         </p>
-        <p style={{
+        <div style={{
           background: '#fef9c3', borderRadius: 10, padding: '12px 16px',
           fontSize: 13, color: '#92400e', marginBottom: 28, lineHeight: 1.5
         }}>
           📧 Revisa tu correo y confirma tu cuenta antes de iniciar sesión.
-        </p>
+        </div>
         <button
           onClick={() => router.push('/')}
           style={{
-            width: '100%', padding: '13px',
-            background: '#0f1787', color: 'white',
-            border: 'none', borderRadius: 10, fontSize: 15,
-            fontWeight: 600, cursor: 'pointer'
+            width: '100%', padding: '13px', background: '#0f1787',
+            color: 'white', border: 'none', borderRadius: 10,
+            fontSize: 15, fontWeight: 600, cursor: 'pointer'
           }}
         >Ir al inicio de sesión</button>
       </div>
