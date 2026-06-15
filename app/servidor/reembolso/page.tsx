@@ -44,7 +44,6 @@ export default function ReembolsoServidor() {
       if (!srv) return
       setInscripcionId(srv.id)
 
-      // Facturas de reembolso (tipo egreso, subidas por servidor)
       const { data } = await supabase
         .from('transacciones')
         .select('id, monto, fecha, descripcion, url_comprobante, estado')
@@ -52,7 +51,7 @@ export default function ReembolsoServidor() {
         .eq('tipo', 'egreso')
         .order('fecha', { ascending: false })
 
-      setFacturas(data || [])
+      setFacturas(data ?? [])
       setLoading(false)
     }
     cargar()
@@ -90,7 +89,6 @@ export default function ReembolsoServidor() {
     setSubiendo(true)
     setError('')
 
-    // Subir archivo
     const ext = archivoSeleccionado.name.split('.').pop()
     const nombre = `finanzas/${RETIRO_ID}/reembolso_${inscripcionId}_${Date.now()}.${ext}`
 
@@ -106,7 +104,6 @@ export default function ReembolsoServidor() {
 
     const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(nombre)
 
-    // Registrar como egreso pendiente
     const montoNum = parseInt(monto.replace(/[.,\s]/g, ''), 10)
     const { error: txErr } = await supabase
       .from('transacciones')
@@ -136,10 +133,14 @@ export default function ReembolsoServidor() {
         .eq('servidor_inscripcion_id', inscripcionId)
         .eq('tipo', 'egreso')
         .order('fecha', { ascending: false })
-      setFacturas(data || [])
+      setFacturas(data ?? [])
     }
 
     setSubiendo(false)
+  }
+
+  const abrirArchivo = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   const totalPendiente = facturas
@@ -167,7 +168,6 @@ export default function ReembolsoServidor() {
         🧾 Reembolsos
       </h1>
 
-      {/* Resumen */}
       {facturas.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
           <div style={{
@@ -191,7 +191,6 @@ export default function ReembolsoServidor() {
         </div>
       )}
 
-      {/* Formulario nueva solicitud */}
       <div style={{
         background: 'white', border: '1.5px solid #e8eaf0',
         borderRadius: 14, padding: '20px', marginBottom: 20
@@ -220,12 +219,12 @@ export default function ReembolsoServidor() {
 
           <div>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
-              ¿Para qué fue la compra?
+              Para qué fue la compra
             </label>
             <textarea
               value={descripcion}
               onChange={e => { setDescripcion(e.target.value); setError('') }}
-              placeholder="Ej: Impresión de formatos para el retiro, compra de marcadores..."
+              placeholder="Ej: Impresión de formatos para el retiro..."
               rows={3}
               style={{
                 width: '100%', padding: '11px 14px', borderRadius: 10,
@@ -285,11 +284,12 @@ export default function ReembolsoServidor() {
             fontSize: 14, fontWeight: 600,
             cursor: subiendo ? 'not-allowed' : 'pointer'
           }}
-        >{subiendo ? '⏳ Enviando...' : 'Enviar solicitud'}</button>
+        >
+          {subiendo ? '⏳ Enviando...' : 'Enviar solicitud'}
+        </button>
       </div>
 
-      {/* Historial */}
-      {facturas.length > 0 && (
+      {facturas.length > 0 ? (
         <div>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, color: '#374151', fontWeight: 600 }}>
             Mis solicitudes
@@ -311,12 +311,14 @@ export default function ReembolsoServidor() {
                       </div>
                     )}
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
-                      {f.fecha ? new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-CO', {
-                        day: 'numeric', month: 'short', year: 'numeric'
-                      }) : '—'}
+                      {f.fecha
+                        ? new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-CO', {
+                            day: 'numeric', month: 'short', year: 'numeric'
+                          })
+                        : '—'}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginLeft: 12 }}>
                     <span style={{
                       fontSize: 11, padding: '3px 8px', borderRadius: 20, fontWeight: 600,
                       background: f.estado === 'aprobado' ? '#f0fdf4'
@@ -331,15 +333,16 @@ export default function ReembolsoServidor() {
                         : '⏳ Pendiente'}
                     </span>
                     {f.url_comprobante && (
-                      
-                        href={f.url_comprobante}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => abrirArchivo(f.url_comprobante!)}
                         style={{
                           fontSize: 11, color: '#0f1787', fontWeight: 600,
-                          textDecoration: 'none'
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          padding: 0
                         }}
-                      >Ver archivo →</a>
+                      >
+                        Ver archivo →
+                      </button>
                     )}
                   </div>
                 </div>
@@ -347,9 +350,7 @@ export default function ReembolsoServidor() {
             ))}
           </div>
         </div>
-      )}
-
-      {facturas.length === 0 && (
+      ) : (
         <div style={{
           textAlign: 'center', padding: '32px 20px',
           color: '#9ca3af', fontSize: 14
