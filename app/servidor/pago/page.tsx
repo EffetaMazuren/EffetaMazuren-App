@@ -137,6 +137,10 @@ export default function PagoServidor() {
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  const abrirComprobante = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   const estadoPagoColor: Record<string, string> = {
     completo: '#16a34a',
     parcial: '#d97706',
@@ -298,33 +302,18 @@ export default function PagoServidor() {
                     </div>
                   )}
                 </div>
-                {c.url_comprobante ? (
-  
-    href={c.url_comprobante}
-    target="_blank"
-    rel="noopener noreferrer"
-    style={{
-      padding: '8px 12px', background: '#f0f2ff',
-      color: '#0f1787', borderRadius: 8, fontSize: 12,
-      fontWeight: 600, textDecoration: 'none',
-      flexShrink: 0, marginLeft: 12
-    }}
-  >
-    Ver →
-  </a>
-) : null}
-                    href={c.url_comprobante}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {c.url_comprobante && (
+                  <button
+                    onClick={() => abrirComprobante(c.url_comprobante!)}
                     style={{
                       padding: '8px 12px', background: '#f0f2ff',
                       color: '#0f1787', borderRadius: 8, fontSize: 12,
-                      fontWeight: 600, textDecoration: 'none',
+                      fontWeight: 600, border: 'none', cursor: 'pointer',
                       flexShrink: 0, marginLeft: 12
                     }}
                   >
                     Ver →
-                  </a>
+                  </button>
                 )}
               </div>
             ))}
