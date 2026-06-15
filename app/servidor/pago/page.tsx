@@ -298,8 +298,21 @@ export default function PagoServidor() {
                     </div>
                   )}
                 </div>
-                {c.url_comprobante && (
-                  
+                {c.url_comprobante ? (
+  
+    href={c.url_comprobante}
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{
+      padding: '8px 12px', background: '#f0f2ff',
+      color: '#0f1787', borderRadius: 8, fontSize: 12,
+      fontWeight: 600, textDecoration: 'none',
+      flexShrink: 0, marginLeft: 12
+    }}
+  >
+    Ver →
+  </a>
+) : null}
                     href={c.url_comprobante}
                     target="_blank"
                     rel="noopener noreferrer"
