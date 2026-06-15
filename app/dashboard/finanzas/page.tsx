@@ -21,7 +21,9 @@ type Categoria = {
   id: string
   nombre: string
   presupuesto: number
-  tipo_cuenta: 'parroquia' | 'effeta'
+  tipo_cuenta: string
+  tipo_movimiento?: string
+  activa?: boolean
 }
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
@@ -30,56 +32,111 @@ const CATS_PARROQUIA = ['Inscripciones caminantes', 'Inscripciones servidores', 
 
 export default function FinanzasPage() {
   const router = useRouter()
-  const [tab, setTab] = useState<'resumen' | 'ingresos' | 'egresos' | 'comprobantes'>('resumen')
+  const [tab, setTab] = useState<'resumen' | 'ingresos' | 'egresos' | 'comprobantes' | 'categorias'>('resumen')
   const [transacciones, setTransacciones] = useState<Transaccion[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [todasCategorias, setTodasCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
+  const [retiroId, setRetiroId] = useState('')
   const [totalPagadoCaminantes, setTotalPagadoCaminantes] = useState(0)
   const [totalPagadoServidores, setTotalPagadoServidores] = useState(0)
   const [imagenAmpliada, setImagenAmpliada] = useState<Transaccion | null>(null)
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
 
+  // Estado para tab categorias
+  const [catError, setCatError] = useState('')
+  const [catMostrarForm, setCatMostrarForm] = useState(false)
+  const [catNombre, setCatNombre] = useState('')
+  const [catCuenta, setCatCuenta] = useState('Nequi Effetá')
+  const [catTipo, setCatTipo] = useState('egreso')
+  const [catCreando, setCatCreando] = useState(false)
+  const [catGuardando, setCatGuardando] = useState('')
+  const [catEliminando, setCatEliminando] = useState('')
+
   useEffect(() => {
-    async function cargar() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/'); return }
-      const { data: u } = await supabase.from('usuarios').select('rol').eq('id', user.id).single()
-      if (!u || u.rol !== 'lider') { router.push('/dashboard'); return }
-
-      const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
-      if (!r) return
-
-      const { data: cats } = await supabase
-        .from('categorias_financieras')
-        .select('id, nombre, presupuesto')
-        .eq('retiro_id', r.id)
-        .eq('activa', true)
-        .order('orden')
-      if (cats) {
-        setCategorias(cats.map(c => ({
-          ...c,
-          tipo_cuenta: CATS_PARROQUIA.includes(c.nombre) ? 'parroquia' : 'effeta'
-        })))
-      }
-
-      const { data: tx } = await supabase
-        .from('transacciones')
-        .select('*, categorias_financieras(nombre)')
-        .eq('retiro_id', r.id)
-        .order('fecha', { ascending: false })
-      if (tx) setTransacciones(tx as Transaccion[])
-
-      const { data: pagCam } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'caminante')
-      setTotalPagadoCaminantes(pagCam?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
-
-      const { data: pagSer } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'servidor')
-      setTotalPagadoServidores(pagSer?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
-
-      setLoading(false)
-    }
     cargar()
   }, [])
 
+  async function cargar() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.push('/'); return }
+    const { data: u } = await supabase.from('usuarios').select('rol').eq('id', user.id).single()
+    if (!u || u.rol !== 'lider') { router.push('/dashboard'); return }
+
+    const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
+    if (!r) return
+    setRetiroId(r.id)
+
+    const { data: cats } = await supabase
+      .from('categorias_financieras')
+      .select('*')
+      .eq('retiro_id', r.id)
+      .order('orden')
+
+    if (cats) {
+      setTodasCategorias(cats)
+      setCategorias(cats
+        .filter((c: Categoria) => c.activa !== false)
+        .map((c: Categoria) => ({
+          ...c,
+          tipo_cuenta: CATS_PARROQUIA.includes(c.nombre) ? 'parroquia' : 'effeta'
+        }))
+      )
+    }
+
+    const { data: tx } = await supabase
+      .from('transacciones')
+      .select('*, categorias_financieras(nombre)')
+      .eq('retiro_id', r.id)
+      .order('fecha', { ascending: false })
+    if (tx) setTransacciones(tx as Transaccion[])
+
+    const { data: pagCam } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'caminante')
+    setTotalPagadoCaminantes(pagCam?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
+
+    const { data: pagSer } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'servidor')
+    setTotalPagadoServidores(pagSer?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
+
+    setLoading(false)
+  }
+
+  // ── Funciones categorías ──────────────────────────────────────────────────
+  async function toggleActiva(cat: Categoria) {
+    setCatGuardando(cat.id)
+    await supabase.from('categorias_financieras').update({ activa: !cat.activa }).eq('id', cat.id)
+    setTodasCategorias(prev => prev.map(c => c.id === cat.id ? { ...c, activa: !cat.activa } : c))
+    setCatGuardando('')
+  }
+
+  async function eliminarCat(cat: Categoria) {
+    if (!confirm(`¿Eliminar "${cat.nombre}"?`)) return
+    setCatEliminando(cat.id)
+    const { count } = await supabase.from('transacciones').select('id', { count: 'exact', head: true }).eq('categoria_id', cat.id)
+    if ((count ?? 0) > 0) {
+      setCatError(`"${cat.nombre}" tiene ${count} movimiento(s). Desactívala en lugar de eliminarla.`)
+      setCatEliminando('')
+      return
+    }
+    await supabase.from('categorias_financieras').delete().eq('id', cat.id)
+    setTodasCategorias(prev => prev.filter(c => c.id !== cat.id))
+    setCatEliminando('')
+  }
+
+  async function crearCat() {
+    if (!catNombre.trim()) { setCatError('El nombre es obligatorio.'); return }
+    setCatCreando(true)
+    const { data, error } = await supabase
+      .from('categorias_financieras')
+      .insert({ nombre: catNombre.trim(), tipo_cuenta: catCuenta, tipo_movimiento: catTipo, activa: true, retiro_id: retiroId, presupuesto: 0 })
+      .select().single()
+    if (error) { setCatError('No se pudo crear.'); setCatCreando(false); return }
+    setTodasCategorias(prev => [...prev, data])
+    setCatNombre('')
+    setCatMostrarForm(false)
+    setCatCreando(false)
+  }
+
+  // ── Cálculos ──────────────────────────────────────────────────────────────
   const ingresosEffeta = transacciones.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + Number(t.valor), 0)
   const egresosEffeta = transacciones.filter(t => t.tipo === 'egreso').reduce((s, t) => s + Number(t.valor), 0)
   const balanceEffeta = ingresosEffeta - egresosEffeta
@@ -89,6 +146,13 @@ export default function FinanzasPage() {
   const txIngresos = transacciones.filter(t => t.tipo === 'ingreso')
   const txEgresos = transacciones.filter(t => t.tipo === 'egreso')
   const txConComprobante = transacciones.filter(t => t.comprobante_url)
+
+  const gruposCats = todasCategorias.reduce<Record<string, Categoria[]>>((acc, cat) => {
+    const k = cat.tipo_cuenta || 'Sin cuenta'
+    if (!acc[k]) acc[k] = []
+    acc[k].push(cat)
+    return acc
+  }, {})
 
   const COLORES = [
     { bg: '#eff6ff', border: '#bfdbfe', texto: '#1e40af' },
@@ -138,7 +202,8 @@ export default function FinanzasPage() {
           { key: 'resumen', label: 'Resumen' },
           { key: 'ingresos', label: '↑ Ingresos' },
           { key: 'egresos', label: '↓ Egresos' },
-          { key: 'comprobantes', label: `🧾 Comprobantes · ${txConComprobante.length}` },
+          { key: 'comprobantes', label: `🧾 ${txConComprobante.length}` },
+          { key: 'categorias', label: '🗂 Categorías' },
         ] as const).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: '7px 18px', borderRadius: 20, fontSize: 13, fontWeight: 500,
@@ -156,27 +221,6 @@ export default function FinanzasPage() {
         {/* ── RESUMEN ── */}
         {tab === 'resumen' && (
           <>
-            {/* Botón Categorías */}
-            <button
-              onClick={() => router.push('/dashboard/finanzas/categorias')}
-              style={{
-                width: '100%', background: '#fff', border: '0.5px solid #e5e7eb',
-                borderRadius: 12, padding: '12px 16px', display: 'flex',
-                alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
-              }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                  🗂
-                </div>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>Categorías</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>Crear, activar o desactivar</div>
-                </div>
-              </div>
-              <span style={{ fontSize: 20, color: '#d1d5db' }}>›</span>
-            </button>
-
-            {/* Card Parroquia */}
             <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <div>
@@ -301,26 +345,15 @@ export default function FinanzasPage() {
         {tab === 'comprobantes' && (
           <>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 }}>
-              <button onClick={() => setFiltroCategoria('todas')} style={{
-                padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500,
-                whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb',
-                background: filtroCategoria === 'todas' ? '#0f1787' : '#fff',
-                color: filtroCategoria === 'todas' ? '#fff' : '#6b7280'
-              }}>
+              <button onClick={() => setFiltroCategoria('todas')} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtroCategoria === 'todas' ? '#0f1787' : '#fff', color: filtroCategoria === 'todas' ? '#fff' : '#6b7280' }}>
                 Todas · {txConComprobante.length}
               </button>
               {categorias.filter(c => c.tipo_cuenta === 'effeta' && txConComprobante.some(t => t.categoria_id === c.id)).map(cat => (
-                <button key={cat.id} onClick={() => setFiltroCategoria(cat.id)} style={{
-                  padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500,
-                  whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb',
-                  background: filtroCategoria === cat.id ? '#0f1787' : '#fff',
-                  color: filtroCategoria === cat.id ? '#fff' : '#6b7280'
-                }}>
+                <button key={cat.id} onClick={() => setFiltroCategoria(cat.id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtroCategoria === cat.id ? '#0f1787' : '#fff', color: filtroCategoria === cat.id ? '#fff' : '#6b7280' }}>
                   {cat.nombre} · {txConComprobante.filter(t => t.categoria_id === cat.id).length}
                 </button>
               ))}
             </div>
-
             {txConComprobante.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
@@ -342,9 +375,7 @@ export default function FinanzasPage() {
                             <img src={t.comprobante_url!} alt={t.descripcion} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }} />
                             <div style={{ padding: '8px 10px' }}>
                               <div style={{ fontSize: 11, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626', marginTop: 2 }}>
-                                {t.tipo === 'egreso' ? '−' : '+'}{fmt(t.valor)}
-                              </div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626', marginTop: 2 }}>{t.tipo === 'egreso' ? '−' : '+'}{fmt(t.valor)}</div>
                             </div>
                           </div>
                         ))}
@@ -362,9 +393,7 @@ export default function FinanzasPage() {
                       <div style={{ fontSize: 12, fontWeight: 500, color: '#0d0d14', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descripcion}</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                         <span style={{ fontSize: 11, color: '#9ca3af' }}>{new Date(t.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}</span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>
-                          {t.tipo === 'egreso' ? '−' : '+'}{fmt(t.valor)}
-                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>{t.tipo === 'egreso' ? '−' : '+'}{fmt(t.valor)}</span>
                       </div>
                     </div>
                   </div>
@@ -373,6 +402,93 @@ export default function FinanzasPage() {
             )}
           </>
         )}
+
+        {/* ── CATEGORÍAS ── */}
+        {tab === 'categorias' && (
+          <>
+            <div style={{ fontSize: 13, color: '#6b7280' }}>
+              {todasCategorias.filter(c => c.activa !== false).length} activas · {todasCategorias.filter(c => c.activa === false).length} inactivas
+            </div>
+
+            {catError !== '' && (
+              <div style={{ background: '#fef2f2', border: '0.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#991b1b' }}>{catError}</span>
+                <button onClick={() => setCatError('')} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 20 }}>×</button>
+              </div>
+            )}
+
+            <button onClick={() => { setCatMostrarForm(p => !p); setCatError('') }}
+              style={{ background: catMostrarForm ? '#f3f4f6' : '#0f1787', color: catMostrarForm ? '#374151' : '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '13px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+              {catMostrarForm ? '✕ Cancelar' : '+ Nueva categoría'}
+            </button>
+
+            {catMostrarForm && (
+              <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>Nueva categoría</div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Nombre *</div>
+                  <input type="text" value={catNombre} onChange={e => setCatNombre(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearCat()}
+                    placeholder="Ej. Palancas, Pinares…"
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Cuenta</div>
+                    <select value={catCuenta} onChange={e => setCatCuenta(e.target.value)}
+                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                      <option value="Nequi Effetá">Nequi Effetá</option>
+                      <option value="Parroquia">Parroquia</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tipo</div>
+                    <select value={catTipo} onChange={e => setCatTipo(e.target.value)}
+                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                      <option value="egreso">Egreso</option>
+                      <option value="ingreso">Ingreso</option>
+                      <option value="ambos">Ambos</option>
+                    </select>
+                  </div>
+                </div>
+                <button onClick={crearCat} disabled={catCreando || !catNombre.trim()}
+                  style={{ background: catCreando || !catNombre.trim() ? '#e5e7eb' : '#0f1787', color: catCreando || !catNombre.trim() ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 500, cursor: catCreando || !catNombre.trim() ? 'not-allowed' : 'pointer' }}>
+                  {catCreando ? 'Creando…' : 'Crear categoría'}
+                </button>
+              </div>
+            )}
+
+            {Object.entries(gruposCats).map(([cuenta, cats]) => (
+              <div key={cuenta}>
+                <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8, paddingLeft: 2 }}>{cuenta}</div>
+                <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+                  {cats.map((cat, i) => (
+                    <div key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderTop: i > 0 ? '0.5px solid #f3f4f6' : 'none', opacity: cat.activa === false ? 0.4 : 1 }}>
+                      <button onClick={() => toggleActiva(cat)} disabled={catGuardando === cat.id}
+                        style={{ position: 'relative', width: 40, height: 22, borderRadius: 11, background: cat.activa === false ? '#d1d5db' : '#0f1787', border: 'none', cursor: 'pointer', flexShrink: 0, opacity: catGuardando === cat.id ? 0.5 : 1 }}>
+                        <span style={{ position: 'absolute', top: 3, left: cat.activa === false ? 3 : 21, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', display: 'block' }} />
+                      </button>
+                      <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>{cat.nombre}</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 6, background: cat.tipo_movimiento === 'ingreso' ? '#f0fdf4' : cat.tipo_movimiento === 'egreso' ? '#fef2f2' : '#f9fafb', color: cat.tipo_movimiento === 'ingreso' ? '#166534' : cat.tipo_movimiento === 'egreso' ? '#991b1b' : '#374151', flexShrink: 0 }}>
+                        {cat.tipo_movimiento === 'ingreso' ? 'Ingreso' : cat.tipo_movimiento === 'egreso' ? 'Egreso' : 'Ambos'}
+                      </span>
+                      <button onClick={() => eliminarCat(cat)} disabled={catEliminando === cat.id}
+                        style={{ background: 'none', border: 'none', color: '#d1d5db', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 0 0 4px', flexShrink: 0 }}>
+                        {catEliminando === cat.id ? '…' : '×'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+                <strong>Categorías inactivas</strong> no aparecen al registrar movimientos pero conservan su historial. Solo puedes <strong>eliminar</strong> categorías sin movimientos.
+              </div>
+            </div>
+          </>
+        )}
+
       </div>
 
       {/* Modal imagen ampliada */}
