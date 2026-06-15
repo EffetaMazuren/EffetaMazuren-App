@@ -11,19 +11,21 @@ export default function ReembolsosPage() {
   const [procesando, setProcesando] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<'pendiente' | 'aprobado' | 'rechazado'>('pendiente');
 
-  useEffect(() => {
-    cargar();
-  }, []);
+  useEffect(() => { cargar(); }, []);
 
   async function cargar() {
     setLoading(true);
     const [{ data: trans }, { data: cats }] = await Promise.all([
       supabase
         .from('transacciones')
-        .select(`*, servidor_inscripcion:servidor_inscripcion_id(nombre)`)
+        .select(`
+          *,
+          servidor_inscripcion:servidor_inscripcion_id(nombre),
+          categoria:categoria_id(nombre)
+        `)
         .eq('retiro_id', RETIRO_ID)
         .eq('tipo', 'egreso')
-        .order('fecha', { ascending: false }),
+        .order('created_at', { ascending: false }),
       supabase.from('categorias_financieras').select('*').order('nombre'),
     ]);
     setSolicitudes(trans || []);
@@ -55,16 +57,12 @@ export default function ReembolsosPage() {
     setProcesando(null);
   }
 
-  const filtradas = solicitudes.filter(s => s.estado === filtro);
-  const pendientes = solicitudes.filter(s => s.estado === 'pendiente').length;
+  const filtradas = solicitudes.filter(s => (s.estado || 'pendiente') === filtro);
+  const pendientes = solicitudes.filter(s => (s.estado || 'pendiente') === 'pendiente').length;
 
   const tabStyle = (tab: string) => ({
-    padding: '8px 20px',
-    borderRadius: 8,
-    border: 'none',
-    cursor: 'pointer',
-    fontWeight: 600,
-    fontSize: 14,
+    padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer',
+    fontWeight: 600 as const, fontSize: 14,
     background: filtro === tab ? '#0f1787' : '#f1f5f9',
     color: filtro === tab ? '#fff' : '#64748b',
   });
@@ -72,6 +70,8 @@ export default function ReembolsosPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '32px 16px' }}>
+        
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 700, color: '#0f1787', margin: 0 }}>
@@ -79,12 +79,12 @@ export default function ReembolsosPage() {
             </h1>
             {pendientes > 0 && (
               <p style={{ color: '#d97706', fontSize: 14, margin: '4px 0 0', fontWeight: 500 }}>
-                {pendientes} solicitud{pendientes > 1 ? 'es' : ''} pendiente{pendientes > 1 ? 's' : ''}
+                ⚠️ {pendientes} solicitud{pendientes > 1 ? 'es' : ''} pendiente{pendientes > 1 ? 's' : ''}
               </p>
             )}
           </div>
           <button
-            onClick={() => window.history.back()}
+            onClick={() => window.location.href = '/dashboard'}
             style={{ background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', color: '#64748b', fontWeight: 500 }}
           >
             ← Volver
@@ -108,8 +108,8 @@ export default function ReembolsosPage() {
         {loading ? (
           <p style={{ color: '#94a3b8', textAlign: 'center', padding: 40 }}>Cargando...</p>
         ) : filtradas.length === 0 ? (
-          <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', color: '#94a3b8' }}>
-            No hay solicitudes {filtro === 'pendiente' ? 'pendientes' : filtro === 'aprobado' ? 'aprobadas' : 'rechazadas'}
+          <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 15 }}>
+            {filtro === 'pendiente' ? '✅ No hay solicitudes pendientes' : `No hay solicitudes ${filtro}s`}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -138,44 +138,58 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
     aprobado: '#16a34a',
     rechazado: '#dc2626',
   };
+  const estadoEmoji: Record<string, string> = {
+    pendiente: '⏳',
+    aprobado: '✅',
+    rechazado: '❌',
+  };
+
+  const estado = s.estado || 'pendiente';
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 1px 8px rgba(0,0,0,0.07)' }}>
+      
+      {/* Top row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div>
-          <span style={{ fontWeight: 700, fontSize: 20, color: '#0f1787' }}>
-            ${parseInt(s.monto).toLocaleString('es-CO')} COP
+          <span style={{ fontWeight: 700, fontSize: 22, color: '#0f1787' }}>
+            ${parseInt(s.valor).toLocaleString('es-CO')} COP
           </span>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
-            {s.servidor_inscripcion?.nombre || 'Servidor desconocido'}
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b', fontWeight: 500 }}>
+            👤 {s.servidor_inscripcion?.nombre || 'Servidor'}
           </p>
         </div>
-        <span style={{ fontSize: 12, fontWeight: 600, color: estadoColor[s.estado], background: '#f8fafc', padding: '4px 12px', borderRadius: 20 }}>
-          {s.estado}
+        <span style={{ fontSize: 12, fontWeight: 600, color: estadoColor[estado], background: '#f8fafc', padding: '4px 12px', borderRadius: 20, border: `1px solid ${estadoColor[estado]}20` }}>
+          {estadoEmoji[estado]} {estado}
         </span>
       </div>
 
-      <p style={{ fontSize: 14, color: '#334155', marginBottom: 12, lineHeight: 1.5 }}>
-        {s.descripcion || s.notas || '(Sin descripción)'}
+      {/* Descripcion */}
+      <p style={{ fontSize: 14, color: '#334155', marginBottom: 8, lineHeight: 1.5, background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
+        {s.descripcion || '(Sin descripción)'}
       </p>
 
-      <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 16 }}>
-        {s.fecha ? new Date(s.fecha).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
-      </p>
+      {/* Fecha y categoria */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 14, fontSize: 12, color: '#94a3b8' }}>
+        <span>📅 {s.fecha ? new Date(s.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</span>
+        {s.categoria?.nombre && <span>🏷️ {s.categoria.nombre}</span>}
+      </div>
 
-      {s.url_comprobante && (
+      {/* Comprobante */}
+      {s.comprobante_url && (
         <button
-          onClick={() => window.open(s.url_comprobante, '_blank')}
+          onClick={() => window.open(s.comprobante_url, '_blank')}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#0f1787', background: '#eef2ff', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', marginBottom: 16, fontWeight: 500 }}
         >
-          📄 Ver comprobante
+          📄 Ver comprobante {s.comprobante_nombre ? `(${s.comprobante_nombre})` : ''}
         </button>
       )}
 
-      {s.estado === 'pendiente' && (
+      {/* Acciones — solo si pendiente */}
+      {estado === 'pendiente' && (
         <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
           <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
-            Categoría financiera
+            Clasificar como categoría financiera
           </label>
           <select
             value={catId}
@@ -191,16 +205,16 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
             <button
               onClick={() => onAprobar(s.id, catId)}
               disabled={procesando === s.id}
-              style={{ flex: 1, background: '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 600, fontSize: 14, cursor: procesando === s.id ? 'not-allowed' : 'pointer' }}
+              style={{ flex: 1, background: procesando === s.id ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 600, fontSize: 14, cursor: procesando === s.id ? 'not-allowed' : 'pointer' }}
             >
-              ✓ Aprobar
+              ✓ Aprobar y clasificar
             </button>
             <button
               onClick={() => onRechazar(s.id)}
               disabled={procesando === s.id}
-              style={{ flex: 1, background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '12px', fontWeight: 600, fontSize: 14, cursor: procesando === s.id ? 'not-allowed' : 'pointer' }}
+              style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', borderRadius: 10, padding: '12px 20px', fontWeight: 600, fontSize: 14, cursor: procesando === s.id ? 'not-allowed' : 'pointer' }}
             >
-              ✗ Rechazar
+              ✗
             </button>
           </div>
         </div>
