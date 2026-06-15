@@ -13,23 +13,20 @@ const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 const META_RECAUDO = 50_000_000
 
 interface DashboardData {
-  // Caminantes
   totalCaminantes: number
   caminantesInscritos: number
   caminantesPagoCompleto: number
   caminantesCorreoEnviado: number
   caminantesConAbono: number
   cuposDisponibles: number
-  // Servidores
   servidoresPagoCompleto: number
   servidoresConAbono: number
-  // Finanzas
   totalRecaudado: number
-  // Retiro
   nombreRetiro: string
   fechaInicio: string
   fechaFin: string
   diasRestantes: number
+  reembolsosPendientes: number
 }
 
 function formatCOP(value: number): string {
@@ -57,7 +54,6 @@ export default function DashboardPage() {
 
   async function fetchDashboard() {
     try {
-      // Fetch retiro info
       const { data: retiro } = await supabase
         .from('retiros')
         .select('nombre, fecha_inicio, fecha_fin')
@@ -69,7 +65,6 @@ export default function DashboardPage() {
       const hoy = new Date()
       const diasRestantes = Math.max(0, Math.ceil((fechaInicio.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24)))
 
-      // Fetch caminantes stats desde vista_pagos_caminantes
       const { data: caminantes } = await supabase
         .from('vista_pagos_caminantes')
         .select('id, inscrito_oficialmente, estado_pago, estado_correo, total_pagado')
@@ -82,7 +77,6 @@ export default function DashboardPage() {
       const caminantesConAbono = caminantes?.filter(c => c.total_pagado > 0).length ?? 0
       const cuposDisponibles = Math.max(0, 50 - caminantesConAbono)
 
-      // Fetch servidores stats desde vista_pagos_servidores
       const { data: servidores } = await supabase
         .from('vista_pagos_servidores')
         .select('id, estado_pago, total_pagado')
@@ -91,22 +85,28 @@ export default function DashboardPage() {
       const servidoresPagoCompleto = servidores?.filter(s => s.estado_pago === 'completo').length ?? 0
       const servidoresConAbono = servidores?.filter(s => s.total_pagado > 0).length ?? 0
 
-      // Total recaudado: suma de todos los pagos del retiro (caminantes + servidores + otros ingresos)
       const { data: pagos } = await supabase
         .from('pagos')
         .select('valor, estado')
         .eq('retiro_id', RETIRO_ID)
         .eq('estado', 'confirmado')
 
-      // También traer transacciones de ingresos financieros (categorías: Ventas, Rifa, Torneo, etc.)
       const { data: transacciones } = await supabase
         .from('transacciones')
-        .select('monto, tipo')
+        .select('valor, tipo')
         .eq('retiro_id', RETIRO_ID)
         .eq('tipo', 'ingreso')
 
+      // Contar reembolsos pendientes
+      const { data: reembolsos } = await supabase
+        .from('transacciones')
+        .select('id, estado')
+        .eq('retiro_id', RETIRO_ID)
+        .eq('tipo', 'egreso')
+        .eq('estado', 'pendiente')
+
       const totalPagos = pagos?.reduce((acc, p) => acc + (p.valor ?? 0), 0) ?? 0
-      const totalTransacciones = transacciones?.reduce((acc, t) => acc + (t.monto ?? 0), 0) ?? 0
+      const totalTransacciones = transacciones?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
       const totalRecaudado = totalPagos + totalTransacciones
 
       setData({
@@ -123,6 +123,7 @@ export default function DashboardPage() {
         fechaInicio: fechaInicio.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         fechaFin: fechaFin.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         diasRestantes,
+        reembolsosPendientes: reembolsos?.length ?? 0,
       })
       setLastUpdated(new Date())
     } catch (err) {
@@ -133,7 +134,6 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    // Get current user name
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         supabase
@@ -149,7 +149,6 @@ export default function DashboardPage() {
 
     fetchDashboard()
 
-    // Supabase Realtime subscriptions
     const channel = supabase
       .channel('dashboard-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos' }, fetchDashboard)
@@ -158,9 +157,7 @@ export default function DashboardPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'servidores_inscripcion' }, fetchDashboard)
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   const porcentajeMeta = data ? Math.min(100, (data.totalRecaudado / META_RECAUDO) * 100) : 0
@@ -232,10 +229,8 @@ export default function DashboardPage() {
 
         {/* Hero — Meta de Recaudo */}
         <div className="bg-[#0f1787] rounded-2xl p-5 mb-4 overflow-hidden relative">
-          {/* Decoración sutil */}
           <div className="absolute -right-8 -top-8 w-32 h-32 bg-white/5 rounded-full" />
           <div className="absolute -right-2 top-12 w-20 h-20 bg-white/5 rounded-full" />
-
           <div className="relative z-10">
             <p className="text-[10px] font-semibold tracking-[0.18em] text-blue-300 uppercase mb-1">
               Meta de recaudo · {data?.nombreRetiro}
@@ -243,8 +238,6 @@ export default function DashboardPage() {
             <p className="text-[11px] text-blue-200/60 mb-4">
               {data?.fechaInicio} — {data?.fechaFin}
             </p>
-
-            {/* Números principales */}
             <div className="flex items-end justify-between mb-4">
               <div>
                 <p className="text-3xl font-bold text-white tracking-tight">
@@ -253,14 +246,10 @@ export default function DashboardPage() {
                 <p className="text-xs text-blue-200/70 mt-0.5">recaudado en total</p>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-blue-300/80">
-                  {formatCOP(META_RECAUDO)}
-                </p>
+                <p className="text-2xl font-bold text-blue-300/80">{formatCOP(META_RECAUDO)}</p>
                 <p className="text-xs text-blue-200/50 mt-0.5">meta ideal</p>
               </div>
             </div>
-
-            {/* Barra de progreso */}
             <div className="mb-3">
               <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <div
@@ -269,8 +258,6 @@ export default function DashboardPage() {
                 />
               </div>
             </div>
-
-            {/* Stats en fila */}
             <div className="flex items-center gap-0 divide-x divide-white/10">
               <div className="pr-4">
                 <p className="text-lg font-bold text-white">{porcentajeMeta.toFixed(1)}%</p>
@@ -315,23 +302,14 @@ export default function DashboardPage() {
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
                 </div>
-                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                  (data?.cuposDisponibles ?? 0) > 0
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-red-50 text-red-600'
-                }`}>
+                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${(data?.cuposDisponibles ?? 0) > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
                   {data?.cuposDisponibles ?? 0} cupos libres
                 </span>
               </div>
             </div>
-
-            {/* Mini barra cupos */}
             <div className="mt-4">
               <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-400 rounded-full transition-all duration-700"
-                  style={{ width: `${porcentajeCupos}%` }}
-                />
+                <div className="h-full bg-emerald-400 rounded-full transition-all duration-700" style={{ width: `${porcentajeCupos}%` }} />
               </div>
               <div className="flex justify-between mt-1">
                 <span className="text-[10px] text-gray-400">{data?.caminantesConAbono ?? 0} / 50 con abono</span>
@@ -339,41 +317,14 @@ export default function DashboardPage() {
               </div>
             </div>
           </button>
-
-          {/* Detalle expandido */}
           {expandedCard === 'caminantes' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <StatMini
-                  label="Inscritos totales"
-                  value={data?.totalCaminantes ?? 0}
-                  sub="en la plataforma"
-                  color="text-gray-900"
-                  onClick={() => router.push('/dashboard/caminantes')}
-                />
-                <StatMini
-                  label="Pago completo"
-                  value={data?.caminantesPagoCompleto ?? 0}
-                  sub="de 50 cupos"
-                  color="text-emerald-700"
-                  badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }}
-                />
-                <StatMini
-                  label="Correos enviados"
-                  value={data?.caminantesCorreoEnviado ?? 0}
-                  sub={`de ${data?.totalCaminantes ?? 0} inscritos`}
-                  color="text-blue-700"
-                />
-                <StatMini
-                  label="Con abono"
-                  value={data?.caminantesConAbono ?? 0}
-                  sub="bloquean cupo"
-                  color="text-amber-700"
-                />
-                <div
-                  className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => router.push('/dashboard/caminantes')}
-                >
+                <StatMini label="Inscritos totales" value={data?.totalCaminantes ?? 0} sub="en la plataforma" color="text-gray-900" onClick={() => router.push('/dashboard/caminantes')} />
+                <StatMini label="Pago completo" value={data?.caminantesPagoCompleto ?? 0} sub="de 50 cupos" color="text-emerald-700" badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }} />
+                <StatMini label="Correos enviados" value={data?.caminantesCorreoEnviado ?? 0} sub={`de ${data?.totalCaminantes ?? 0} inscritos`} color="text-blue-700" />
+                <StatMini label="Con abono" value={data?.caminantesConAbono ?? 0} sub="bloquean cupo" color="text-amber-700" />
+                <div className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => router.push('/dashboard/caminantes')}>
                   <div>
                     <p className="text-xs font-semibold text-gray-700">Cupos disponibles</p>
                     <p className="text-[11px] text-gray-400 mt-0.5">Se bloquea al llegar a 50 con abono</p>
@@ -416,14 +367,9 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
-
-            {/* Mini barra meta servidores */}
             <div className="mt-4">
               <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-violet-400 rounded-full transition-all duration-700"
-                  style={{ width: `${metaServidores}%` }}
-                />
+                <div className="h-full bg-violet-400 rounded-full transition-all duration-700" style={{ width: `${metaServidores}%` }} />
               </div>
               <div className="flex justify-between mt-1">
                 <span className="text-[10px] text-gray-400">Meta: {data?.servidoresPagoCompleto ?? 0} / 50 pagos completos</span>
@@ -431,29 +377,12 @@ export default function DashboardPage() {
               </div>
             </div>
           </button>
-
-          {/* Detalle expandido */}
           {expandedCard === 'servidores' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <StatMini
-                  label="Pago completo"
-                  value={data?.servidoresPagoCompleto ?? 0}
-                  sub={`de 50 × $380K`}
-                  color="text-violet-700"
-                  badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }}
-                  onClick={() => router.push('/dashboard/servidores')}
-                />
-                <StatMini
-                  label="Con abono"
-                  value={data?.servidoresConAbono ?? 0}
-                  sub="han pagado algo"
-                  color="text-amber-700"
-                  onClick={() => router.push('/dashboard/servidores')}
-                />
-                <div
-                  className="col-span-2 bg-violet-50/60 rounded-xl p-3 flex items-center justify-between"
-                >
+                <StatMini label="Pago completo" value={data?.servidoresPagoCompleto ?? 0} sub={`de 50 × $380K`} color="text-violet-700" badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }} onClick={() => router.push('/dashboard/servidores')} />
+                <StatMini label="Con abono" value={data?.servidoresConAbono ?? 0} sub="han pagado algo" color="text-amber-700" onClick={() => router.push('/dashboard/servidores')} />
+                <div className="col-span-2 bg-violet-50/60 rounded-xl p-3 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold text-violet-800">Meta de recolección servidores</p>
                     <p className="text-[11px] text-violet-500 mt-0.5">
@@ -470,6 +399,36 @@ export default function DashboardPage() {
           )}
         </div>
 
+        {/* Accesos rápidos */}
+        <div className="grid grid-cols-2 gap-3 mb-4 mt-1">
+          <button
+            onClick={() => router.push('/dashboard/reembolsos')}
+            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xl">🧾</span>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Reembolsos</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Facturas de servidores pendientes</p>
+            {(data?.reembolsosPendientes ?? 0) > 0 && (
+              <span className="absolute top-3 right-3 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {data?.reembolsosPendientes}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => router.push('/dashboard/reuniones')}
+            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xl">📅</span>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Reuniones</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Martes y días especiales</p>
+          </button>
+        </div>
+
         {/* Indicador en tiempo real */}
         <div className="flex items-center justify-center gap-1.5 mt-4 mb-2">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -484,7 +443,7 @@ export default function DashboardPage() {
             { label: 'Inicio', icon: 'home', href: '/dashboard', active: true },
             { label: 'Personas', icon: 'users', href: '/dashboard/personas', active: false },
             { label: 'Finanzas', icon: 'bar-chart', href: '/dashboard/finanzas', active: false },
-            { label: 'Retiro', icon: 'calendar', href: '/dashboard/retiro', active: false },
+            { label: 'Reuniones', icon: 'calendar', href: '/dashboard/reuniones', active: false },
             { label: 'Config', icon: 'settings', href: '/dashboard/config', active: false },
           ].map(item => (
             <button
@@ -504,23 +463,12 @@ export default function DashboardPage() {
   )
 }
 
-// ---- Sub-components ----
-
-function StatMini({
-  label, value, sub, color, badge, onClick
-}: {
-  label: string
-  value: number
-  sub: string
-  color: string
-  badge?: { text: string; color: string }
-  onClick?: () => void
+function StatMini({ label, value, sub, color, badge, onClick }: {
+  label: string; value: number; sub: string; color: string
+  badge?: { text: string; color: string }; onClick?: () => void
 }) {
   return (
-    <div
-      className={`bg-gray-50 rounded-xl p-3 ${onClick ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`}
-      onClick={onClick}
-    >
+    <div className={`bg-gray-50 rounded-xl p-3 ${onClick ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''}`} onClick={onClick}>
       <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{label}</p>
       <p className={`text-2xl font-bold ${color} leading-none`}>{value}</p>
       <p className="text-[10px] text-gray-400 mt-1">{sub}</p>
@@ -536,7 +484,6 @@ function StatMini({
 function NavIcon({ name, active }: { name: string; active: boolean }) {
   const color = active ? '#0f1787' : '#9ca3af'
   const w = 20
-
   const icons: Record<string, ReactElement> = {
     home: (
       <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -567,6 +514,5 @@ function NavIcon({ name, active }: { name: string; active: boolean }) {
       </svg>
     ),
   }
-
   return icons[name] ?? null
 }
