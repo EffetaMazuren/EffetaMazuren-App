@@ -21,10 +21,10 @@ interface DatoServidor {
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 
 const estadoConfig = {
-  completo: { color: '#16a34a', bg: '#f0fdf4', label: 'Pago completo', icon: '✅' },
-  parcial: { color: '#d97706', bg: '#fffbeb', label: 'Pago parcial', icon: '⚠️' },
-  sin_pago: { color: '#6b7280', bg: '#f9fafb', label: 'Sin pago', icon: '⏳' },
-  sorpresa: { color: '#7c3aed', bg: '#faf5ff', label: 'Sorpresa', icon: '🎁' },
+  completo: { color: '#16a34a', bg: '#f0fdf4', label: 'Pago completo', textColor: '#166534' },
+  parcial: { color: '#d97706', bg: '#fffbeb', label: 'Pago parcial', textColor: '#92400e' },
+  sin_pago: { color: '#6b7280', bg: '#f9fafb', label: 'Sin pago', textColor: '#374151' },
+  sorpresa: { color: '#7c3aed', bg: '#faf5ff', label: 'Sorpresa', textColor: '#5b21b6' },
 }
 
 export default function ServidorHome() {
@@ -70,11 +70,8 @@ export default function ServidorHome() {
       const pendiente: number = Math.max(0, costo - pagado)
 
       let estado: DatoServidor['estado_pago'] = 'sin_pago'
-      if (pagado >= costo && costo > 0) {
-        estado = 'completo'
-      } else if (pagado > 0) {
-        estado = 'parcial'
-      }
+      if (pagado >= costo && costo > 0) estado = 'completo'
+      else if (pagado > 0) estado = 'parcial'
 
       setDatos({
         nombre_completo: srv.nombre,
@@ -95,14 +92,9 @@ export default function ServidorHome() {
 
     const cargar = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-
-      if (!session) {
-        router.push('/')
-        return
-      }
+      if (!session) { router.push('/'); return }
 
       const userId = session.user.id
-
       const { data: srv } = await supabase
         .from('servidores_inscripcion')
         .select('id, nombre, es_interno, usuario_id')
@@ -126,11 +118,7 @@ export default function ServidorHome() {
             .eq('retiro_id', RETIRO_ID)
             .single()
 
-          if (!srvNuevo) {
-            setLoading(false)
-            return
-          }
-
+          if (!srvNuevo) { setLoading(false); return }
           await cargarDatos(srvNuevo)
           return
         }
@@ -145,39 +133,29 @@ export default function ServidorHome() {
   }, [router])
 
   if (loading) return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minHeight: '60vh', color: '#6b7280'
-    }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{
-          width: 36, height: 36, border: '3px solid #e2e4f0',
-          borderTopColor: '#0f1787', borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite', margin: '0 auto 10px'
-        }} />
+        <div style={{ width: 36, height: 36, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-        <p style={{ fontSize: 14 }}>Cargando tu perfil...</p>
+        <p style={{ fontSize: 14, color: '#6b7280' }}>Cargando tu perfil...</p>
       </div>
     </div>
   )
 
   if (!datos) return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minHeight: '60vh', flexDirection: 'column', gap: 12
-    }}>
-      <div style={{ fontSize: 40 }}>⚠️</div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', flexDirection: 'column', gap: 12 }}>
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
       <p style={{ color: '#6b7280', fontSize: 14, textAlign: 'center', margin: 0 }}>
         No encontramos tu perfil de servidor.<br />Contacta a un líder.
       </p>
       <button
         onClick={() => { supabase.auth.signOut(); router.push('/') }}
-        style={{
-          background: '#0f1787', color: 'white', border: 'none',
-          borderRadius: 8, padding: '10px 20px', cursor: 'pointer',
-          fontSize: 14, fontWeight: 600
-        }}
-      >Volver al inicio</button>
+        style={{ background: '#0f1787', color: 'white', border: 'none', borderRadius: 10, padding: '10px 20px', cursor: 'pointer', fontSize: 14, fontWeight: 500 }}
+      >
+        Volver al inicio
+      </button>
     </div>
   )
 
@@ -189,128 +167,174 @@ export default function ServidorHome() {
     ? Math.round((datos.racha_asistencias / datos.total_reuniones) * 100)
     : 0
 
+  const nombreCorto = datos.nombre_completo.split(' ')[0]
+
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>
-          Hola, {datos.nombre_completo.split(' ')[0]} 👋
-        </h1>
-        <p style={{ color: '#6b7280', fontSize: 14, margin: 0 }}>
-          Retiro Effetá Mazuren · 3–5 julio 2026
-        </p>
+    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto', paddingBottom: 100 }}>
+
+      {/* Hero navy */}
+      <div style={{ background: '#0f1787', borderRadius: 20, padding: 24, marginBottom: 12, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', right: -20, top: -20, width: 100, height: 100, background: 'rgba(255,255,255,0.04)', borderRadius: '50%' }} />
+        <div style={{ position: 'absolute', right: 20, bottom: -30, width: 80, height: 80, background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }} />
+        <div style={{ position: 'relative' }}>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '0 0 2px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            Hola, {nombreCorto}
+          </p>
+          <p style={{ fontSize: 20, fontWeight: 500, color: '#fff', margin: '0 0 18px' }}>
+            Retiro Effetá Mazuren
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 12 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', marginBottom: 4 }}>
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <p style={{ fontSize: 13, fontWeight: 500, color: '#fff', margin: '0 0 2px' }}>3–5 jul</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Fecha</p>
+            </div>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 12 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', marginBottom: 4 }}>
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+              </svg>
+              <p style={{ fontSize: 13, fontWeight: 500, color: '#fff', margin: '0 0 2px' }}>Bogotá</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Sede</p>
+            </div>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 12 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', marginBottom: 4 }}>
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              <p style={{ fontSize: 13, fontWeight: 500, color: '#fff', margin: '0 0 2px' }}>{datos.es_interno ? 'Interno' : 'Externo'}</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Rol</p>
+            </div>
+          </div>
+        </div>
       </div>
 
+      {/* Card pago */}
       <div
-        style={{
-          background: cfg.bg, border: `1.5px solid ${cfg.color}30`,
-          borderRadius: 14, padding: '18px 20px', marginBottom: 14,
-          cursor: 'pointer'
-        }}
         onClick={() => router.push('/servidor/pago')}
+        style={{ background: '#fff', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: 20, marginBottom: 10, cursor: 'pointer' }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
-              ESTADO DE PAGO
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={cfg.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+              </svg>
             </div>
-            <div style={{ fontWeight: 700, color: cfg.color, fontSize: 17 }}>
-              {cfg.icon} {cfg.label}
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 500, color: '#111827', margin: 0 }}>Estado de pago</p>
+              <p style={{ fontSize: 11, color: '#6b7280', margin: 0 }}>Inscripción retiro</p>
             </div>
-            {datos.es_interno && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 13, color: '#374151' }}>
-                  Pagado: <strong>${datos.total_pagado.toLocaleString('es-CO')}</strong>
-                  {' '}/ ${datos.costo_retiro.toLocaleString('es-CO')}
-                </div>
-                {datos.saldo_pendiente > 0 && (
-                  <div style={{ fontSize: 13, color: cfg.color, marginTop: 2 }}>
-                    Pendiente: <strong>${datos.saldo_pendiente.toLocaleString('es-CO')}</strong>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
-          <span style={{ fontSize: 22 }}>💳</span>
+          <span style={{ fontSize: 12, fontWeight: 500, background: cfg.bg, color: cfg.textColor, padding: '4px 10px', borderRadius: 20 }}>
+            {cfg.label}
+          </span>
         </div>
 
-        {datos.es_interno && datos.costo_retiro > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ height: 6, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', width: `${porcentajePagado}%`,
-                background: cfg.color, borderRadius: 4, transition: 'width 0.6s ease'
-              }} />
+        {datos.es_interno && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <p style={{ fontSize: 22, fontWeight: 500, color: '#111827', margin: 0 }}>
+                ${datos.total_pagado.toLocaleString('es-CO')}
+              </p>
+              <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>
+                de ${datos.costo_retiro.toLocaleString('es-CO')}
+              </p>
             </div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, textAlign: 'right' }}>
-              {porcentajePagado}% pagado
+            <div style={{ height: 5, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{ height: '100%', width: `${porcentajePagado}%`, background: cfg.color, borderRadius: 4, transition: 'width 0.6s' }} />
             </div>
-          </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <p style={{ fontSize: 11, color: '#6b7280', margin: 0 }}>
+                {datos.saldo_pendiente > 0 ? `$${datos.saldo_pendiente.toLocaleString('es-CO')} pendiente` : 'Sin saldo pendiente'}
+              </p>
+              <p style={{ fontSize: 11, fontWeight: 500, color: cfg.color, margin: 0 }}>{porcentajePagado}% pagado</p>
+            </div>
+          </>
         )}
+      </div>
 
-        <div style={{ marginTop: 10, fontSize: 13, color: cfg.color, fontWeight: 500 }}>
-          Ver comprobantes →
+      {/* Cards asistencias y facturas */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div
+          onClick={() => router.push('/servidor/asistencias')}
+          style={{ background: '#fff', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: 16, cursor: 'pointer' }}
+        >
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4338ca" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 16 11 18 15 14"/>
+            </svg>
+          </div>
+          <p style={{ fontSize: 22, fontWeight: 500, color: '#111827', margin: '0 0 2px' }}>
+            {datos.racha_asistencias}/{datos.total_reuniones}
+          </p>
+          <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 8px' }}>Asistencias</p>
+          <div style={{ height: 3, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${porcentajeAsist}%`, background: '#4338ca', borderRadius: 4 }} />
+          </div>
+        </div>
+
+        <div
+          onClick={() => router.push('/servidor/reembolso')}
+          style={{ background: '#fff', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: 16, cursor: 'pointer' }}
+        >
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+            </svg>
+          </div>
+          <p style={{ fontSize: 22, fontWeight: 500, color: '#111827', margin: '0 0 2px' }}>0</p>
+          <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 4px' }}>Facturas</p>
+          <p style={{ fontSize: 11, color: '#d97706', margin: 0 }}>Subir factura</p>
         </div>
       </div>
 
+      {/* Racha */}
       <div
-        style={{
-          background: 'white', border: '1.5px solid #e8eaf0',
-          borderRadius: 14, padding: '18px 20px', marginBottom: 14,
-          cursor: 'pointer'
-        }}
         onClick={() => router.push('/servidor/asistencias')}
+        style={{ background: '#fff', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: 16, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
-              ASISTENCIAS EFFETÁ
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>
-              {datos.racha_asistencias}
-              <span style={{ fontSize: 15, color: '#6b7280', fontWeight: 400 }}>
-                {' '}/ {datos.total_reuniones} reuniones
-              </span>
-            </div>
-          </div>
-          <div style={{
-            width: 48, height: 48, borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 700, fontSize: 14,
-            background: porcentajeAsist >= 80 ? '#f0fdf4' : porcentajeAsist >= 50 ? '#fffbeb' : '#f9fafb',
-            color: porcentajeAsist >= 80 ? '#16a34a' : porcentajeAsist >= 50 ? '#d97706' : '#6b7280'
-          }}>
-            {porcentajeAsist}%
-          </div>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+          </svg>
         </div>
-        <div style={{ marginTop: 10, fontSize: 13, color: '#0f1787', fontWeight: 500 }}>
-          Ver racha →
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 13, fontWeight: 500, color: '#111827', margin: 0 }}>Racha de asistencia</p>
+          <p style={{ fontSize: 11, color: '#6b7280', margin: 0 }}>
+            {datos.racha_asistencias > 0 ? `${datos.racha_asistencias} semanas consecutivas` : 'Sin racha aún'}
+          </p>
         </div>
+        <p style={{ fontSize: 22, fontWeight: 500, color: '#d97706', margin: 0 }}>{datos.racha_asistencias}</p>
       </div>
 
+      {/* Roles y mesa */}
       {(datos.roles.length > 0 || datos.mesa) && (
-        <div style={{
-          background: 'white', border: '1.5px solid #e8eaf0',
-          borderRadius: 14, padding: '18px 20px', marginBottom: 14
-        }}>
-          <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 12 }}>
-            MI SERVICIO EN EL RETIRO
+        <div style={{ background: '#fff', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: 18, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f0f2ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </div>
+            <p style={{ fontSize: 13, fontWeight: 500, color: '#111827', margin: 0 }}>Mi servicio en el retiro</p>
           </div>
           {datos.mesa && (
-            <div style={{ marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: '#374151' }}>🪑 Mesa asignada: </span>
-              <strong style={{ color: '#0f1787' }}>{datos.mesa}</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: datos.roles.length > 0 ? 12 : 0 }}>
+              <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>Mesa asignada</p>
+              <span style={{ background: '#eef2ff', color: '#3730a3', padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500 }}>
+                {datos.mesa}
+              </span>
             </div>
           )}
           {datos.roles.length > 0 && (
             <div>
-              <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>🎯 Roles:</div>
+              <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>Roles</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {datos.roles.map((rol, i) => (
-                  <span key={i} style={{
-                    background: '#f0f2ff', color: '#0f1787',
-                    padding: '4px 10px', borderRadius: 20,
-                    fontSize: 12, fontWeight: 600
-                  }}>{rol}</span>
+                  <span key={i} style={{ background: '#eef2ff', color: '#3730a3', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500 }}>
+                    {rol}
+                  </span>
                 ))}
               </div>
             </div>
@@ -318,45 +342,6 @@ export default function ServidorHome() {
         </div>
       )}
 
-      <div
-        style={{
-          background: 'white', border: '1.5px solid #e8eaf0',
-          borderRadius: 14, padding: '18px 20px', marginBottom: 14,
-          cursor: 'pointer'
-        }}
-        onClick={() => router.push('/servidor/reembolso')}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
-              FACTURAS
-            </div>
-            <div style={{ fontSize: 15, color: '#111827' }}>Subir facturas de compras</div>
-            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
-              Para solicitar reembolso al equipo
-            </div>
-          </div>
-          <span style={{ fontSize: 24 }}>🧾</span>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 13, color: '#0f1787', fontWeight: 500 }}>
-          Gestionar →
-        </div>
-      </div>
-
-      <div style={{
-        background: '#0f1787', borderRadius: 14,
-        padding: '18px 20px', marginBottom: 14
-      }}>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontWeight: 500, marginBottom: 8 }}>
-          RETIRO EFFETÁ MAZUREN 2026
-        </div>
-        <div style={{ color: 'white', fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
-          📅 3 – 5 de julio, 2026
-        </div>
-        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-          📍 Bogotá · {datos.es_interno ? 'Servidor interno' : 'Servidor externo'}
-        </div>
-      </div>
     </div>
   )
 }
