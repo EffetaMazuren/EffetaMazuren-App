@@ -35,35 +35,96 @@ export default function ServidorHome() {
   useEffect(() => {
     const cargar = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      console.log('SESSION:', session)
-      
-      if (!session) { 
-        console.log('NO SESSION - redirigiendo a login')
-        router.push('/'); 
-        return 
+
+      if (!session) {
+        router.push('/')
+        return
       }
 
-      const { data: srv, error: srvErr } = await supabase
+      const userId = session.user.id
+
+      // Buscar servidor por usuario_id
+      const { data: srv } = await supabase
         .from('servidores_inscripcion')
         .select('id, nombre, es_interno, usuario_id')
-        .eq('usuario_id', session.user.id)
+        .eq('usuario_id', userId)
         .eq('retiro_id', RETIRO_ID)
         .single()
 
-      console.log('SERVIDOR:', srv, 'ERROR:', srvErr)
+      // Si no está vinculado, intentar vincular por metadata
+      if (!srv) {
+        const inscripcionId = session.user.user_metadata?.servidor_inscripcion_id
+        if (inscripcionId) {
+          await supabase
+            .from('servidores_inscripcion')
+            .update({ usuario_id: userId })
+            .eq('id', inscripcionId)
+            .is('usuario_id', null)
 
-      if (!srv) { 
-        console.log('NO SERVIDOR - redirigiendo a login')
-        router.push('/'); 
-        return 
+          // Recargar después de vincular
+          const { data: srvNuevo } = await supabase
+            .from('servidores_inscripcion')
+            .select('id, nombre, es_interno, usuario_id')
+            .eq('usuario_id', userId)
+            .eq('retiro_id', RETIRO_ID)
+            .single()
+
+          if (!srvNuevo) {
+            setLoading(false)
+            return
+          }
+
+          await cargarDatos(srvNuevo, userId)
+          return
+        }
+        setLoading(false)
+        return
       }
-      // ... resto del código
+
+      await cargarDatos(srv, userId)
     }
-    cargar()
-  }, [router])
+
+    const cargarDatos = async (srv: { id: string; nombre: string; es_interno: boolean; usuario_id: string | null }, userId: string) => {
+      const { data: pagoData } = await supabase
+        .from('vista_pagos_servidores')
+        .select('*')
+        .eq('servidor_id', srv.id)
+        .single()
+
+      const { data: asistencias } = await supabase
+        .from('asistencias')
+        .select('asistio')
+        .eq('servidor_inscripcion_id', srv.id)
+
+      const { data: rolesData } = await supabase
+        .from('roles_retiro')
+        .select('nombre_rol')
+        .eq('servidor_inscripcion_id', srv.id)
+        .eq('retiro_id', RETIRO_ID)
+
+      const { data: mesaData } = await supabase
+        .from('asignaciones_mesa')
+        .select('mesas(nombre)')
+        .eq('servidor_inscripcion_id', srv.id)
+        .single()
+
+      const totalReuniones = asistencias?.length ?? 0
+      const asistidas = asistencias?.filter(a => a.asistio).length ?? 0
+      const costo = srv.es_interno ? 380000 : 0
+      const pagado: number = pagoData?.total_pagado ?? 0
+      const pendiente: number = Math.max(0, costo - pagado)
+
+      let estado: DatoServidor['estado_pago'] = 'sin_pago'
+      if (pagoData?.estado_pago) {
+        estado = pagoData.estado_pago as DatoServidor['estado_pago']
+      } else if (pagado >= costo && costo > 0) {
+        estado = 'completo'
+      } else if (pagado > 0) {
+        estado = 'parcial'
+      }
 
       setDatos({
-        nombre_completo: srv.nombre_completo,
+        nombre_completo: srv.nombre,
         es_interno: srv.es_interno,
         saldo_pendiente: pendiente,
         estado_pago: estado,
@@ -72,11 +133,13 @@ export default function ServidorHome() {
         racha_asistencias: asistidas,
         total_reuniones: totalReuniones,
         roles: rolesData?.map(r => r.nombre_rol) ?? [],
-        mesa: (mesaData?.mesas as unknown as { nombre: string } | null)?.nombre ?? null,        inscripcion_id: srv.id,
+        mesa: (mesaData?.mesas as unknown as { nombre: string } | null)?.nombre ?? null,
+        inscripcion_id: srv.id,
       })
 
       setLoading(false)
     }
+
     cargar()
   }, [router])
 
@@ -97,7 +160,25 @@ export default function ServidorHome() {
     </div>
   )
 
-  if (!datos) return null
+  if (!datos) return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: '60vh', flexDirection: 'column', gap: 12
+    }}>
+      <div style={{ fontSize: 40 }}>⚠️</div>
+      <p style={{ color: '#6b7280', fontSize: 14, textAlign: 'center', margin: 0 }}>
+        No encontramos tu perfil de servidor.<br />Contacta a un líder.
+      </p>
+      <button
+        onClick={() => { supabase.auth.signOut(); router.push('/') }}
+        style={{
+          background: '#0f1787', color: 'white', border: 'none',
+          borderRadius: 8, padding: '10px 20px', cursor: 'pointer',
+          fontSize: 14, fontWeight: 600
+        }}
+      >Volver al inicio</button>
+    </div>
+  )
 
   const cfg = estadoConfig[datos.estado_pago]
   const porcentajePagado = datos.costo_retiro > 0
@@ -109,7 +190,6 @@ export default function ServidorHome() {
 
   return (
     <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
-      {/* Bienvenida */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>
           Hola, {datos.nombre_completo.split(' ')[0]} 👋
@@ -119,7 +199,6 @@ export default function ServidorHome() {
         </p>
       </div>
 
-      {/* Card estado pago */}
       <div
         style={{
           background: cfg.bg, border: `1.5px solid ${cfg.color}30`,
@@ -172,7 +251,6 @@ export default function ServidorHome() {
         </div>
       </div>
 
-      {/* Card asistencias */}
       <div
         style={{
           background: 'white', border: '1.5px solid #e8eaf0',
@@ -208,7 +286,6 @@ export default function ServidorHome() {
         </div>
       </div>
 
-      {/* Card roles y mesa */}
       {(datos.roles.length > 0 || datos.mesa) && (
         <div style={{
           background: 'white', border: '1.5px solid #e8eaf0',
@@ -217,14 +294,12 @@ export default function ServidorHome() {
           <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 12 }}>
             MI SERVICIO EN EL RETIRO
           </div>
-
           {datos.mesa && (
             <div style={{ marginBottom: 10 }}>
               <span style={{ fontSize: 13, color: '#374151' }}>🪑 Mesa asignada: </span>
               <strong style={{ color: '#0f1787' }}>{datos.mesa}</strong>
             </div>
           )}
-
           {datos.roles.length > 0 && (
             <div>
               <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>🎯 Roles:</div>
@@ -242,7 +317,6 @@ export default function ServidorHome() {
         </div>
       )}
 
-      {/* Card reembolso */}
       <div
         style={{
           background: 'white', border: '1.5px solid #e8eaf0',
@@ -256,9 +330,7 @@ export default function ServidorHome() {
             <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, marginBottom: 4 }}>
               REEMBOLSOS
             </div>
-            <div style={{ fontSize: 15, color: '#111827' }}>
-              Subir facturas de compras
-            </div>
+            <div style={{ fontSize: 15, color: '#111827' }}>Subir facturas de compras</div>
             <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
               Para solicitar reembolso al equipo
             </div>
@@ -270,7 +342,6 @@ export default function ServidorHome() {
         </div>
       </div>
 
-      {/* Info retiro */}
       <div style={{
         background: '#0f1787', borderRadius: 14,
         padding: '18px 20px', marginBottom: 14
