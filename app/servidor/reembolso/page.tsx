@@ -5,9 +5,9 @@ import { supabase } from '@/lib/supabase';
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
 
 export default function ReembolsoPage() {
-  const [user, setUser] = useState<any>(null);
   const [servidorId, setServidorId] = useState<string | null>(null);
-  const [monto, setMonto] = useState('');
+  const [usuarioId, setUsuarioId] = useState<string | null>(null);
+  const [valor, setValor] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [archivo, setArchivo] = useState<File | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -19,38 +19,40 @@ export default function ReembolsoPage() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) return;
-      setUser(data.user);
+      setUsuarioId(data.user.id);
       const sid = data.user.user_metadata?.servidor_inscripcion_id;
       setServidorId(sid);
-      if (sid) cargarHistorial(sid);
+      if (data.user.id) cargarHistorial(data.user.id);
     });
   }, []);
 
-  async function cargarHistorial(sid: string) {
+  async function cargarHistorial(uid: string) {
     const { data } = await supabase
       .from('transacciones')
       .select('*')
-      .eq('servidor_inscripcion_id', sid)
+      .eq('usuario_id', uid)
       .eq('tipo', 'egreso')
-      .order('fecha', { ascending: false });
+      .order('created_at', { ascending: false });
     setHistorial(data || []);
   }
 
   async function enviar() {
     setError(''); setExito('');
-    if (!monto || !descripcion || !archivo) {
+    if (!valor || !descripcion || !archivo) {
       setError('Completa todos los campos y adjunta el comprobante.');
       return;
     }
-    if (!servidorId) {
-      setError('No se encontró tu registro de servidor. Contacta a un líder.');
+    if (!usuarioId) {
+      setError('No se encontró tu sesión. Intenta cerrar y volver a entrar.');
       return;
     }
     setEnviando(true);
     try {
-      // 1. Subir archivo
+      // 1. Subir archivo al storage
       const ext = archivo.name.split('.').pop();
-      const path = `servidores/${servidorId}/reembolso_${Date.now()}.${ext}`;
+      const nombreArchivo = `reembolso_${Date.now()}.${ext}`;
+      const path = `servidores/${servidorId || usuarioId}/${nombreArchivo}`;
+      
       const { error: uploadErr } = await supabase.storage
         .from('comprobantes-pagos')
         .upload(path, archivo, { upsert: true });
@@ -60,25 +62,27 @@ export default function ReembolsoPage() {
         .from('comprobantes-pagos')
         .getPublicUrl(path);
 
-      // 2. Insertar en transacciones
+      // 2. Insertar en transacciones con columnas reales
       const { error: insertErr } = await supabase
         .from('transacciones')
         .insert({
+          retiro_id: RETIRO_ID,
+          usuario_id: usuarioId,
           servidor_inscripcion_id: servidorId,
           tipo: 'egreso',
           estado: 'pendiente',
-          monto: parseFloat(monto),
-          url_comprobante: urlData.publicUrl,
+          valor: parseFloat(valor),
           descripcion,
-          retiro_id: RETIRO_ID,
-          fecha: new Date().toISOString(),
+          comprobante_url: urlData.publicUrl,
+          comprobante_nombre: archivo.name,
+          fecha: new Date().toISOString().split('T')[0],
         });
       if (insertErr) throw new Error('Error al registrar: ' + insertErr.message);
 
       setExito('¡Solicitud enviada! Un líder la revisará pronto.');
-      setMonto(''); setDescripcion(''); setArchivo(null);
+      setValor(''); setDescripcion(''); setArchivo(null);
       if (fileRef.current) fileRef.current.value = '';
-      if (servidorId) cargarHistorial(servidorId);
+      cargarHistorial(usuarioId);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -91,11 +95,6 @@ export default function ReembolsoPage() {
     aprobado: '#16a34a',
     rechazado: '#dc2626',
   };
-  const estadoLabel: Record<string, string> = {
-    pendiente: 'Pendiente',
-    aprobado: 'Aprobado',
-    rechazado: 'Rechazado',
-  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc', paddingBottom: 100 }}>
@@ -104,7 +103,7 @@ export default function ReembolsoPage() {
           🧾 Facturas y reembolsos
         </h1>
 
-        {/* Formulario */}
+        {/* Formulario nueva solicitud */}
         <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 24, boxShadow: '0 1px 8px rgba(0,0,0,0.07)' }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1e293b', marginBottom: 20 }}>
             Nueva solicitud de reembolso
@@ -113,8 +112,8 @@ export default function ReembolsoPage() {
           <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500 }}>Monto (COP)</label>
           <input
             type="number"
-            value={monto}
-            onChange={e => setMonto(e.target.value)}
+            value={valor}
+            onChange={e => setValor(e.target.value)}
             placeholder="10000"
             style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 15, marginBottom: 16, marginTop: 4, boxSizing: 'border-box' }}
           />
@@ -171,16 +170,16 @@ export default function ReembolsoPage() {
               <div key={t.id} style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: 12, marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                    ${parseInt(t.monto).toLocaleString('es-CO')}
+                    ${parseInt(t.valor).toLocaleString('es-CO')}
                   </span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: estadoColor[t.estado] || '#6b7280', background: '#f8fafc', padding: '3px 10px', borderRadius: 20 }}>
-                    {estadoLabel[t.estado] || t.estado}
+                  <span style={{ fontSize: 12, fontWeight: 600, color: estadoColor[t.estado || 'pendiente'], background: '#f8fafc', padding: '3px 10px', borderRadius: 20 }}>
+                    {t.estado || 'pendiente'}
                   </span>
                 </div>
                 <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>{t.descripcion}</p>
-                {t.url_comprobante && (
+                {t.comprobante_url && (
                   <button
-                    onClick={() => window.open(t.url_comprobante, '_blank')}
+                    onClick={() => window.open(t.comprobante_url, '_blank')}
                     style={{ fontSize: 12, color: '#0f1787', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 4 }}
                   >
                     Ver comprobante →
