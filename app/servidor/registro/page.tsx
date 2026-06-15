@@ -111,15 +111,21 @@ export default function RegistroServidor() {
 
     const userId = authData.user.id
 
-    const { error: usuErr } = await supabase
-      .from('usuarios')
-      .upsert({
-        id: userId,
-        correo: email.trim().toLowerCase(),
-        nombre: seleccionado.nombre,
-        rol: 'servidor'
-      })
+    const userId = authData.user.id
 
+    const { error: vinErr } = await supabase
+      .from('servidores_inscripcion')
+      .update({ usuario_id: userId })
+      .eq('id', seleccionado.id)
+
+    if (vinErr) {
+      setError('Error al vincular perfil: ' + vinErr.message)
+      setLoading(false)
+      return
+    }
+
+    setLoading(false)
+    setPaso('listo')
     if (usuErr) {
       setError('Error al guardar perfil: ' + usuErr.message)
       setLoading(false)
