@@ -320,11 +320,53 @@ export default function DashboardPage() {
           {expandedCard === 'caminantes' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <StatMini label="Inscritos totales" value={data?.totalCaminantes ?? 0} sub="en la plataforma" color="text-gray-900" onClick={() => router.push('/dashboard/caminantes')} />
-                <StatMini label="Pago completo" value={data?.caminantesPagoCompleto ?? 0} sub="de 50 cupos" color="text-emerald-700" badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }} />
-                <StatMini label="Correos enviados" value={data?.caminantesCorreoEnviado ?? 0} sub={`de ${data?.totalCaminantes ?? 0} inscritos`} color="text-blue-700" />
-                <StatMini label="Con abono" value={data?.caminantesConAbono ?? 0} sub="bloquean cupo" color="text-amber-700" />
-                <div className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => router.push('/dashboard/caminantes')}>
+                <StatMini
+                  label="Inscritos totales"
+                  value={data?.totalCaminantes ?? 0}
+                  sub="en la plataforma"
+                  color="text-gray-900"
+                  onClick={() => router.push('/dashboard/caminantes')}
+                />
+                <StatMini
+                  label="Pago completo"
+                  value={data?.caminantesPagoCompleto ?? 0}
+                  sub="de 50 cupos"
+                  color="text-emerald-700"
+                  badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }}
+                />
+                <StatMini
+                  label="Correos enviados"
+                  value={data?.caminantesCorreoEnviado ?? 0}
+                  sub={`de ${data?.totalCaminantes ?? 0} inscritos`}
+                  color="text-blue-700"
+                />
+                <StatMini
+                  label="Con abono"
+                  value={data?.caminantesConAbono ?? 0}
+                  sub="bloquean cupo"
+                  color="text-amber-700"
+                />
+
+                {/* Total recaudado caminantes */}
+                <div className="col-span-2 bg-emerald-50/60 rounded-xl p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-emerald-800">Total recaudado caminantes</p>
+                    <p className="text-[11px] text-emerald-500 mt-0.5">
+                      {data ? `$${data.totalPagadoCaminantes.toLocaleString('es-CO')}` : '$0'} pagados
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-emerald-700">
+                      {data ? `$${(data.totalPagadoCaminantes / 1_000_000).toFixed(1)}M` : '$0'}
+                    </p>
+                    <p className="text-[10px] text-emerald-400">recaudado</p>
+                  </div>
+                </div>
+
+                <div
+                  className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => router.push('/dashboard/caminantes')}
+                >
                   <div>
                     <p className="text-xs font-semibold text-gray-700">Cupos disponibles</p>
                     <p className="text-[11px] text-gray-400 mt-0.5">Se bloquea al llegar a 50 con abono</p>
@@ -337,8 +379,8 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-        </div>
 
+          
         {/* Tarjeta Servidores */}
         <div className="bg-white rounded-2xl mb-3 overflow-hidden shadow-sm border border-gray-100">
           <button
