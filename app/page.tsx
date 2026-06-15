@@ -14,16 +14,19 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email: correo,
       password,
     })
+
     if (error) {
       setError('Correo o contraseña incorrectos')
       setLoading(false)
       return
     }
-    // Verificar rol
+
+    // Verificar rol en tabla usuarios
     const { data: usuario } = await supabase
       .from('usuarios')
       .select('rol')
@@ -33,6 +36,7 @@ export default function LoginPage() {
     if (usuario?.rol === 'lider') {
       router.push('/dashboard')
     } else {
+      // Es servidor o no tiene fila en usuarios — va al portal servidor
       router.push('/servidor')
     }
   }
@@ -52,23 +56,16 @@ export default function LoginPage() {
           borderRadius: 16,
           padding: '40px 36px',
         }}>
-          {/* Logo */}
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
             <div style={{
-              fontSize: 38,
-              fontWeight: 500,
-              color: '#0f1787',
-              letterSpacing: 3,
-              fontFamily: 'Georgia, serif',
-              marginBottom: 6,
+              fontSize: 38, fontWeight: 500, color: '#0f1787',
+              letterSpacing: 3, fontFamily: 'Georgia, serif', marginBottom: 6,
             }}>
               EFFETÁ
             </div>
             <div style={{
-              fontSize: 11,
-              color: '#9ca3af',
-              letterSpacing: 3,
-              textTransform: 'uppercase',
+              fontSize: 11, color: '#9ca3af',
+              letterSpacing: 3, textTransform: 'uppercase',
             }}>
               "Abrir el corazón"
             </div>
@@ -91,6 +88,7 @@ export default function LoginPage() {
                   width: '100%', height: 40, border: '0.5px solid #d0d4e8',
                   borderRadius: 8, padding: '0 12px', fontSize: 14,
                   color: '#0d0d14', background: '#f8f9fd', outline: 'none',
+                  boxSizing: 'border-box'
                 }}
               />
             </div>
@@ -108,6 +106,7 @@ export default function LoginPage() {
                   width: '100%', height: 40, border: '0.5px solid #d0d4e8',
                   borderRadius: 8, padding: '0 12px', fontSize: 14,
                   color: '#0d0d14', background: '#f8f9fd', outline: 'none',
+                  boxSizing: 'border-box'
                 }}
               />
             </div>
@@ -125,9 +124,11 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               style={{
-                width: '100%', height: 42, background: loading ? '#9ca3af' : '#0f1787',
-                color: '#fff', border: 'none', borderRadius: 8, fontSize: 14,
-                fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
+                width: '100%', height: 42,
+                background: loading ? '#9ca3af' : '#0f1787',
+                color: '#fff', border: 'none', borderRadius: 8,
+                fontSize: 14, fontWeight: 500,
+                cursor: loading ? 'not-allowed' : 'pointer',
                 marginTop: 8,
               }}
             >
@@ -142,21 +143,24 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f4' }}>
-  <p style={{ margin: '0 0 8px', fontSize: 13, color: '#6b7280' }}>
-    ¿Eres servidor y no tienes cuenta?
-  </p>
-  <button
-    onClick={() => router.push('/servidor/registro')}
-    style={{
-      background: 'white', border: '1.5px solid #0f1787',
-      color: '#0f1787', padding: '8px 20px', borderRadius: 8,
-      fontSize: 13, fontWeight: 600, cursor: 'pointer', width: '100%'
-    }}
-  >
-    Crear cuenta de servidor
-  </button>
-</div>
+        <div style={{
+          textAlign: 'center', marginTop: 16, paddingTop: 16,
+          borderTop: '1px solid rgba(255,255,255,0.1)'
+        }}>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+            ¿Eres servidor y no tienes cuenta?
+          </p>
+          <button
+            onClick={() => router.push('/servidor/registro')}
+            style={{
+              background: 'white', border: '1.5px solid white',
+              color: '#0f1787', padding: '8px 20px', borderRadius: 8,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer', width: '100%'
+            }}
+          >
+            Crear cuenta de servidor
+          </button>
+        </div>
 
         <div style={{
           textAlign: 'center', marginTop: 20, fontSize: 11,
