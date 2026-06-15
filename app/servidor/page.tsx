@@ -96,8 +96,7 @@ export default function ServidorHome() {
         racha_asistencias: asistidas,
         total_reuniones: totalReuniones,
         roles: rolesData?.map(r => r.nombre_rol) ?? [],
-        mesa: Array.isArray(mesaData?.mesas) ? (mesaData.mesas[0]?.nombre ?? null) : ((mesaData?.mesas as { nombre: string } | null)?.nombre ?? null),
-        inscripcion_id: srv.id,
+        mesa: (mesaData?.mesas as unknown as { nombre: string } | null)?.nombre ?? null,        inscripcion_id: srv.id,
       })
 
       setLoading(false)
