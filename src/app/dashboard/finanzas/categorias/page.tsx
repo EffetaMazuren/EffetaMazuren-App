@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createBrowserClient } from '@supabase/ssr'
 import Link from 'next/link'
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -24,7 +24,10 @@ const TIPO_LABELS: Record<TipoMovimiento, { label: string; color: string }> = {
 
 // ── Componente principal ─────────────────────────────────────────────────────
 export default function CategoriasPage() {
-  const supabase = createClientComponentClient()
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
   const [guardando, setGuardando] = useState<string | null>(null)
