@@ -22,6 +22,7 @@ interface DashboardData {
   servidoresPagoCompleto: number
   servidoresConAbono: number
   totalRecaudado: number
+  totalPagadoCaminantes: number
   nombreRetiro: string
   fechaInicio: string
   fechaFin: string
@@ -76,6 +77,7 @@ export default function DashboardPage() {
       const caminantesCorreoEnviado = caminantes?.filter(c => c.estado_correo === 'enviado').length ?? 0
       const caminantesConAbono = caminantes?.filter(c => c.total_pagado > 0).length ?? 0
       const cuposDisponibles = Math.max(0, 50 - caminantesConAbono)
+      const totalPagadoCaminantes = caminantes?.reduce((acc, c) => acc + (c.total_pagado ?? 0), 0) ?? 0
 
       const { data: servidores } = await supabase
         .from('vista_pagos_servidores')
@@ -97,7 +99,6 @@ export default function DashboardPage() {
         .eq('retiro_id', RETIRO_ID)
         .eq('tipo', 'ingreso')
 
-      // Contar reembolsos pendientes
       const { data: reembolsos } = await supabase
         .from('transacciones')
         .select('id, estado')
@@ -119,6 +120,7 @@ export default function DashboardPage() {
         servidoresPagoCompleto,
         servidoresConAbono,
         totalRecaudado,
+        totalPagadoCaminantes,
         nombreRetiro: retiro?.nombre ?? 'Effetá Mazuren · Julio 2026',
         fechaInicio: fechaInicio.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         fechaFin: fechaFin.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -184,6 +186,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#f7f8fc] pb-24">
+
       {/* Header */}
       <header className="bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
         <span className="text-xs font-semibold tracking-[0.15em] text-[#0f1787] uppercase">
@@ -193,18 +196,12 @@ export default function DashboardPage() {
           <span className="text-[10px] text-gray-400 hidden sm:block">
             Actualizado {lastUpdated.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <button
-            onClick={() => router.push('/notifications')}
-            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
-          >
+          <button onClick={() => router.push('/notifications')} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
           </button>
-          <button
-            onClick={() => router.push('/perfil')}
-            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
-          >
+          <button onClick={() => router.push('/perfil')} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
             </svg>
@@ -213,6 +210,7 @@ export default function DashboardPage() {
       </header>
 
       <main className="px-5 pt-6 max-w-2xl mx-auto">
+
         {/* Saludo */}
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
@@ -220,9 +218,7 @@ export default function DashboardPage() {
           </h1>
           {data && (
             <p className="text-sm text-gray-400 mt-0.5">
-              {data.diasRestantes > 0
-                ? `El retiro comienza en ${data.diasRestantes} días`
-                : 'El retiro ya comenzó'}
+              {data.diasRestantes > 0 ? `El retiro comienza en ${data.diasRestantes} días` : 'El retiro ya comenzó'}
             </p>
           )}
         </div>
@@ -235,14 +231,10 @@ export default function DashboardPage() {
             <p className="text-[10px] font-semibold tracking-[0.18em] text-blue-300 uppercase mb-1">
               Meta de recaudo · {data?.nombreRetiro}
             </p>
-            <p className="text-[11px] text-blue-200/60 mb-4">
-              {data?.fechaInicio} — {data?.fechaFin}
-            </p>
+            <p className="text-[11px] text-blue-200/60 mb-4">{data?.fechaInicio} — {data?.fechaFin}</p>
             <div className="flex items-end justify-between mb-4">
               <div>
-                <p className="text-3xl font-bold text-white tracking-tight">
-                  {data ? formatCOP(data.totalRecaudado) : '$0'}
-                </p>
+                <p className="text-3xl font-bold text-white tracking-tight">{data ? formatCOP(data.totalRecaudado) : '$0'}</p>
                 <p className="text-xs text-blue-200/70 mt-0.5">recaudado en total</p>
               </div>
               <div className="text-right">
@@ -252,10 +244,7 @@ export default function DashboardPage() {
             </div>
             <div className="mb-3">
               <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-300 to-white rounded-full transition-all duration-700"
-                  style={{ width: `${porcentajeMeta}%` }}
-                />
+                <div className="h-full bg-gradient-to-r from-blue-300 to-white rounded-full transition-all duration-700" style={{ width: `${porcentajeMeta}%` }} />
               </div>
             </div>
             <div className="flex items-center gap-0 divide-x divide-white/10">
@@ -264,15 +253,11 @@ export default function DashboardPage() {
                 <p className="text-[10px] text-blue-200/60">financiado</p>
               </div>
               <div className="px-4">
-                <p className="text-lg font-bold text-white">
-                  {data ? formatCOP(META_RECAUDO - data.totalRecaudado) : formatCOP(META_RECAUDO)}
-                </p>
+                <p className="text-lg font-bold text-white">{data ? formatCOP(META_RECAUDO - data.totalRecaudado) : formatCOP(META_RECAUDO)}</p>
                 <p className="text-[10px] text-blue-200/60">pendiente</p>
               </div>
               <div className="pl-4">
-                <p className="text-lg font-bold text-white">
-                  {data ? formatCOP(data.totalRecaudado / Math.max(1, data.caminantesConAbono + data.servidoresConAbono)) : '$0'}
-                </p>
+                <p className="text-lg font-bold text-white">{data ? formatCOP(data.totalRecaudado / Math.max(1, data.caminantesConAbono + data.servidoresConAbono)) : '$0'}</p>
                 <p className="text-[10px] text-blue-200/60">promedio / persona</p>
               </div>
             </div>
@@ -291,16 +276,12 @@ export default function DashboardPage() {
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Caminantes</p>
                 </div>
-                <p className="text-4xl font-bold text-gray-900 tracking-tight leading-none">
-                  {data?.caminantesConAbono ?? 0}
-                </p>
+                <p className="text-4xl font-bold text-gray-900 tracking-tight leading-none">{data?.caminantesConAbono ?? 0}</p>
                 <p className="text-sm text-gray-400 mt-1">con abono registrado</p>
               </div>
               <div className="flex flex-col items-end gap-2">
                 <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-all duration-200 ${expandedCard === 'caminantes' ? 'bg-gray-100 rotate-180' : 'bg-gray-50'}`}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
                 <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${(data?.cuposDisponibles ?? 0) > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
                   {data?.cuposDisponibles ?? 0} cupos libres
@@ -317,56 +298,27 @@ export default function DashboardPage() {
               </div>
             </div>
           </button>
+
           {expandedCard === 'caminantes' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <StatMini
-                  label="Inscritos totales"
-                  value={data?.totalCaminantes ?? 0}
-                  sub="en la plataforma"
-                  color="text-gray-900"
-                  onClick={() => router.push('/dashboard/caminantes')}
-                />
-                <StatMini
-                  label="Pago completo"
-                  value={data?.caminantesPagoCompleto ?? 0}
-                  sub="de 50 cupos"
-                  color="text-emerald-700"
-                  badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }}
-                />
-                <StatMini
-                  label="Correos enviados"
-                  value={data?.caminantesCorreoEnviado ?? 0}
-                  sub={`de ${data?.totalCaminantes ?? 0} inscritos`}
-                  color="text-blue-700"
-                />
-                <StatMini
-                  label="Con abono"
-                  value={data?.caminantesConAbono ?? 0}
-                  sub="bloquean cupo"
-                  color="text-amber-700"
-                />
+                <StatMini label="Inscritos totales" value={data?.totalCaminantes ?? 0} sub="en la plataforma" color="text-gray-900" onClick={() => router.push('/dashboard/caminantes')} />
+                <StatMini label="Pago completo" value={data?.caminantesPagoCompleto ?? 0} sub="de 50 cupos" color="text-emerald-700" badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }} />
+                <StatMini label="Correos enviados" value={data?.caminantesCorreoEnviado ?? 0} sub={`de ${data?.totalCaminantes ?? 0} inscritos`} color="text-blue-700" />
+                <StatMini label="Con abono" value={data?.caminantesConAbono ?? 0} sub="bloquean cupo" color="text-amber-700" />
 
-                {/* Total recaudado caminantes */}
                 <div className="col-span-2 bg-emerald-50/60 rounded-xl p-3 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold text-emerald-800">Total recaudado caminantes</p>
-                    <p className="text-[11px] text-emerald-500 mt-0.5">
-                      {data ? `$${data.totalPagadoCaminantes.toLocaleString('es-CO')}` : '$0'} pagados
-                    </p>
+                    <p className="text-[11px] text-emerald-500 mt-0.5">{formatCOPFull(data?.totalPagadoCaminantes ?? 0)} pagados</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xl font-bold text-emerald-700">
-                      {data ? `$${(data.totalPagadoCaminantes / 1_000_000).toFixed(1)}M` : '$0'}
-                    </p>
+                    <p className="text-xl font-bold text-emerald-700">{formatCOP(data?.totalPagadoCaminantes ?? 0)}</p>
                     <p className="text-[10px] text-emerald-400">recaudado</p>
                   </div>
                 </div>
 
-                <div
-                  className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => router.push('/dashboard/caminantes')}
-                >
+                <div className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => router.push('/dashboard/caminantes')}>
                   <div>
                     <p className="text-xs font-semibold text-gray-700">Cupos disponibles</p>
                     <p className="text-[11px] text-gray-400 mt-0.5">Se bloquea al llegar a 50 con abono</p>
@@ -379,8 +331,8 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+        </div>
 
-          
         {/* Tarjeta Servidores */}
         <div className="bg-white rounded-2xl mb-3 overflow-hidden shadow-sm border border-gray-100">
           <button
@@ -393,16 +345,12 @@ export default function DashboardPage() {
                   <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
                   <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Servidores</p>
                 </div>
-                <p className="text-4xl font-bold text-gray-900 tracking-tight leading-none">
-                  {data?.servidoresConAbono ?? 0}
-                </p>
+                <p className="text-4xl font-bold text-gray-900 tracking-tight leading-none">{data?.servidoresConAbono ?? 0}</p>
                 <p className="text-sm text-gray-400 mt-1">con abono registrado</p>
               </div>
               <div className="flex flex-col items-end gap-2">
                 <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-all duration-200 ${expandedCard === 'servidores' ? 'bg-gray-100 rotate-180' : 'bg-gray-50'}`}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
                 <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-violet-50 text-violet-700">
                   {data?.servidoresPagoCompleto ?? 0} pago completo
@@ -419,10 +367,11 @@ export default function DashboardPage() {
               </div>
             </div>
           </button>
+
           {expandedCard === 'servidores' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <StatMini label="Pago completo" value={data?.servidoresPagoCompleto ?? 0} sub={`de 50 × $380K`} color="text-violet-700" badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }} onClick={() => router.push('/dashboard/servidores')} />
+                <StatMini label="Pago completo" value={data?.servidoresPagoCompleto ?? 0} sub="de 50 × $380K" color="text-violet-700" badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }} onClick={() => router.push('/dashboard/servidores')} />
                 <StatMini label="Con abono" value={data?.servidoresConAbono ?? 0} sub="han pagado algo" color="text-amber-700" onClick={() => router.push('/dashboard/servidores')} />
                 <div className="col-span-2 bg-violet-50/60 rounded-xl p-3 flex items-center justify-between">
                   <div>
@@ -458,7 +407,6 @@ export default function DashboardPage() {
               </span>
             )}
           </button>
-
           <button
             onClick={() => router.push('/dashboard/reuniones')}
             className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
@@ -476,6 +424,7 @@ export default function DashboardPage() {
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-[11px] text-gray-400">Sincronizado en tiempo real</span>
         </div>
+
       </main>
 
       {/* Bottom Nav */}
@@ -501,6 +450,7 @@ export default function DashboardPage() {
           ))}
         </div>
       </nav>
+
     </div>
   )
 }
