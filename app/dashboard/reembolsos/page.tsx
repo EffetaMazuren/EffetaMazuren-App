@@ -66,7 +66,6 @@ export default function ReembolsosPage() {
     <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '32px 16px' }}>
 
-        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 700, color: '#0f1787', margin: 0 }}>
@@ -86,7 +85,6 @@ export default function ReembolsosPage() {
           </button>
         </div>
 
-        {/* Tabs */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
           {(['pendiente', 'aprobado', 'rechazado'] as const).map(tab => (
             <button key={tab} onClick={() => setFiltro(tab)} style={tabStyle(tab)}>
@@ -127,7 +125,7 @@ export default function ReembolsosPage() {
 
 function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any) {
   const [catId, setCatId] = useState(s.categoria_id || '');
-  const [tipo, setTipo] = useState<'ingreso' | 'egreso'>('egreso');
+  const [tipo, setTipo] = useState<'ingreso' | 'egreso'>(s.tipo || 'egreso');
 
   const estadoColor: Record<string, string> = {
     pendiente: '#d97706',
@@ -145,7 +143,6 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
   return (
     <div style={{ background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 1px 8px rgba(0,0,0,0.07)' }}>
 
-      {/* Top */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div>
           <span style={{ fontWeight: 700, fontSize: 22, color: '#0f1787' }}>
@@ -160,12 +157,10 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
         </span>
       </div>
 
-      {/* Descripción */}
       <p style={{ fontSize: 14, color: '#334155', marginBottom: 8, lineHeight: 1.5, background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
         {s.descripcion || '(Sin descripción)'}
       </p>
 
-      {/* Meta */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 14, fontSize: 12, color: '#94a3b8' }}>
         <span>📅 {s.fecha ? new Date(s.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' }) : '—'}</span>
         {s.categoria?.nombre && <span>🏷️ {s.categoria.nombre}</span>}
@@ -176,7 +171,6 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
         )}
       </div>
 
-      {/* Comprobante */}
       {s.comprobante_url && (
         <button
           onClick={() => window.open(s.comprobante_url, '_blank')}
@@ -186,38 +180,27 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
         </button>
       )}
 
-      {/* Acciones — solo si pendiente */}
       {estado === 'pendiente' && (
         <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
 
-          {/* Tipo: ingreso o egreso */}
           <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
             ¿Es un ingreso o un egreso?
           </label>
           <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
             <button
               onClick={() => setTipo('egreso')}
-              style={{
-                flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'egreso' ? '#dc2626' : '#e2e8f0'}`,
-                background: tipo === 'egreso' ? '#fef2f2' : '#fff', color: tipo === 'egreso' ? '#dc2626' : '#94a3b8',
-                fontWeight: 600, fontSize: 14, cursor: 'pointer',
-              }}
+              style={{ flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'egreso' ? '#dc2626' : '#e2e8f0'}`, background: tipo === 'egreso' ? '#fef2f2' : '#fff', color: tipo === 'egreso' ? '#dc2626' : '#94a3b8', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
             >
               ↓ Egreso
             </button>
             <button
               onClick={() => setTipo('ingreso')}
-              style={{
-                flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'ingreso' ? '#16a34a' : '#e2e8f0'}`,
-                background: tipo === 'ingreso' ? '#f0fdf4' : '#fff', color: tipo === 'ingreso' ? '#16a34a' : '#94a3b8',
-                fontWeight: 600, fontSize: 14, cursor: 'pointer',
-              }}
+              style={{ flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'ingreso' ? '#16a34a' : '#e2e8f0'}`, background: tipo === 'ingreso' ? '#f0fdf4' : '#fff', color: tipo === 'ingreso' ? '#16a34a' : '#94a3b8', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
             >
               ↑ Ingreso
             </button>
           </div>
 
-          {/* Categoría */}
           <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
             Categoría financiera
           </label>
@@ -227,23 +210,16 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
             style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, marginBottom: 12, background: '#fff' }}
           >
             <option value="">Seleccionar categoría...</option>
-            {categorias
-              .filter((c: any) => !c.tipo_movimiento || c.tipo_movimiento === tipo || c.tipo_movimiento === 'ambos')
-              .map((c: any) => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
-              ))}
+            {categorias.map((c: any) => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
           </select>
 
-          {/* Botones aprobar / rechazar */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={() => onAprobar(s.id, catId, tipo)}
               disabled={procesando === s.id || !catId}
-              style={{
-                flex: 1, background: procesando === s.id || !catId ? '#94a3b8' : '#16a34a',
-                color: '#fff', border: 'none', borderRadius: 10, padding: '12px',
-                fontWeight: 600, fontSize: 14, cursor: procesando === s.id || !catId ? 'not-allowed' : 'pointer',
-              }}
+              style={{ flex: 1, background: procesando === s.id || !catId ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 600, fontSize: 14, cursor: procesando === s.id || !catId ? 'not-allowed' : 'pointer' }}
             >
               ✓ Aprobar y clasificar
             </button>
