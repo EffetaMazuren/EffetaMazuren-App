@@ -50,29 +50,38 @@ export default function PagoServidor() {
 
       setInscripcionId(srv.id)
 
-      const { data: pagoData } = await supabase
-        .from('vista_pagos_servidores')
-        .select('*')
-        .eq('servidor_id', srv.id)
-        .single()
+      const { data: pagosData } = await supabase
+        .from('pagos')
+        .select('valor, estado, comprobante_url, fecha')
+        .eq('persona_id', srv.id)
+        .eq('tipo_persona', 'servidor')
+        .eq('retiro_id', RETIRO_ID)
 
       const costo: number = srv.es_interno ? 380000 : 0
-      const pagado: number = pagoData?.total_pagado ?? 0
+      const pagado: number = pagosData
+        ?.filter(p => p.estado === 'confirmado')
+        .reduce((sum, p) => sum + (p.valor || 0), 0) ?? 0
+
+      const estadoPago = pagado >= costo && costo > 0 ? 'completo'
+        : pagado > 0 ? 'parcial' : 'sin_pago'
 
       setResumen({
         total_pagado: pagado,
         costo_retiro: costo,
-        estado_pago: pagoData?.estado_pago ?? 'sin_pago',
+        estado_pago: estadoPago,
         saldo_pendiente: Math.max(0, costo - pagado)
       })
 
-      const { data: transacciones } = await supabase
-        .from('transacciones')
-        .select('id, monto, fecha, url_comprobante, descripcion, estado')
-        .eq('servidor_inscripcion_id', srv.id)
-        .order('fecha', { ascending: false })
+      const comprobantesFormateados: Comprobante[] = (pagosData ?? []).map(p => ({
+        id: Math.random().toString(),
+        monto: p.valor,
+        fecha: p.fecha,
+        url_comprobante: p.comprobante_url,
+        descripcion: null,
+        estado: p.estado
+      }))
 
-      setComprobantes(transacciones ?? [])
+      setComprobantes(comprobantesFormateados)
       setLoading(false)
     }
     cargar()
@@ -108,29 +117,39 @@ export default function PagoServidor() {
 
     const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(nombre)
 
-    const { error: txErr } = await supabase
-      .from('transacciones')
+    const { error: pagoErr } = await supabase
+      .from('pagos')
       .insert({
-        servidor_inscripcion_id: inscripcionId,
+        persona_id: inscripcionId,
+        tipo_persona: 'servidor',
         retiro_id: RETIRO_ID,
-        monto: 0,
+        valor: 0,
         fecha: new Date().toISOString().split('T')[0],
-        url_comprobante: urlData.publicUrl,
-        descripcion: 'Comprobante subido por servidor — pendiente verificación',
-        estado: 'pendiente_verificacion',
-        tipo: 'ingreso'
+        comprobante_url: urlData.publicUrl,
+        comprobante_nombre: archivo.name,
+        estado: 'pendiente',
+        notas: 'Subido por servidor — pendiente verificación'
       })
 
-    if (txErr) {
-      setError('Error al registrar: ' + txErr.message)
+    if (pagoErr) {
+      setError('Error al registrar: ' + pagoErr.message)
     } else {
       setExito('✅ Comprobante enviado. Un líder lo verificará pronto.')
-      const { data } = await supabase
-        .from('transacciones')
-        .select('id, monto, fecha, url_comprobante, descripcion, estado')
-        .eq('servidor_inscripcion_id', inscripcionId)
-        .order('fecha', { ascending: false })
-      setComprobantes(data ?? [])
+      const { data: pagosData } = await supabase
+        .from('pagos')
+        .select('valor, estado, comprobante_url, fecha')
+        .eq('persona_id', inscripcionId)
+        .eq('tipo_persona', 'servidor')
+        .eq('retiro_id', RETIRO_ID)
+
+      setComprobantes((pagosData ?? []).map(p => ({
+        id: Math.random().toString(),
+        monto: p.valor,
+        fecha: p.fecha,
+        url_comprobante: p.comprobante_url,
+        descripcion: null,
+        estado: p.estado
+      })))
     }
 
     setSubiendo(false)
@@ -139,14 +158,6 @@ export default function PagoServidor() {
 
   const abrirComprobante = (url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer')
-  }
-
-  const estadoPagoColor: Record<string, string> = {
-    completo: '#16a34a',
-    parcial: '#d97706',
-    sin_pago: '#6b7280',
-    sorpresa: '#7c3aed',
-    pendiente_verificacion: '#d97706'
   }
 
   if (loading) return (
@@ -163,6 +174,12 @@ export default function PagoServidor() {
   const porcentaje = resumen && resumen.costo_retiro > 0
     ? Math.min(100, Math.round((resumen.total_pagado / resumen.costo_retiro) * 100))
     : 100
+
+  const estadoColor: Record<string, { bg: string; color: string; label: string }> = {
+    confirmado: { bg: '#f0fdf4', color: '#16a34a', label: '✅ Confirmado' },
+    pendiente: { bg: '#fffbeb', color: '#d97706', label: '⏳ Pendiente' },
+    rechazado: { bg: '#fef2f2', color: '#dc2626', label: '❌ Rechazado' },
+  }
 
   return (
     <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
@@ -268,55 +285,54 @@ export default function PagoServidor() {
             Historial de pagos
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {comprobantes.map(c => (
-              <div
-                key={c.id}
-                style={{
-                  background: 'white', border: '1.5px solid #e8eaf0',
-                  borderRadius: 12, padding: '14px 16px',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>
-                    {c.monto > 0
-                      ? `$${c.monto.toLocaleString('es-CO')}`
-                      : 'Monto por verificar'}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                    {c.fecha
-                      ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-CO', {
-                          day: 'numeric', month: 'long', year: 'numeric'
-                        })
-                      : '—'}
-                  </div>
-                  {c.estado && (
+            {comprobantes.map(c => {
+              const cfg = estadoColor[c.estado ?? ''] ?? { bg: '#f9fafb', color: '#6b7280', label: c.estado ?? '—' }
+              return (
+                <div
+                  key={c.id}
+                  style={{
+                    background: 'white', border: '1.5px solid #e8eaf0',
+                    borderRadius: 12, padding: '14px 16px',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>
+                      {c.monto > 0
+                        ? `$${c.monto.toLocaleString('es-CO')}`
+                        : 'Monto por verificar'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      {c.fecha
+                        ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-CO', {
+                            day: 'numeric', month: 'long', year: 'numeric'
+                          })
+                        : '—'}
+                    </div>
                     <div style={{
                       display: 'inline-block', marginTop: 4,
                       fontSize: 11, padding: '2px 8px', borderRadius: 20,
-                      background: c.estado === 'pendiente_verificacion' ? '#fffbeb' : '#f0fdf4',
-                      color: estadoPagoColor[c.estado] ?? '#6b7280',
-                      fontWeight: 600
+                      background: cfg.bg, color: cfg.color, fontWeight: 600
                     }}>
-                      {c.estado === 'pendiente_verificacion' ? '⏳ Pendiente' : '✅ Verificado'}
+                      {cfg.label}
                     </div>
+                  </div>
+                  {c.url_comprobante && (
+                    <button
+                      onClick={() => abrirComprobante(c.url_comprobante!)}
+                      style={{
+                        padding: '8px 12px', background: '#f0f2ff',
+                        color: '#0f1787', borderRadius: 8, fontSize: 12,
+                        fontWeight: 600, border: 'none', cursor: 'pointer',
+                        flexShrink: 0, marginLeft: 12
+                      }}
+                    >
+                      Ver →
+                    </button>
                   )}
                 </div>
-                {c.url_comprobante && (
-                  <button
-                    onClick={() => abrirComprobante(c.url_comprobante!)}
-                    style={{
-                      padding: '8px 12px', background: '#f0f2ff',
-                      color: '#0f1787', borderRadius: 8, fontSize: 12,
-                      fontWeight: 600, border: 'none', cursor: 'pointer',
-                      flexShrink: 0, marginLeft: 12
-                    }}
-                  >
-                    Ver →
-                  </button>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       ) : (
