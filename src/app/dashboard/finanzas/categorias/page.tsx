@@ -1,33 +1,32 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
-// ── Tipos ────────────────────────────────────────────────────────────────────
-interface Categoria {
+type Categoria = {
   id: string
   nombre: string
-  tipo_cuenta: 'Parroquia' | 'Nequi Effetá'
+  tipo_cuenta: string
   tipo_movimiento: 'ingreso' | 'egreso' | 'ambos'
   activa: boolean
+  presupuesto?: number
+  retiro_id?: string
 }
 
-type TipoCuenta = 'Parroquia' | 'Nequi Effetá'
 type TipoMovimiento = 'ingreso' | 'egreso' | 'ambos'
 
-const TIPO_LABELS: Record<TipoMovimiento, { label: string; color: string }> = {
-  ingreso: { label: 'Ingreso', color: 'bg-emerald-50 text-emerald-700' },
-  egreso: { label: 'Egreso', color: 'bg-red-50 text-red-600' },
-  ambos: { label: 'Ambos', color: 'bg-gray-100 text-gray-600' },
+const TIPO_LABELS: Record<TipoMovimiento, { label: string; bg: string; color: string }> = {
+  ingreso: { label: 'Ingreso', bg: '#f0fdf4', color: '#166534' },
+  egreso:  { label: 'Egreso',  bg: '#fef2f2', color: '#991b1b' },
+  ambos:   { label: 'Ambos',   bg: '#f9fafb', color: '#374151' },
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
+function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
+
 export default function CategoriasPage() {
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const router = useRouter()
+  const [retiroId, setRetiroId] = useState<string | null>(null)
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
   const [guardando, setGuardando] = useState<string | null>(null)
@@ -35,55 +34,55 @@ export default function CategoriasPage() {
   const [error, setError] = useState<string | null>(null)
   const [mostrarForm, setMostrarForm] = useState(false)
 
-  // Form nueva categoría
   const [nombre, setNombre] = useState('')
-  const [tipoCuenta, setTipoCuenta] = useState<TipoCuenta>('Nequi Effetá')
+  const [tipoCuenta, setTipoCuenta] = useState('Nequi Effetá')
   const [tipoMovimiento, setTipoMovimiento] = useState<TipoMovimiento>('egreso')
+  const [presupuesto, setPresupuesto] = useState('')
   const [creando, setCreando] = useState(false)
 
-  // ── Cargar ──────────────────────────────────────────────────────────────
-  const cargar = async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('categorias_financieras')
-      .select('*')
-      .order('tipo_cuenta', { ascending: true })
-      .order('activa', { ascending: false })
-      .order('nombre', { ascending: true })
+  useEffect(() => {
+    async function cargar() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/'); return }
 
-    if (!error && data) setCategorias(data as Categoria[])
-    setLoading(false)
-  }
+      const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
+      if (!r) return
+      setRetiroId(r.id)
 
-  useEffect(() => { cargar() }, [])
+      const { data: cats } = await supabase
+        .from('categorias_financieras')
+        .select('*')
+        .eq('retiro_id', r.id)
+        .order('tipo_cuenta', { ascending: true })
+        .order('activa', { ascending: false })
+        .order('nombre', { ascending: true })
 
-  // ── Toggle activa/inactiva ───────────────────────────────────────────────
+      if (cats) setCategorias(cats as Categoria[])
+      setLoading(false)
+    }
+    cargar()
+  }, [])
+
   const toggleActiva = async (cat: Categoria) => {
     setGuardando(cat.id)
     setError(null)
-
     const { error } = await supabase
       .from('categorias_financieras')
       .update({ activa: !cat.activa })
       .eq('id', cat.id)
-
     if (error) {
-      setError('No se pudo actualizar la categoría.')
+      setError('No se pudo actualizar.')
     } else {
-      setCategorias(prev =>
-        prev.map(c => c.id === cat.id ? { ...c, activa: !cat.activa } : c)
-      )
+      setCategorias(prev => prev.map(c => c.id === cat.id ? { ...c, activa: !cat.activa } : c))
     }
     setGuardando(null)
   }
 
-  // ── Eliminar ─────────────────────────────────────────────────────────────
   const eliminar = async (cat: Categoria) => {
-    if (!confirm(`¿Eliminar "${cat.nombre}"? Solo se puede si no tiene movimientos.`)) return
+    if (!confirm(`¿Eliminar "${cat.nombre}"?\nSolo es posible si no tiene movimientos registrados.`)) return
     setEliminando(cat.id)
     setError(null)
 
-    // Verificar si tiene transacciones
     const { count } = await supabase
       .from('transacciones')
       .select('id', { count: 'exact', head: true })
@@ -95,221 +94,231 @@ export default function CategoriasPage() {
       return
     }
 
-    const { error } = await supabase
-      .from('categorias_financieras')
-      .delete()
-      .eq('id', cat.id)
-
+    const { error } = await supabase.from('categorias_financieras').delete().eq('id', cat.id)
     if (error) {
-      setError('No se pudo eliminar la categoría.')
+      setError('No se pudo eliminar.')
     } else {
       setCategorias(prev => prev.filter(c => c.id !== cat.id))
     }
     setEliminando(null)
   }
 
-  // ── Crear nueva ──────────────────────────────────────────────────────────
   const crear = async () => {
-    if (!nombre.trim()) {
-      setError('El nombre es obligatorio.')
-      return
-    }
+    if (!nombre.trim()) { setError('El nombre es obligatorio.'); return }
+    if (!retiroId) return
     setCreando(true)
     setError(null)
 
     const { data, error } = await supabase
       .from('categorias_financieras')
-      .insert({ nombre: nombre.trim(), tipo_cuenta: tipoCuenta, tipo_movimiento: tipoMovimiento, activa: true })
+      .insert({
+        nombre: nombre.trim(),
+        tipo_cuenta: tipoCuenta,
+        tipo_movimiento: tipoMovimiento,
+        activa: true,
+        retiro_id: retiroId,
+        presupuesto: presupuesto ? Number(presupuesto.replace(/\D/g, '')) : 0,
+      })
       .select()
       .single()
 
     if (error) {
       setError('No se pudo crear la categoría.')
     } else {
-      setCategorias(prev => [...prev, data as Categoria].sort((a, b) => {
-        if (a.tipo_cuenta !== b.tipo_cuenta) return a.tipo_cuenta.localeCompare(b.tipo_cuenta)
-        return a.nombre.localeCompare(b.nombre)
-      }))
+      setCategorias(prev =>
+        [...prev, data as Categoria].sort((a, b) =>
+          a.tipo_cuenta.localeCompare(b.tipo_cuenta) || a.nombre.localeCompare(b.nombre)
+        )
+      )
       setNombre('')
+      setPresupuesto('')
       setMostrarForm(false)
     }
     setCreando(false)
   }
 
-  // ── Agrupar por cuenta ───────────────────────────────────────────────────
   const grupos = categorias.reduce<Record<string, Categoria[]>>((acc, cat) => {
-    if (!acc[cat.tipo_cuenta]) acc[cat.tipo_cuenta] = []
-    acc[cat.tipo_cuenta].push(cat)
+    const key = cat.tipo_cuenta ?? 'Sin cuenta'
+    if (!acc[key]) acc[key] = []
+    acc[key].push(cat)
     return acc
   }, {})
 
   const activas = categorias.filter(c => c.activa).length
   const inactivas = categorias.filter(c => !c.activa).length
 
-  // ── Render ───────────────────────────────────────────────────────────────
-  return (
-    <div className="min-h-screen bg-[#f7f8fc] pb-24">
-      <div className="max-w-lg mx-auto px-4 pt-8 space-y-5">
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f7f8fc' }}>
+      <div style={{ color: '#9ca3af', fontSize: 14 }}>Cargando...</div>
+    </div>
+  )
 
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-1">
-          <Link href="/dashboard/finanzas" className="text-gray-400 hover:text-gray-600 transition-colors">
-            ←
-          </Link>
-          <div>
-            <h1 className="text-[22px] font-medium text-gray-900 leading-tight">Categorías</h1>
-            <p className="text-sm text-gray-400 mt-0.5">
-              {activas} activas · {inactivas} inactivas
-            </p>
-          </div>
+  return (
+    <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 40 }}>
+
+      {/* Header navy */}
+      <div style={{ background: '#0f1787', padding: '28px 20px 24px' }}>
+        <button
+          onClick={() => router.push('/dashboard/finanzas')}
+          style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 14, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
+          ← Finanzas
+        </button>
+        <div style={{ fontSize: 22, fontWeight: 600, color: '#fff' }}>Categorías</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+          {activas} activas · {inactivas} inactivas
         </div>
+      </div>
+
+      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
         {/* Error */}
         {error && (
-          <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-            <p className="text-sm text-red-600">{error}</p>
-            <button
-              onClick={() => setError(null)}
-              className="text-xs text-red-400 mt-1 hover:text-red-600"
-            >
-              Cerrar
-            </button>
+          <div style={{ background: '#fef2f2', border: '0.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: '#991b1b' }}>{error}</span>
+            <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
           </div>
         )}
 
         {/* Botón crear */}
         <button
           onClick={() => { setMostrarForm(p => !p); setError(null) }}
-          className="w-full flex items-center justify-center gap-2 bg-[#0f1787] text-white text-sm font-medium py-3 rounded-xl hover:bg-[#0d1469] transition-colors"
-        >
+          style={{ background: mostrarForm ? '#f3f4f6' : '#0f1787', color: mostrarForm ? '#374151' : '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '13px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
           {mostrarForm ? '✕ Cancelar' : '+ Nueva categoría'}
         </button>
 
-        {/* Formulario crear */}
+        {/* Formulario */}
         {mostrarForm && (
-          <div className="bg-white rounded-2xl border border-gray-100 px-5 py-5 space-y-4">
-            <p className="text-sm font-medium text-gray-700">Nueva categoría</p>
+          <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: '20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>Nueva categoría</div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-gray-400 uppercase tracking-wide">Nombre</label>
+            <div>
+              <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Nombre *</div>
               <input
                 type="text"
                 value={nombre}
                 onChange={e => setNombre(e.target.value)}
-                placeholder="Ej. Impresiones, Decoración…"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:border-[#0f1787] transition-colors"
                 onKeyDown={e => e.key === 'Enter' && crear()}
+                placeholder="Ej. Palancas, Pinares, Decoración…"
+                style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400 uppercase tracking-wide">Cuenta</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Cuenta</div>
                 <select
                   value={tipoCuenta}
-                  onChange={e => setTipoCuenta(e.target.value as TipoCuenta)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-[#0f1787] bg-white transition-colors"
-                >
+                  onChange={e => setTipoCuenta(e.target.value)}
+                  style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
                   <option value="Nequi Effetá">Nequi Effetá</option>
                   <option value="Parroquia">Parroquia</option>
                 </select>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400 uppercase tracking-wide">Tipo</label>
+              <div>
+                <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tipo</div>
                 <select
                   value={tipoMovimiento}
                   onChange={e => setTipoMovimiento(e.target.value as TipoMovimiento)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-[#0f1787] bg-white transition-colors"
-                >
-                  <option value="ingreso">Ingreso</option>
+                  style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
                   <option value="egreso">Egreso</option>
+                  <option value="ingreso">Ingreso</option>
                   <option value="ambos">Ambos</option>
                 </select>
               </div>
             </div>
 
+            <div>
+              <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Presupuesto (opcional)</div>
+              <input
+                type="text"
+                value={presupuesto}
+                onChange={e => setPresupuesto(e.target.value)}
+                placeholder="Ej. 500000"
+                style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }}
+              />
+            </div>
+
             <button
               onClick={crear}
               disabled={creando || !nombre.trim()}
-              className="w-full bg-[#0f1787] text-white text-sm font-medium py-3 rounded-xl hover:bg-[#0d1469] transition-colors disabled:opacity-40"
-            >
-              {creando ? 'Guardando…' : 'Crear categoría'}
+              style={{ background: creando || !nombre.trim() ? '#e5e7eb' : '#0f1787', color: creando || !nombre.trim() ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: '12px', fontSize: 14, fontWeight: 500, cursor: creando || !nombre.trim() ? 'not-allowed' : 'pointer' }}>
+              {creando ? 'Creando…' : 'Crear categoría'}
             </button>
           </div>
         )}
 
         {/* Lista agrupada */}
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-14 bg-white rounded-xl animate-pulse border border-gray-100" />
-            ))}
-          </div>
-        ) : (
-          Object.entries(grupos).map(([cuenta, cats]) => (
-            <div key={cuenta} className="space-y-2">
-              {/* Encabezado grupo */}
-              <p className="text-[11px] uppercase tracking-widest text-gray-400 px-1">{cuenta}</p>
-
-              {/* Cards categorías */}
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
-                {cats.map(cat => (
-                  <div
-                    key={cat.id}
-                    className={`px-5 py-3.5 flex items-center gap-3 transition-colors ${
-                      !cat.activa ? 'opacity-40' : ''
-                    }`}
-                  >
-                    {/* Toggle switch */}
-                    <button
-                      onClick={() => toggleActiva(cat)}
-                      disabled={guardando === cat.id}
-                      aria-label={cat.activa ? 'Desactivar' : 'Activar'}
-                      className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
-                        cat.activa ? 'bg-[#0f1787]' : 'bg-gray-200'
-                      } ${guardando === cat.id ? 'opacity-50' : ''}`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
-                          cat.activa ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-
-                    {/* Nombre */}
-                    <span className="flex-1 text-sm text-gray-800 font-medium truncate">
-                      {cat.nombre}
-                    </span>
-
-                    {/* Badge tipo */}
-                    <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${
-                      TIPO_LABELS[cat.tipo_movimiento].color
-                    }`}>
-                      {TIPO_LABELS[cat.tipo_movimiento].label}
-                    </span>
-
-                    {/* Eliminar */}
-                    <button
-                      onClick={() => eliminar(cat)}
-                      disabled={eliminando === cat.id}
-                      aria-label="Eliminar categoría"
-                      className="flex-shrink-0 text-gray-200 hover:text-red-400 transition-colors disabled:opacity-30 text-lg leading-none"
-                    >
-                      {eliminando === cat.id ? '…' : '×'}
-                    </button>
-                  </div>
-                ))}
-              </div>
+        {Object.entries(grupos).map(([cuenta, cats]) => (
+          <div key={cuenta}>
+            <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8, paddingLeft: 2 }}>
+              {cuenta}
             </div>
-          ))
-        )}
+            <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+              {cats.map((cat, i) => (
+                <div key={cat.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '13px 16px',
+                  borderTop: i > 0 ? '0.5px solid #f3f4f6' : 'none',
+                  opacity: cat.activa ? 1 : 0.4,
+                }}>
+                  {/* Toggle */}
+                  <button
+                    onClick={() => toggleActiva(cat)}
+                    disabled={guardando === cat.id}
+                    style={{
+                      position: 'relative', width: 40, height: 22, borderRadius: 11,
+                      background: cat.activa ? '#0f1787' : '#d1d5db',
+                      border: 'none', cursor: 'pointer', flexShrink: 0,
+                      opacity: guardando === cat.id ? 0.5 : 1,
+                    }}>
+                    <span style={{
+                      position: 'absolute', top: 3, left: cat.activa ? 21 : 3,
+                      width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                      transition: 'left 0.2s', display: 'block',
+                    }} />
+                  </button>
 
-        {/* Info */}
-        <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-          <p className="text-xs text-amber-700 leading-relaxed">
-            <span className="font-medium">Categorías inactivas</span> no aparecen al registrar movimientos pero conservan su historial.
-            Solo puedes <span className="font-medium">eliminar</span> categorías que no tengan movimientos registrados.
-          </p>
+                  {/* Nombre */}
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>
+                    {cat.nombre}
+                  </span>
+
+                  {/* Badge tipo */}
+                  <span style={{
+                    fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 6,
+                    background: TIPO_LABELS[cat.tipo_movimiento]?.bg ?? '#f9fafb',
+                    color: TIPO_LABELS[cat.tipo_movimiento]?.color ?? '#374151',
+                    flexShrink: 0,
+                  }}>
+                    {TIPO_LABELS[cat.tipo_movimiento]?.label}
+                  </span>
+
+                  {/* Presupuesto */}
+                  {(cat.presupuesto ?? 0) > 0 && (
+                    <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>
+                      {fmt(cat.presupuesto!)}
+                    </span>
+                  )}
+
+                  {/* Eliminar */}
+                  <button
+                    onClick={() => eliminar(cat)}
+                    disabled={eliminando === cat.id}
+                    style={{ background: 'none', border: 'none', color: '#d1d5db', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 0 0 4px', flexShrink: 0 }}>
+                    {eliminando === cat.id ? '…' : '×'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* Nota */}
+        <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px' }}>
+          <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+            <strong>Categorías inactivas</strong> no aparecen al registrar movimientos pero conservan su historial.<br />
+            Solo puedes <strong>eliminar</strong> categorías sin movimientos.
+          </div>
         </div>
 
       </div>
