@@ -23,6 +23,8 @@ interface DashboardData {
   servidoresConAbono: number
   totalRecaudado: number
   totalPagadoCaminantes: number
+  totalCuentaParroquia: number
+  totalNequiEffeta: number
   nombreRetiro: string
   fechaInicio: string
   fechaFin: string
@@ -96,9 +98,10 @@ export default function DashboardPage() {
 
       const { data: transacciones } = await supabase
         .from('transacciones')
-        .select('valor, tipo')
+        .select('valor, tipo, estado')
         .eq('retiro_id', RETIRO_ID)
         .eq('tipo', 'ingreso')
+        .eq('estado', 'aprobado')
 
       const { data: reembolsos } = await supabase
         .from('transacciones')
@@ -112,9 +115,9 @@ export default function DashboardPage() {
         .select('id')
         .eq('fuera_de_horario', true)
 
-      const totalPagos = pagos?.reduce((acc, p) => acc + (p.valor ?? 0), 0) ?? 0
-      const totalTransacciones = transacciones?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
-      const totalRecaudado = totalPagos + totalTransacciones
+      const totalCuentaParroquia = pagos?.reduce((acc, p) => acc + (p.valor ?? 0), 0) ?? 0
+      const totalNequiEffeta = transacciones?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
+      const totalRecaudado = totalCuentaParroquia + totalNequiEffeta
 
       setData({
         totalCaminantes,
@@ -127,6 +130,8 @@ export default function DashboardPage() {
         servidoresConAbono,
         totalRecaudado,
         totalPagadoCaminantes,
+        totalCuentaParroquia,
+        totalNequiEffeta,
         nombreRetiro: retiro?.nombre ?? 'Effetá Mazuren · Julio 2026',
         fechaInicio: fechaInicio.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         fechaFin: fechaFin.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -232,7 +237,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Hero — Meta de Recaudo */}
-        <div className="bg-[#0f1787] rounded-2xl p-5 mb-4 overflow-hidden relative">
+        <div className="bg-[#0f1787] rounded-2xl p-5 mb-3 overflow-hidden relative">
           <div className="absolute -right-8 -top-8 w-32 h-32 bg-white/5 rounded-full" />
           <div className="absolute -right-2 top-12 w-20 h-20 bg-white/5 rounded-full" />
           <div className="relative z-10">
@@ -270,6 +275,49 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Dos tarjetas azules: Parroquia y Nequi */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+
+          {/* Cuenta Parroquia */}
+          <div className="bg-[#0f1787] rounded-2xl p-4 overflow-hidden relative">
+            <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-white/5 rounded-full" />
+            <div className="relative z-10">
+              <p className="text-[9px] font-semibold tracking-[0.15em] text-blue-300 uppercase mb-3">
+                Cuenta parroquia
+              </p>
+              <p className="text-2xl font-bold text-white tracking-tight leading-none">
+                {data ? formatCOP(data.totalCuentaParroquia) : '$0'}
+              </p>
+              <p className="text-[10px] text-blue-200/60 mt-1 leading-tight">
+                inscripciones caminantes y servidores
+              </p>
+              <p className="text-[10px] text-blue-300/80 mt-2 font-medium">
+                {formatCOPFull(data?.totalCuentaParroquia ?? 0)}
+              </p>
+            </div>
+          </div>
+
+          {/* Nequi Effetá */}
+          <div className="bg-[#1a2a9b] rounded-2xl p-4 overflow-hidden relative">
+            <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-white/5 rounded-full" />
+            <div className="relative z-10">
+              <p className="text-[9px] font-semibold tracking-[0.15em] text-blue-300 uppercase mb-3">
+                Nequi Effetá
+              </p>
+              <p className="text-2xl font-bold text-white tracking-tight leading-none">
+                {data ? formatCOP(data.totalNequiEffeta) : '$0'}
+              </p>
+              <p className="text-[10px] text-blue-200/60 mt-1 leading-tight">
+                ingresos registrados en finanzas
+              </p>
+              <p className="text-[10px] text-blue-300/80 mt-2 font-medium">
+                {formatCOPFull(data?.totalNequiEffeta ?? 0)}
+              </p>
+            </div>
+          </div>
+
         </div>
 
         {/* Tarjeta Caminantes */}
