@@ -12,6 +12,7 @@ type Servidor = {
   inscrito_oficialmente: boolean; fecha_inscripcion: string
   total_pagado: number; saldo_pendiente: number
   estado_pago: 'completo' | 'parcial' | 'sin_pago'; numero_abonos: number
+  es_interno: boolean
 }
 
 type Pago = {
@@ -25,6 +26,83 @@ function iniciales(nombre: string) {
 }
 
 const VALOR_TOTAL = 380000
+
+function BadgeTipo({ id, esInterno }: { id: string; esInterno: boolean }) {
+  const [actual, setActual] = useState(esInterno)
+  const [abierto, setAbierto] = useState(false)
+  const [cargando, setCargando] = useState(false)
+
+  const opciones = [
+    { valor: true, label: 'Interno', bg: '#eff6ff', color: '#1d4ed8' },
+    { valor: false, label: 'Externo', bg: '#f3f4f6', color: '#6b7280' },
+  ]
+  const opcionActual = opciones.find(o => o.valor === actual)!
+
+  async function cambiar(nuevoValor: boolean) {
+    if (nuevoValor === actual) { setAbierto(false); return }
+    setCargando(true)
+    try {
+      const res = await fetch(`/api/servidores/${id}/tipo`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ es_interno: nuevoValor }),
+      })
+      if (res.ok) setActual(nuevoValor)
+    } finally {
+      setCargando(false)
+      setAbierto(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setAbierto(v => !v)}
+        disabled={cargando}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
+          background: opcionActual.bg, color: opcionActual.color,
+          border: 'none', cursor: 'pointer', opacity: cargando ? 0.5 : 1,
+        }}
+      >
+        {cargando ? '...' : opcionActual.label}
+        {!cargando && (
+          <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+          </svg>
+        )}
+      </button>
+      {abierto && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setAbierto(false)} />
+          <div style={{ position: 'absolute', left: 0, top: '110%', zIndex: 20, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.10)', border: '0.5px solid #e5e7eb', padding: '4px 0', minWidth: 110 }}>
+            {opciones.map(op => (
+              <button
+                key={String(op.valor)}
+                onClick={() => cambiar(op.valor)}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12,
+                  fontWeight: op.valor === actual ? 600 : 400,
+                  color: op.valor === actual ? '#0f1787' : '#374151',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                <span style={{
+                  width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                  background: op.valor === actual ? '#0f1787' : 'transparent',
+                  border: op.valor === actual ? 'none' : '1.5px solid #d1d5db',
+                }} />
+                {op.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function ServidorPage() {
   const router = useRouter()
@@ -153,13 +231,14 @@ export default function ServidorPage() {
             <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#f0f1ff', color: '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 600, flexShrink: 0 }}>
               {iniciales(servidor.nombre)}
             </div>
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#0d0d14' }}>{servidor.nombre}</div>
               <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{servidor.tipo_documento} {servidor.numero_documento}</div>
-              <div style={{ marginTop: 6 }}>
+              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: colorEstado.bg, color: colorEstado.color }}>
                   {colorEstado.label}
                 </span>
+                <BadgeTipo id={servidor.id} esInterno={servidor.es_interno} />
               </div>
             </div>
           </div>
@@ -248,7 +327,6 @@ export default function ServidorPage() {
                 {valorPago && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{fmt(Number(valorPago))}</div>}
               </div>
 
-              {/* Comprobante */}
               {!previsualizacion ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, border: '1.5px dashed #e5e7eb', cursor: 'pointer', background: '#fff' }}>
                   <input type="file" accept="image/*" onChange={seleccionarArchivo} style={{ display: 'none' }} />
