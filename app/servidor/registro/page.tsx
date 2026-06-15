@@ -93,29 +93,21 @@ export default function RegistroServidor() {
     setLoading(true)
     setError('')
 
-    const { data: authData, error: authErr } = await supabase.auth.signUp({
+    const { error: authErr } = await supabase.auth.signUp({
       email: email.trim().toLowerCase(),
       password,
       options: {
-        data: { nombre_completo: seleccionado.nombre }
+        data: {
+          nombre: seleccionado.nombre,
+          servidor_inscripcion_id: seleccionado.id
+        }
       }
     })
 
-    if (authErr || !authData.user) {
-      setError(authErr?.message === 'User already registered'
+    if (authErr) {
+      setError(authErr.message === 'User already registered'
         ? 'Este correo ya tiene cuenta. Inicia sesión normal.'
-        : (authErr?.message || 'Error al crear cuenta'))
-      setLoading(false)
-      return
-    }
-
-    const { error: vinErr } = await supabase
-      .from('servidores_inscripcion')
-      .update({ usuario_id: authData.user.id })
-      .eq('id', seleccionado.id)
-
-    if (vinErr) {
-      setError('Error al vincular perfil: ' + vinErr.message)
+        : (authErr.message || 'Error al crear cuenta'))
       setLoading(false)
       return
     }
