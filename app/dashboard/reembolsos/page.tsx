@@ -18,27 +18,22 @@ export default function ReembolsosPage() {
     const [{ data: trans }, { data: cats }] = await Promise.all([
       supabase
         .from('transacciones')
-        .select(`
-          *,
-          servidor_inscripcion:servidor_inscripcion_id(nombre),
-          categoria:categoria_id(nombre)
-        `)
+        .select(`*, servidor_inscripcion:servidor_inscripcion_id(nombre), categoria:categoria_id(nombre)`)
         .eq('retiro_id', RETIRO_ID)
-        .eq('tipo', 'egreso')
         .order('created_at', { ascending: false }),
-      supabase.from('categorias_financieras').select('*').order('nombre'),
+      supabase.from('categorias_financieras').select('*').eq('retiro_id', RETIRO_ID).order('nombre'),
     ]);
     setSolicitudes(trans || []);
     setCategorias(cats || []);
     setLoading(false);
   }
 
-  async function aprobar(id: string, categoriaId: string) {
+  async function aprobar(id: string, categoriaId: string, tipo: 'ingreso' | 'egreso') {
     if (!categoriaId) { alert('Selecciona una categoría antes de aprobar.'); return; }
     setProcesando(id);
     const { error } = await supabase
       .from('transacciones')
-      .update({ estado: 'aprobado', categoria_id: categoriaId })
+      .update({ estado: 'aprobado', categoria_id: categoriaId, tipo })
       .eq('id', id);
     if (error) alert('Error: ' + error.message);
     else await cargar();
@@ -61,7 +56,7 @@ export default function ReembolsosPage() {
   const pendientes = solicitudes.filter(s => (s.estado || 'pendiente') === 'pendiente').length;
 
   const tabStyle = (tab: string) => ({
-    padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer',
+    padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer' as const,
     fontWeight: 600 as const, fontSize: 14,
     background: filtro === tab ? '#0f1787' : '#f1f5f9',
     color: filtro === tab ? '#fff' : '#64748b',
@@ -70,7 +65,7 @@ export default function ReembolsosPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '32px 16px' }}>
-        
+
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
           <div>
@@ -132,6 +127,7 @@ export default function ReembolsosPage() {
 
 function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any) {
   const [catId, setCatId] = useState(s.categoria_id || '');
+  const [tipo, setTipo] = useState<'ingreso' | 'egreso'>('egreso');
 
   const estadoColor: Record<string, string> = {
     pendiente: '#d97706',
@@ -148,8 +144,8 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, padding: 24, boxShadow: '0 1px 8px rgba(0,0,0,0.07)' }}>
-      
-      {/* Top row */}
+
+      {/* Top */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div>
           <span style={{ fontWeight: 700, fontSize: 22, color: '#0f1787' }}>
@@ -164,15 +160,20 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
         </span>
       </div>
 
-      {/* Descripcion */}
+      {/* Descripción */}
       <p style={{ fontSize: 14, color: '#334155', marginBottom: 8, lineHeight: 1.5, background: '#f8fafc', borderRadius: 8, padding: '10px 12px' }}>
         {s.descripcion || '(Sin descripción)'}
       </p>
 
-      {/* Fecha y categoria */}
+      {/* Meta */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 14, fontSize: 12, color: '#94a3b8' }}>
-        <span>📅 {s.fecha ? new Date(s.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</span>
+        <span>📅 {s.fecha ? new Date(s.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' }) : '—'}</span>
         {s.categoria?.nombre && <span>🏷️ {s.categoria.nombre}</span>}
+        {estado === 'aprobado' && (
+          <span style={{ color: s.tipo === 'ingreso' ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+            {s.tipo === 'ingreso' ? '↑ Ingreso' : '↓ Egreso'}
+          </span>
+        )}
       </div>
 
       {/* Comprobante */}
@@ -188,8 +189,37 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
       {/* Acciones — solo si pendiente */}
       {estado === 'pendiente' && (
         <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+
+          {/* Tipo: ingreso o egreso */}
           <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
-            Clasificar como categoría financiera
+            ¿Es un ingreso o un egreso?
+          </label>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            <button
+              onClick={() => setTipo('egreso')}
+              style={{
+                flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'egreso' ? '#dc2626' : '#e2e8f0'}`,
+                background: tipo === 'egreso' ? '#fef2f2' : '#fff', color: tipo === 'egreso' ? '#dc2626' : '#94a3b8',
+                fontWeight: 600, fontSize: 14, cursor: 'pointer',
+              }}
+            >
+              ↓ Egreso
+            </button>
+            <button
+              onClick={() => setTipo('ingreso')}
+              style={{
+                flex: 1, padding: '10px', borderRadius: 10, border: `2px solid ${tipo === 'ingreso' ? '#16a34a' : '#e2e8f0'}`,
+                background: tipo === 'ingreso' ? '#f0fdf4' : '#fff', color: tipo === 'ingreso' ? '#16a34a' : '#94a3b8',
+                fontWeight: 600, fontSize: 14, cursor: 'pointer',
+              }}
+            >
+              ↑ Ingreso
+            </button>
+          </div>
+
+          {/* Categoría */}
+          <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
+            Categoría financiera
           </label>
           <select
             value={catId}
@@ -197,15 +227,23 @@ function SolicitudCard({ s, categorias, procesando, onAprobar, onRechazar }: any
             style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 14, marginBottom: 12, background: '#fff' }}
           >
             <option value="">Seleccionar categoría...</option>
-            {categorias.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
-            ))}
+            {categorias
+              .filter((c: any) => !c.tipo_movimiento || c.tipo_movimiento === tipo || c.tipo_movimiento === 'ambos')
+              .map((c: any) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
           </select>
+
+          {/* Botones aprobar / rechazar */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
-              onClick={() => onAprobar(s.id, catId)}
-              disabled={procesando === s.id}
-              style={{ flex: 1, background: procesando === s.id ? '#94a3b8' : '#16a34a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 600, fontSize: 14, cursor: procesando === s.id ? 'not-allowed' : 'pointer' }}
+              onClick={() => onAprobar(s.id, catId, tipo)}
+              disabled={procesando === s.id || !catId}
+              style={{
+                flex: 1, background: procesando === s.id || !catId ? '#94a3b8' : '#16a34a',
+                color: '#fff', border: 'none', borderRadius: 10, padding: '12px',
+                fontWeight: 600, fontSize: 14, cursor: procesando === s.id || !catId ? 'not-allowed' : 'pointer',
+              }}
             >
               ✓ Aprobar y clasificar
             </button>
