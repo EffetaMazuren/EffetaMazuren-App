@@ -8,8 +8,9 @@ const supabase = createClient(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const { es_interno } = await req.json()
 
   if (typeof es_interno !== 'boolean') {
@@ -19,7 +20,7 @@ export async function PATCH(
   const { error } = await supabase
     .from('servidores_inscripcion')
     .update({ es_interno })
-    .eq('id', params.id)
+    .eq('id', id)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
