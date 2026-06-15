@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 const BUCKET = 'comprobantes-pagos'
+const FECHA_INICIO_ASISTENCIAS = '2026-06-16'
 
 interface Reunion {
   id: string
@@ -47,15 +48,11 @@ export default function AsistenciasServidor() {
 
       if (!srv) return
       setInscripcionId(srv.id)
-
       await cargarReuniones(srv.id)
       setLoading(false)
     }
     cargar()
-
-    return () => {
-      detenerCamara()
-    }
+    return () => { detenerCamara() }
   }, [router])
 
   const cargarReuniones = async (srvId: string) => {
@@ -65,6 +62,7 @@ export default function AsistenciasServidor() {
       .from('reuniones')
       .select('id, nombre, fecha, tipo, cancelada')
       .eq('retiro_id', RETIRO_ID)
+      .gte('fecha', FECHA_INICIO_ASISTENCIAS)
       .lte('fecha', hoy)
       .order('fecha', { ascending: false })
 
@@ -99,9 +97,9 @@ export default function AsistenciasServidor() {
   }
 
   const despuesDe6pm = () => {
+    // Hora Colombia = UTC-5
     const ahora = new Date()
-    // Hora Colombia (UTC-5)
-    const horaCol = ahora.getUTCHours() - 5
+    const horaCol = (ahora.getUTCHours() - 5 + 24) % 24
     return horaCol >= 18
   }
 
@@ -151,7 +149,6 @@ export default function AsistenciasServidor() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // Espejo para selfie
     ctx.translate(canvas.width, 0)
     ctx.scale(-1, 1)
     ctx.drawImage(video, 0, 0)
@@ -206,7 +203,6 @@ export default function AsistenciasServidor() {
   const totalValidas = reuniones.filter(r => !r.cancelada).length
   const porcentaje = totalValidas > 0 ? Math.round((totalAsistidas / totalValidas) * 100) : 0
 
-  // Racha consecutiva
   const ordenadas = [...reuniones].sort((a, b) =>
     new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
   )
@@ -214,7 +210,7 @@ export default function AsistenciasServidor() {
   for (const r of ordenadas) {
     if (r.cancelada) continue
     if (r.asistio === true) racha++
-    else if (r.asistio === false || r.asistio === null) break
+    else break
   }
 
   const getColorPct = (pct: number) =>
@@ -232,7 +228,7 @@ export default function AsistenciasServidor() {
   )
 
   return (
-    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+    <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto', paddingBottom: 100 }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 20px' }}>
         📅 Asistencias Effetá
       </h1>
@@ -262,9 +258,7 @@ export default function AsistenciasServidor() {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>Asistencia total</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: getColorPct(porcentaje) }}>
-              {porcentaje}%
-            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: getColorPct(porcentaje) }}>{porcentaje}%</span>
           </div>
           <div style={{ height: 10, background: '#f3f4f6', borderRadius: 6, overflow: 'hidden' }}>
             <div style={{
@@ -276,6 +270,7 @@ export default function AsistenciasServidor() {
           <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>
             {porcentaje >= 80 ? '🌟 ¡Excelente compromiso!'
               : porcentaje >= 50 ? '💪 Sigue adelante'
+              : totalValidas === 0 ? '📅 Las reuniones comienzan el martes'
               : '📣 Te esperamos en las reuniones'}
           </div>
         </div>
@@ -283,16 +278,14 @@ export default function AsistenciasServidor() {
 
       {/* Mensajes */}
       {error && (
-        <p style={{
-          color: '#dc2626', fontSize: 13, margin: '0 0 16px',
-          background: '#fef2f2', padding: '10px 14px', borderRadius: 10
-        }}>{error}</p>
+        <p style={{ color: '#dc2626', fontSize: 13, margin: '0 0 16px', background: '#fef2f2', padding: '10px 14px', borderRadius: 10 }}>
+          {error}
+        </p>
       )}
       {exito && (
-        <p style={{
-          color: '#16a34a', fontSize: 13, margin: '0 0 16px',
-          background: '#f0fdf4', padding: '10px 14px', borderRadius: 10
-        }}>{exito}</p>
+        <p style={{ color: '#16a34a', fontSize: 13, margin: '0 0 16px', background: '#f0fdf4', padding: '10px 14px', borderRadius: 10 }}>
+          {exito}
+        </p>
       )}
 
       {/* Cámara */}
@@ -314,33 +307,19 @@ export default function AsistenciasServidor() {
             autoPlay
             playsInline
             muted
-            style={{
-              width: '100%', maxWidth: 360, borderRadius: 16,
-              transform: 'scaleX(-1)',
-              marginBottom: 24
-            }}
+            style={{ width: '100%', maxWidth: 360, borderRadius: 16, transform: 'scaleX(-1)', marginBottom: 24 }}
           />
           <canvas ref={canvasRef} style={{ display: 'none' }} />
 
           <div style={{ display: 'flex', gap: 12, width: '100%', maxWidth: 360 }}>
             <button
               onClick={detenerCamara}
-              style={{
-                flex: 1, padding: '14px', background: 'rgba(255,255,255,0.15)',
-                color: 'white', border: 'none', borderRadius: 12,
-                fontSize: 15, cursor: 'pointer', fontWeight: 500
-              }}
+              style={{ flex: 1, padding: '14px', background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', borderRadius: 12, fontSize: 15, cursor: 'pointer', fontWeight: 500 }}
             >Cancelar</button>
             <button
               onClick={tomarFoto}
               disabled={subiendo}
-              style={{
-                flex: 2, padding: '14px',
-                background: subiendo ? '#9ca3af' : '#16a34a',
-                color: 'white', border: 'none', borderRadius: 12,
-                fontSize: 15, fontWeight: 700,
-                cursor: subiendo ? 'not-allowed' : 'pointer'
-              }}
+              style={{ flex: 2, padding: '14px', background: subiendo ? '#9ca3af' : '#16a34a', color: 'white', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: subiendo ? 'not-allowed' : 'pointer' }}
             >{subiendo ? '⏳ Registrando...' : '📸 Tomar foto'}</button>
           </div>
         </div>
@@ -350,7 +329,7 @@ export default function AsistenciasServidor() {
       {reuniones.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: '#9ca3af' }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>🗓️</div>
-          <p style={{ margin: 0 }}>No hay reuniones pasadas aún</p>
+          <p style={{ margin: 0, fontSize: 14 }}>Las reuniones comienzan el martes 16 de junio</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -361,23 +340,16 @@ export default function AsistenciasServidor() {
               opacity: r.cancelada ? 0.6 : 1
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {/* Ícono estado */}
                 <div style={{
                   width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
-                  background: r.cancelada ? '#f3f4f6'
-                    : r.asistio ? '#f0fdf4'
-                    : r.asistio === false ? '#fef2f2'
-                    : '#f9fafb'
+                  background: r.cancelada ? '#f3f4f6' : r.asistio ? '#f0fdf4' : r.asistio === false ? '#fef2f2' : '#f9fafb'
                 }}>
                   {r.cancelada ? '🚫' : r.asistio ? '✅' : r.asistio === false ? '❌' : '⏳'}
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontWeight: 600, fontSize: 14, color: '#111827',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                  }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.nombre}
                     {r.cancelada && <span style={{ color: '#9ca3af', fontWeight: 400 }}> · Cancelada</span>}
                   </div>
@@ -388,27 +360,16 @@ export default function AsistenciasServidor() {
                   </div>
                 </div>
 
-                {/* Botón o estado */}
                 {puedeRegistrar(r) ? (
                   <button
                     onClick={() => abrirCamara(r)}
-                    style={{
-                      padding: '8px 12px', background: '#0f1787',
-                      color: 'white', border: 'none', borderRadius: 8,
-                      fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      flexShrink: 0
-                    }}
+                    style={{ padding: '8px 12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
                   >📸 Foto</button>
                 ) : (
                   <span style={{
-                    fontSize: 11, fontWeight: 600, padding: '3px 8px',
-                    borderRadius: 20, flexShrink: 0,
-                    background: r.cancelada ? '#f3f4f6'
-                      : r.asistio ? '#f0fdf4'
-                      : '#f9fafb',
-                    color: r.cancelada ? '#9ca3af'
-                      : r.asistio ? '#16a34a'
-                      : '#9ca3af'
+                    fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20, flexShrink: 0,
+                    background: r.cancelada ? '#f3f4f6' : r.asistio ? '#f0fdf4' : '#f9fafb',
+                    color: r.cancelada ? '#9ca3af' : r.asistio ? '#16a34a' : '#9ca3af'
                   }}>
                     {r.cancelada ? 'Cancelada'
                       : r.asistio ? 'Asistí'
