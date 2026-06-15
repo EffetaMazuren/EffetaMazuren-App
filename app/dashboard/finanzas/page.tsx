@@ -88,6 +88,7 @@ export default function FinanzasPage() {
       .from('transacciones')
       .select('*, categorias_financieras(nombre)')
       .eq('retiro_id', r.id)
+      .eq('estado', 'aprobado')
       .order('fecha', { ascending: false })
     if (tx) setTransacciones(tx as Transaccion[])
 
