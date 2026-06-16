@@ -93,9 +93,11 @@ export default function RegistroServidor() {
     setLoading(true)
     setError('')
 
+    const emailLower = email.trim().toLowerCase()
+
     // 1. Crear cuenta en Supabase Auth
-    const { data: authData, error: authErr } = await supabase.auth.signUp({
-      email: email.trim().toLowerCase(),
+    const { error: authErr } = await supabase.auth.signUp({
+      email: emailLower,
       password,
       options: {
         data: {
@@ -113,15 +115,37 @@ export default function RegistroServidor() {
       return
     }
 
-    // 2. Vincular usuario_id en servidores_inscripcion inmediatamente
-    // Usamos el id del usuario recién creado para que el layout lo encuentre
-    const newUserId = authData?.user?.id
-    if (newUserId) {
-      await supabase
-        .from('servidores_inscripcion')
-        .update({ usuario_id: newUserId })
-        .eq('id', seleccionado.id)
+    // 2. Hacer signIn inmediatamente para obtener el user.id de forma segura
+    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+      email: emailLower,
+      password,
+    })
+
+    if (signInErr || !signInData?.user?.id) {
+      // La cuenta se creó pero no pudimos vincular — igual dejamos pasar
+      // el layout intentará vincular por metadata
+      setLoading(false)
+      setPaso('listo')
+      return
     }
+
+    const newUserId = signInData.user.id
+
+    // 3. Insertar en tabla usuarios
+    await supabase
+      .from('usuarios')
+      .upsert({
+        id: newUserId,
+        nombre: seleccionado.nombre,
+        correo: emailLower,
+        rol: 'servidor'
+      }, { onConflict: 'id' })
+
+    // 4. Vincular usuario_id en servidores_inscripcion
+    await supabase
+      .from('servidores_inscripcion')
+      .update({ usuario_id: newUserId })
+      .eq('id', seleccionado.id)
 
     setLoading(false)
     setPaso('listo')
