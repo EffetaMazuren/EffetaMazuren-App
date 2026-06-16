@@ -26,13 +26,32 @@ type Categoria = {
   activa?: boolean
 }
 
+type ItemCotizacion = {
+  producto: string
+  cantidad: string
+  precioUnidad: number
+  precioTotal: number
+  proveedor: string
+}
+
+type CategoriaCotizacion = {
+  nombre: string
+  totalGastado: number
+  items: ItemCotizacion[]
+}
+
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 
 const CATS_PARROQUIA = ['Inscripciones caminantes', 'Inscripciones servidores', 'Casa de retiros']
+const SHEET_ID_COTIZACIONES = '1EB-8QHKlst9EEgEd2Kd2Mf7W2KZXhwamwRqrHyvEA48'
+const SHEETS_API_KEY = 'AIzaSyCFp4MHCcKKOgeirEpccEoeO_5W5Qff4aE'
+
+// Categorías válidas del Excel
+const CATS_EXCEL = ['TORNEO', 'SNACKS', 'MATERIALES RELIGIOSOS', 'SANTISIMO', 'MATERIALES LOGISTICOS', 'MUSICA', 'CASA PINARES - MATRICULAS Y RIFA', 'ROPA', 'VENTAS 1ERA FECHA', 'VENTAS 2NDA FECHA', 'VENTAS 3ERA FECHA']
 
 export default function FinanzasPage() {
   const router = useRouter()
-  const [tab, setTab] = useState<'resumen' | 'ingresos' | 'egresos' | 'comprobantes' | 'categorias'>('resumen')
+  const [tab, setTab] = useState<'resumen' | 'ingresos' | 'egresos' | 'comprobantes' | 'categorias' | 'cotizaciones'>('resumen')
   const [transacciones, setTransacciones] = useState<Transaccion[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [todasCategorias, setTodasCategorias] = useState<Categoria[]>([])
@@ -43,7 +62,7 @@ export default function FinanzasPage() {
   const [imagenAmpliada, setImagenAmpliada] = useState<Transaccion | null>(null)
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
 
-  // Estado para tab categorias
+  // Estado tab categorias
   const [catError, setCatError] = useState('')
   const [catMostrarForm, setCatMostrarForm] = useState(false)
   const [catNombre, setCatNombre] = useState('')
@@ -53,52 +72,179 @@ export default function FinanzasPage() {
   const [catGuardando, setCatGuardando] = useState('')
   const [catEliminando, setCatEliminando] = useState('')
 
-  useEffect(() => {
-    cargar()
-  }, [])
+  // Estado tab cotizaciones
+  const [cotizaciones, setCotizaciones] = useState<CategoriaCotizacion[]>([])
+  const [cotLoading, setCotLoading] = useState(false)
+  const [cotError, setCotError] = useState('')
+  const [catExpandida, setCatExpandida] = useState<string | null>(null)
+  const [mostrarFormCot, setMostrarFormCot] = useState(false)
+  const [cotForm, setCotForm] = useState({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', proveedor: '' })
+  const [cotGuardando, setCotGuardando] = useState(false)
+  const [cotMensaje, setCotMensaje] = useState('')
+
+  useEffect(() => { cargar() }, [])
+  useEffect(() => { if (tab === 'cotizaciones' && cotizaciones.length === 0) cargarCotizaciones() }, [tab])
 
   async function cargar() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/'); return }
     const { data: u } = await supabase.from('usuarios').select('rol').eq('id', user.id).single()
     if (!u || u.rol !== 'lider') { router.push('/dashboard'); return }
-
     const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
     if (!r) return
     setRetiroId(r.id)
-
-    const { data: cats } = await supabase
-      .from('categorias_financieras')
-      .select('*')
-      .eq('retiro_id', r.id)
-      .order('orden')
-
+    const { data: cats } = await supabase.from('categorias_financieras').select('*').eq('retiro_id', r.id).order('orden')
     if (cats) {
       setTodasCategorias(cats)
-      setCategorias(cats
-        .filter((c: Categoria) => c.activa !== false)
-        .map((c: Categoria) => ({
-          ...c,
-          tipo_cuenta: CATS_PARROQUIA.includes(c.nombre) ? 'parroquia' : 'effeta'
-        }))
-      )
+      setCategorias(cats.filter((c: Categoria) => c.activa !== false).map((c: Categoria) => ({ ...c, tipo_cuenta: CATS_PARROQUIA.includes(c.nombre) ? 'parroquia' : 'effeta' })))
     }
-
-    const { data: tx } = await supabase
-      .from('transacciones')
-      .select('*, categorias_financieras(nombre)')
-      .eq('retiro_id', r.id)
-      .eq('estado', 'aprobado')
-      .order('fecha', { ascending: false })
+    const { data: tx } = await supabase.from('transacciones').select('*, categorias_financieras(nombre)').eq('retiro_id', r.id).eq('estado', 'aprobado').order('fecha', { ascending: false })
     if (tx) setTransacciones(tx as Transaccion[])
-
     const { data: pagCam } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'caminante')
     setTotalPagadoCaminantes(pagCam?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
-
     const { data: pagSer } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'servidor')
     setTotalPagadoServidores(pagSer?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
-
     setLoading(false)
+  }
+
+  async function cargarCotizaciones() {
+    setCotLoading(true)
+    setCotError('')
+    try {
+      // Leer hoja Resumen Cotizaciones
+      const urlResumen = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Resumen%20Cotizaciones!A1:G20?key=${SHEETS_API_KEY}`
+      const resResumen = await fetch(urlResumen)
+      const dataResumen = await resResumen.json()
+      const filasResumen: string[][] = dataResumen.values || []
+
+      // Leer hoja Cotizaciones totales para el detalle
+      const urlDetalle = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A1:G200?key=${SHEETS_API_KEY}`
+      const resDetalle = await fetch(urlDetalle)
+      const dataDetalle = await resDetalle.json()
+      const filasDetalle: string[][] = dataDetalle.values || []
+
+      // Parsear resumen: columna A = categoría, columna B = gasto total
+      const resumenMap: Record<string, number> = {}
+      filasResumen.forEach(fila => {
+        const nombre = (fila[0] || '').trim().toUpperCase()
+        const valor = parsePeso(fila[1] || '0')
+        if (nombre && nombre !== 'GASTO TOTAL' && nombre !== 'SUMA TOTAL') {
+          resumenMap[nombre] = valor
+        }
+      })
+
+      // Parsear detalle: agrupar items por categoría
+      const detalleMap: Record<string, ItemCotizacion[]> = {}
+      let catActual = ''
+      filasDetalle.forEach(fila => {
+        const col0 = (fila[0] || '').trim().toUpperCase()
+        const col1 = (fila[1] || '').trim()
+        // Si col0 tiene texto y col1 también → es categoría + primer ítem
+        // Si col0 tiene texto y col1 vacío → es solo categoría
+        if (col0 && CATS_EXCEL.some(c => col0.startsWith(c))) {
+          catActual = col0
+          if (!detalleMap[catActual]) detalleMap[catActual] = []
+          if (col1) {
+            detalleMap[catActual].push({
+              producto: col1,
+              cantidad: fila[2] || '',
+              precioUnidad: parsePeso(fila[4] || '0'),
+              precioTotal: parsePeso(fila[5] || '0'),
+              proveedor: fila[6] || ''
+            })
+          }
+        } else if (!col0 && col1 && catActual) {
+          if (!detalleMap[catActual]) detalleMap[catActual] = []
+          detalleMap[catActual].push({
+            producto: col1,
+            cantidad: fila[2] || '',
+            precioUnidad: parsePeso(fila[4] || '0'),
+            precioTotal: parsePeso(fila[5] || '0'),
+            proveedor: fila[6] || ''
+          })
+        }
+      })
+
+      // Construir resultado final
+      const resultado: CategoriaCotizacion[] = Object.entries(resumenMap)
+        .filter(([, total]) => total > 0)
+        .map(([nombre, totalGastado]) => ({
+          nombre,
+          totalGastado,
+          items: detalleMap[nombre] || []
+        }))
+
+      setCotizaciones(resultado)
+    } catch {
+      setCotError('No se pudo cargar el Excel. Intenta de nuevo.')
+    }
+    setCotLoading(false)
+  }
+
+  function parsePeso(str: string): number {
+    if (!str) return 0
+    return Number(str.replace(/[$\s.]/g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '')) || 0
+  }
+
+  async function guardarCotizacion() {
+    if (!cotForm.producto.trim() || !cotForm.precioUnidad.trim()) {
+      setCotMensaje('El producto y precio son obligatorios.')
+      return
+    }
+    setCotGuardando(true)
+    setCotMensaje('')
+    try {
+      const precioU = Number(cotForm.precioUnidad.replace(/[^0-9]/g, ''))
+      const cantidad = cotForm.cantidad ? Number(cotForm.cantidad.replace(/[^0-9]/g, '')) : 1
+      const precioT = precioU * cantidad
+
+      // Encontrar la última fila de la categoría en la hoja para agregar debajo
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A1:G300?key=${SHEETS_API_KEY}`
+      const res = await fetch(url)
+      const data = await res.json()
+      const filas: string[][] = data.values || []
+
+      // Buscar la fila donde va este ítem (después de la última fila de esa categoría)
+      let insertarEn = filas.length + 2 // por defecto al final
+      let encontrada = false
+      for (let i = 0; i < filas.length; i++) {
+        const col0 = (filas[i][0] || '').trim().toUpperCase()
+        if (col0.startsWith(cotForm.categoria.toUpperCase())) {
+          encontrada = true
+        }
+        if (encontrada) {
+          // Buscar el fin de esta categoría (cuando empiece otra o haya una fila vacía larga)
+          const esFinalCat = i > 0 && encontrada && (filas[i][0] || '').trim() !== '' && !col0.startsWith(cotForm.categoria.toUpperCase())
+          if (esFinalCat) {
+            insertarEn = i + 1
+            break
+          }
+          insertarEn = i + 2
+        }
+      }
+
+      // Usar appendValues para agregar al final del sheet (más seguro)
+      const fechaHoy = new Date().toLocaleDateString('es-CO')
+      const fila = ['', cotForm.producto, cotForm.cantidad || '1', '', `$${precioU.toLocaleString('es-CO')}`, `$${precioT.toLocaleString('es-CO')}`, cotForm.proveedor, `Agregado ${fechaHoy}`]
+
+      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A:H:append?valueInputOption=USER_ENTERED&key=${SHEETS_API_KEY}`
+      const appendRes = await fetch(appendUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [fila] })
+      })
+
+      if (!appendRes.ok) throw new Error('Error al guardar')
+
+      setCotMensaje('¡Cotización guardada! Recarga para ver los cambios.')
+      setCotForm({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', proveedor: '' })
+      setMostrarFormCot(false)
+      // Recargar cotizaciones
+      setTimeout(() => cargarCotizaciones(), 1500)
+    } catch {
+      setCotMensaje('No se pudo guardar. La escritura al Sheet requiere permisos de edición con OAuth.')
+    }
+    setCotGuardando(false)
   }
 
   // ── Funciones categorías ──────────────────────────────────────────────────
@@ -126,10 +272,7 @@ export default function FinanzasPage() {
   async function crearCat() {
     if (!catNombre.trim()) { setCatError('El nombre es obligatorio.'); return }
     setCatCreando(true)
-    const { data, error } = await supabase
-      .from('categorias_financieras')
-      .insert({ nombre: catNombre.trim(), tipo_cuenta: catCuenta, tipo_movimiento: catTipo, activa: true, retiro_id: retiroId, presupuesto: 0 })
-      .select().single()
+    const { data, error } = await supabase.from('categorias_financieras').insert({ nombre: catNombre.trim(), tipo_cuenta: catCuenta, tipo_movimiento: catTipo, activa: true, retiro_id: retiroId, presupuesto: 0 }).select().single()
     if (error) { setCatError('No se pudo crear.'); setCatCreando(false); return }
     setTodasCategorias(prev => [...prev, data])
     setCatNombre('')
@@ -147,6 +290,7 @@ export default function FinanzasPage() {
   const txIngresos = transacciones.filter(t => t.tipo === 'ingreso')
   const txEgresos = transacciones.filter(t => t.tipo === 'egreso')
   const txConComprobante = transacciones.filter(t => t.comprobante_url)
+  const totalCotizado = cotizaciones.reduce((s, c) => s + c.totalGastado, 0)
 
   const gruposCats = todasCategorias.reduce<Record<string, Categoria[]>>((acc, cat) => {
     const k = cat.tipo_cuenta || 'Sin cuenta'
@@ -205,6 +349,7 @@ export default function FinanzasPage() {
           { key: 'egresos', label: '↓ Egresos' },
           { key: 'comprobantes', label: `🧾 ${txConComprobante.length}` },
           { key: 'categorias', label: '🗂 Categorías' },
+          { key: 'cotizaciones', label: '📋 Cotizaciones' },
         ] as const).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             padding: '7px 18px', borderRadius: 20, fontSize: 13, fontWeight: 500,
@@ -261,7 +406,6 @@ export default function FinanzasPage() {
                 </div>
               </div>
             </div>
-
             <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 4 }}>
               Nequi Effetá · por categoría
             </div>
@@ -410,41 +554,35 @@ export default function FinanzasPage() {
             <div style={{ fontSize: 13, color: '#6b7280' }}>
               {todasCategorias.filter(c => c.activa !== false).length} activas · {todasCategorias.filter(c => c.activa === false).length} inactivas
             </div>
-
             {catError !== '' && (
               <div style={{ background: '#fef2f2', border: '0.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 13, color: '#991b1b' }}>{catError}</span>
                 <button onClick={() => setCatError('')} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: 20 }}>×</button>
               </div>
             )}
-
             <button onClick={() => { setCatMostrarForm(p => !p); setCatError('') }}
               style={{ background: catMostrarForm ? '#f3f4f6' : '#0f1787', color: catMostrarForm ? '#374151' : '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '13px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
               {catMostrarForm ? '✕ Cancelar' : '+ Nueva categoría'}
             </button>
-
             {catMostrarForm && (
               <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>Nueva categoría</div>
                 <div>
                   <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Nombre *</div>
-                  <input type="text" value={catNombre} onChange={e => setCatNombre(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearCat()}
-                    placeholder="Ej. Palancas, Pinares…"
+                  <input type="text" value={catNombre} onChange={e => setCatNombre(e.target.value)} onKeyDown={e => e.key === 'Enter' && crearCat()} placeholder="Ej. Palancas, Pinares…"
                     style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div>
                     <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Cuenta</div>
-                    <select value={catCuenta} onChange={e => setCatCuenta(e.target.value)}
-                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                    <select value={catCuenta} onChange={e => setCatCuenta(e.target.value)} style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
                       <option value="Nequi Effetá">Nequi Effetá</option>
                       <option value="Parroquia">Parroquia</option>
                     </select>
                   </div>
                   <div>
                     <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tipo</div>
-                    <select value={catTipo} onChange={e => setCatTipo(e.target.value)}
-                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                    <select value={catTipo} onChange={e => setCatTipo(e.target.value)} style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
                       <option value="egreso">Egreso</option>
                       <option value="ingreso">Ingreso</option>
                       <option value="ambos">Ambos</option>
@@ -457,7 +595,6 @@ export default function FinanzasPage() {
                 </button>
               </div>
             )}
-
             {Object.entries(gruposCats).map(([cuenta, cats]) => (
               <div key={cuenta}>
                 <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8, paddingLeft: 2 }}>{cuenta}</div>
@@ -481,12 +618,92 @@ export default function FinanzasPage() {
                 </div>
               </div>
             ))}
-
             <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px' }}>
               <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
                 <strong>Categorías inactivas</strong> no aparecen al registrar movimientos pero conservan su historial. Solo puedes <strong>eliminar</strong> categorías sin movimientos.
               </div>
             </div>
+          </>
+        )}
+
+        {/* ── COTIZACIONES ── */}
+        {tab === 'cotizaciones' && (
+          <>
+            {/* Header con total */}
+            <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
+              <div style={{ fontSize: 12, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Total cotizado</div>
+              <div style={{ fontSize: 28, fontWeight: 600, color: '#0d0d14', letterSpacing: '-0.5px' }}>{fmt(totalCotizado)}</div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Solo referencia — no afecta ingresos ni egresos</div>
+            </div>
+
+            {/* Aviso escritura */}
+            <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+                Para agregar cotizaciones desde la app, el Sheet debe estar compartido con edición pública o mediante OAuth. Por ahora puedes editar directamente en el Excel y los cambios se reflejan aquí al recargar.
+              </div>
+            </div>
+
+            {/* Botón recargar */}
+            <button onClick={cargarCotizaciones} disabled={cotLoading}
+              style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '11px 20px', fontSize: 13, fontWeight: 500, color: cotLoading ? '#9ca3af' : '#0f1787', cursor: cotLoading ? 'not-allowed' : 'pointer' }}>
+              {cotLoading ? 'Cargando…' : '↻ Actualizar cotizaciones'}
+            </button>
+
+            {cotError && (
+              <div style={{ background: '#fef2f2', border: '0.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#991b1b' }}>{cotError}</div>
+            )}
+
+            {cotLoading ? (
+              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Leyendo Excel…</div>
+            ) : cotizaciones.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Sin cotizaciones cargadas</div>
+            ) : cotizaciones.map((cat, idx) => {
+              const color = COLORES[idx % COLORES.length]
+              const expandida = catExpandida === cat.nombre
+              return (
+                <div key={cat.nombre} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+                  {/* Cabecera categoría */}
+                  <button onClick={() => setCatExpandida(expandida ? null : cat.nombre)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: expandida ? color.bg : '#fff', border: 'none', cursor: 'pointer', borderBottom: expandida ? `0.5px solid ${color.border}` : 'none' }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: expandida ? color.texto : '#0d0d14', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{cat.nombre}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{cat.items.length} ítem{cat.items.length !== 1 ? 's' : ''}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: '#0d0d14' }}>{fmt(cat.totalGastado)}</div>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{expandida ? '▲' : '▼'}</div>
+                    </div>
+                  </button>
+
+                  {/* Detalle ítems */}
+                  {expandida && cat.items.length > 0 && (
+                    <div>
+                      {cat.items.map((item, i) => (
+                        <div key={i} style={{ padding: '11px 16px', borderTop: '0.5px solid #f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>{item.producto}</div>
+                            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                              {item.cantidad && <span>Cant: {item.cantidad} · </span>}
+                              {item.proveedor && <span>{item.proveedor}</span>}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            {item.precioTotal > 0 && <div style={{ fontSize: 13, fontWeight: 600, color: '#0d0d14' }}>{fmt(item.precioTotal)}</div>}
+                            {item.precioUnidad > 0 && item.precioTotal !== item.precioUnidad && (
+                              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{fmt(item.precioUnidad)} c/u</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {expandida && cat.items.length === 0 && (
+                    <div style={{ padding: '14px 16px', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>Sin ítems detallados</div>
+                  )}
+                </div>
+              )
+            })}
           </>
         )}
 
@@ -509,7 +726,7 @@ export default function FinanzasPage() {
         </div>
       )}
 
-      {/* Botón registrar */}
+      {/* Botón registrar ingresos/egresos */}
       {(tab === 'ingresos' || tab === 'egresos') && (
         <button onClick={() => router.push(`/dashboard/finanzas/registrar?tipo=${tab === 'ingresos' ? 'ingreso' : 'egreso'}`)}
           style={{ position: 'fixed', bottom: 80, left: 20, right: 20, background: '#0f1787', color: '#fff', border: 'none', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
