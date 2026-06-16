@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
@@ -45,8 +45,10 @@ function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 const CATS_PARROQUIA = ['Inscripciones caminantes', 'Inscripciones servidores', 'Casa de retiros']
 const SHEET_ID_COTIZACIONES = '1EB-8QHKlst9EEgEd2Kd2Mf7W2KZXhwamwRqrHyvEA48'
 const SHEETS_API_KEY = 'AIzaSyCFp4MHCcKKOgeirEpccEoeO_5W5Qff4aE'
+const GOOGLE_CLIENT_ID = '309085978370-38krrj9n4bkr9lsa7d01nungtesofmvr.apps.googleusercontent.com'
+const OAUTH_SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
+const REDIRECT_URI = 'https://effeta-mazuren-app.vercel.app/dashboard/finanzas'
 
-// Categorías válidas del Excel
 const CATS_EXCEL = ['TORNEO', 'SNACKS', 'MATERIALES RELIGIOSOS', 'SANTISIMO', 'MATERIALES LOGISTICOS', 'MUSICA', 'CASA PINARES - MATRICULAS Y RIFA', 'ROPA', 'VENTAS 1ERA FECHA', 'VENTAS 2NDA FECHA', 'VENTAS 3ERA FECHA']
 
 export default function FinanzasPage() {
@@ -81,9 +83,44 @@ export default function FinanzasPage() {
   const [cotForm, setCotForm] = useState({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', proveedor: '' })
   const [cotGuardando, setCotGuardando] = useState(false)
   const [cotMensaje, setCotMensaje] = useState('')
+  const [googleToken, setGoogleToken] = useState<string | null>(null)
+
+  // Procesar token OAuth del hash de la URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const hash = window.location.hash
+    if (hash.includes('access_token')) {
+      const params = new URLSearchParams(hash.replace('#', ''))
+      const token = params.get('access_token')
+      if (token) {
+        setGoogleToken(token)
+        sessionStorage.setItem('google_sheets_token', token)
+        setTab('cotizaciones')
+        // Limpiar hash de la URL
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    } else {
+      // Recuperar token de sesión si ya había iniciado
+      const saved = sessionStorage.getItem('google_sheets_token')
+      if (saved) setGoogleToken(saved)
+    }
+  }, [])
 
   useEffect(() => { cargar() }, [])
-  useEffect(() => { if (tab === 'cotizaciones' && cotizaciones.length === 0) cargarCotizaciones() }, [tab])
+
+  useEffect(() => {
+    if (tab === 'cotizaciones' && cotizaciones.length === 0) cargarCotizaciones()
+  }, [tab])
+
+  function conectarGoogle() {
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(OAUTH_SCOPE)}&prompt=consent`
+    window.location.href = url
+  }
+
+  function desconectarGoogle() {
+    setGoogleToken(null)
+    sessionStorage.removeItem('google_sheets_token')
+  }
 
   async function cargar() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -107,23 +144,30 @@ export default function FinanzasPage() {
     setLoading(false)
   }
 
-  async function cargarCotizaciones() {
+  function parsePeso(str: string): number {
+    if (!str) return 0
+    return Number(str.replace(/[$\s.]/g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '')) || 0
+  }
+
+  const cargarCotizaciones = useCallback(async () => {
     setCotLoading(true)
     setCotError('')
     try {
-      // Leer hoja Resumen Cotizaciones
-      const urlResumen = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Resumen%20Cotizaciones!A1:G20?key=${SHEETS_API_KEY}`
-      const resResumen = await fetch(urlResumen)
+      const token = googleToken || sessionStorage.getItem('google_sheets_token')
+      const headers: Record<string, string> = token
+        ? { 'Authorization': `Bearer ${token}` }
+        : {}
+
+      const urlResumen = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Resumen%20Cotizaciones!A1:G20${token ? '' : `?key=${SHEETS_API_KEY}`}`
+      const resResumen = await fetch(urlResumen, { headers })
       const dataResumen = await resResumen.json()
       const filasResumen: string[][] = dataResumen.values || []
 
-      // Leer hoja Cotizaciones totales para el detalle
-      const urlDetalle = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A1:G200?key=${SHEETS_API_KEY}`
-      const resDetalle = await fetch(urlDetalle)
+      const urlDetalle = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A1:G200${token ? '' : `?key=${SHEETS_API_KEY}`}`
+      const resDetalle = await fetch(urlDetalle, { headers })
       const dataDetalle = await resDetalle.json()
       const filasDetalle: string[][] = dataDetalle.values || []
 
-      // Parsear resumen: columna A = categoría, columna B = gasto total
       const resumenMap: Record<string, number> = {}
       filasResumen.forEach(fila => {
         const nombre = (fila[0] || '').trim().toUpperCase()
@@ -133,14 +177,11 @@ export default function FinanzasPage() {
         }
       })
 
-      // Parsear detalle: agrupar items por categoría
       const detalleMap: Record<string, ItemCotizacion[]> = {}
       let catActual = ''
       filasDetalle.forEach(fila => {
         const col0 = (fila[0] || '').trim().toUpperCase()
         const col1 = (fila[1] || '').trim()
-        // Si col0 tiene texto y col1 también → es categoría + primer ítem
-        // Si col0 tiene texto y col1 vacío → es solo categoría
         if (col0 && CATS_EXCEL.some(c => col0.startsWith(c))) {
           catActual = col0
           if (!detalleMap[catActual]) detalleMap[catActual] = []
@@ -165,7 +206,6 @@ export default function FinanzasPage() {
         }
       })
 
-      // Construir resultado final
       const resultado: CategoriaCotizacion[] = Object.entries(resumenMap)
         .filter(([, total]) => total > 0)
         .map(([nombre, totalGastado]) => ({
@@ -179,70 +219,60 @@ export default function FinanzasPage() {
       setCotError('No se pudo cargar el Excel. Intenta de nuevo.')
     }
     setCotLoading(false)
-  }
-
-  function parsePeso(str: string): number {
-    if (!str) return 0
-    return Number(str.replace(/[$\s.]/g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '')) || 0
-  }
+  }, [googleToken])
 
   async function guardarCotizacion() {
     if (!cotForm.producto.trim() || !cotForm.precioUnidad.trim()) {
       setCotMensaje('El producto y precio son obligatorios.')
       return
     }
+    const token = googleToken || sessionStorage.getItem('google_sheets_token')
+    if (!token) { setCotMensaje('Primero conecta tu cuenta Google.'); return }
+
     setCotGuardando(true)
     setCotMensaje('')
     try {
       const precioU = Number(cotForm.precioUnidad.replace(/[^0-9]/g, ''))
       const cantidad = cotForm.cantidad ? Number(cotForm.cantidad.replace(/[^0-9]/g, '')) : 1
       const precioT = precioU * cantidad
-
-      // Encontrar la última fila de la categoría en la hoja para agregar debajo
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A1:G300?key=${SHEETS_API_KEY}`
-      const res = await fetch(url)
-      const data = await res.json()
-      const filas: string[][] = data.values || []
-
-      // Buscar la fila donde va este ítem (después de la última fila de esa categoría)
-      let insertarEn = filas.length + 2 // por defecto al final
-      let encontrada = false
-      for (let i = 0; i < filas.length; i++) {
-        const col0 = (filas[i][0] || '').trim().toUpperCase()
-        if (col0.startsWith(cotForm.categoria.toUpperCase())) {
-          encontrada = true
-        }
-        if (encontrada) {
-          // Buscar el fin de esta categoría (cuando empiece otra o haya una fila vacía larga)
-          const esFinalCat = i > 0 && encontrada && (filas[i][0] || '').trim() !== '' && !col0.startsWith(cotForm.categoria.toUpperCase())
-          if (esFinalCat) {
-            insertarEn = i + 1
-            break
-          }
-          insertarEn = i + 2
-        }
-      }
-
-      // Usar appendValues para agregar al final del sheet (más seguro)
       const fechaHoy = new Date().toLocaleDateString('es-CO')
-      const fila = ['', cotForm.producto, cotForm.cantidad || '1', '', `$${precioU.toLocaleString('es-CO')}`, `$${precioT.toLocaleString('es-CO')}`, cotForm.proveedor, `Agregado ${fechaHoy}`]
 
-      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A:H:append?valueInputOption=USER_ENTERED&key=${SHEETS_API_KEY}`
-      const appendRes = await fetch(appendUrl, {
+      const fila = [
+        '',
+        cotForm.producto,
+        cotForm.cantidad || '1',
+        '',
+        `$${precioU.toLocaleString('es-CO')}`,
+        `$${precioT.toLocaleString('es-CO')}`,
+        cotForm.proveedor,
+        `Agregado ${fechaHoy}`
+      ]
+
+      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A:H:append?valueInputOption=USER_ENTERED`
+      const res = await fetch(appendUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({ values: [fila] })
       })
 
-      if (!appendRes.ok) throw new Error('Error al guardar')
+      if (res.status === 401) {
+        desconectarGoogle()
+        setCotMensaje('La sesión con Google expiró. Vuelve a conectar.')
+        setCotGuardando(false)
+        return
+      }
 
-      setCotMensaje('¡Cotización guardada! Recarga para ver los cambios.')
+      if (!res.ok) throw new Error('Error al guardar')
+
+      setCotMensaje('¡Cotización guardada!')
       setCotForm({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', proveedor: '' })
       setMostrarFormCot(false)
-      // Recargar cotizaciones
-      setTimeout(() => cargarCotizaciones(), 1500)
+      setTimeout(() => { setCotMensaje(''); cargarCotizaciones() }, 1200)
     } catch {
-      setCotMensaje('No se pudo guardar. La escritura al Sheet requiere permisos de edición con OAuth.')
+      setCotMensaje('No se pudo guardar. Intenta de nuevo.')
     }
     setCotGuardando(false)
   }
@@ -629,30 +659,114 @@ export default function FinanzasPage() {
         {/* ── COTIZACIONES ── */}
         {tab === 'cotizaciones' && (
           <>
-            {/* Header con total */}
+            {/* Header total */}
             <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
               <div style={{ fontSize: 12, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Total cotizado</div>
               <div style={{ fontSize: 28, fontWeight: 600, color: '#0d0d14', letterSpacing: '-0.5px' }}>{fmt(totalCotizado)}</div>
               <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Solo referencia — no afecta ingresos ni egresos</div>
             </div>
 
-            {/* Aviso escritura */}
-            <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px' }}>
-              <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
-                Para agregar cotizaciones desde la app, el Sheet debe estar compartido con edición pública o mediante OAuth. Por ahora puedes editar directamente en el Excel y los cambios se reflejan aquí al recargar.
+            {/* Estado conexión Google */}
+            {!googleToken ? (
+              <div style={{ background: '#eff6ff', border: '0.5px solid #bfdbfe', borderRadius: 14, padding: '16px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e40af', marginBottom: 6 }}>Conecta tu cuenta Google</div>
+                <div style={{ fontSize: 12, color: '#3b82f6', marginBottom: 14, lineHeight: 1.6 }}>
+                  Para agregar cotizaciones desde la app necesitas conectar la cuenta Google que tiene acceso al Excel.
+                </div>
+                <button onClick={conectarGoogle} style={{ background: '#0f1787', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 20px', fontSize: 13, fontWeight: 500, cursor: 'pointer', width: '100%' }}>
+                  Conectar con Google
+                </button>
               </div>
+            ) : (
+              <div style={{ background: '#f0fdf4', border: '0.5px solid #bbf7d0', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 13, color: '#166534' }}>Google conectado</div>
+                <button onClick={desconectarGoogle} style={{ background: 'none', border: '0.5px solid #bbf7d0', borderRadius: 8, padding: '4px 12px', fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>
+                  Desconectar
+                </button>
+              </div>
+            )}
+
+            {/* Botones acción */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={cargarCotizaciones} disabled={cotLoading}
+                style={{ flex: 1, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '11px', fontSize: 13, fontWeight: 500, color: cotLoading ? '#9ca3af' : '#0f1787', cursor: cotLoading ? 'not-allowed' : 'pointer' }}>
+                {cotLoading ? 'Cargando…' : '↻ Actualizar'}
+              </button>
+              {googleToken && (
+                <button onClick={() => { setMostrarFormCot(p => !p); setCotMensaje('') }}
+                  style={{ flex: 1, background: mostrarFormCot ? '#f3f4f6' : '#0f1787', color: mostrarFormCot ? '#374151' : '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '11px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                  {mostrarFormCot ? '✕ Cancelar' : '+ Nueva cotización'}
+                </button>
+              )}
             </div>
 
-            {/* Botón recargar */}
-            <button onClick={cargarCotizaciones} disabled={cotLoading}
-              style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '11px 20px', fontSize: 13, fontWeight: 500, color: cotLoading ? '#9ca3af' : '#0f1787', cursor: cotLoading ? 'not-allowed' : 'pointer' }}>
-              {cotLoading ? 'Cargando…' : '↻ Actualizar cotizaciones'}
-            </button>
+            {/* Formulario nueva cotización */}
+            {mostrarFormCot && googleToken && (
+              <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>Nueva cotización</div>
+
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Categoría *</div>
+                  <select value={cotForm.categoria} onChange={e => setCotForm(p => ({ ...p, categoria: e.target.value }))}
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                    {CATS_EXCEL.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Producto / descripción *</div>
+                  <input type="text" value={cotForm.producto} onChange={e => setCotForm(p => ({ ...p, producto: e.target.value }))} placeholder="Ej. Empanadas, Biblias…"
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Cantidad</div>
+                    <input type="number" value={cotForm.cantidad} onChange={e => setCotForm(p => ({ ...p, cantidad: e.target.value }))} placeholder="1"
+                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Precio unitario *</div>
+                    <input type="number" value={cotForm.precioUnidad} onChange={e => setCotForm(p => ({ ...p, precioUnidad: e.target.value }))} placeholder="0"
+                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Proveedor</div>
+                  <input type="text" value={cotForm.proveedor} onChange={e => setCotForm(p => ({ ...p, proveedor: e.target.value }))} placeholder="Ej. Giovanny Avila…"
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                </div>
+
+                {cotForm.cantidad && cotForm.precioUnidad && (
+                  <div style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, color: '#6b7280' }}>Total</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>{fmt(Number(cotForm.cantidad) * Number(cotForm.precioUnidad))}</span>
+                  </div>
+                )}
+
+                {cotMensaje && (
+                  <div style={{ background: cotMensaje.includes('!') ? '#f0fdf4' : '#fef2f2', border: `0.5px solid ${cotMensaje.includes('!') ? '#bbf7d0' : '#fecaca'}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color: cotMensaje.includes('!') ? '#166534' : '#991b1b' }}>
+                    {cotMensaje}
+                  </div>
+                )}
+
+                <button onClick={guardarCotizacion} disabled={cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad}
+                  style={{ background: cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad ? '#e5e7eb' : '#0f1787', color: cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: 13, fontSize: 14, fontWeight: 500, cursor: cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad ? 'not-allowed' : 'pointer' }}>
+                  {cotGuardando ? 'Guardando…' : 'Guardar cotización'}
+                </button>
+              </div>
+            )}
 
             {cotError && (
               <div style={{ background: '#fef2f2', border: '0.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#991b1b' }}>{cotError}</div>
             )}
 
+            {cotMensaje && !mostrarFormCot && (
+              <div style={{ background: '#f0fdf4', border: '0.5px solid #bbf7d0', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#166534' }}>{cotMensaje}</div>
+            )}
+
+            {/* Lista de categorías */}
             {cotLoading ? (
               <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Leyendo Excel…</div>
             ) : cotizaciones.length === 0 ? (
@@ -662,7 +776,6 @@ export default function FinanzasPage() {
               const expandida = catExpandida === cat.nombre
               return (
                 <div key={cat.nombre} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
-                  {/* Cabecera categoría */}
                   <button onClick={() => setCatExpandida(expandida ? null : cat.nombre)}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: expandida ? color.bg : '#fff', border: 'none', cursor: 'pointer', borderBottom: expandida ? `0.5px solid ${color.border}` : 'none' }}>
                     <div style={{ textAlign: 'left' }}>
@@ -674,8 +787,6 @@ export default function FinanzasPage() {
                       <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{expandida ? '▲' : '▼'}</div>
                     </div>
                   </button>
-
-                  {/* Detalle ítems */}
                   {expandida && cat.items.length > 0 && (
                     <div>
                       {cat.items.map((item, i) => (
@@ -697,7 +808,6 @@ export default function FinanzasPage() {
                       ))}
                     </div>
                   )}
-
                   {expandida && cat.items.length === 0 && (
                     <div style={{ padding: '14px 16px', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>Sin ítems detallados</div>
                   )}
