@@ -93,7 +93,8 @@ export default function RegistroServidor() {
     setLoading(true)
     setError('')
 
-    const { error: authErr } = await supabase.auth.signUp({
+    // 1. Crear cuenta en Supabase Auth
+    const { data: authData, error: authErr } = await supabase.auth.signUp({
       email: email.trim().toLowerCase(),
       password,
       options: {
@@ -110,6 +111,16 @@ export default function RegistroServidor() {
         : (authErr.message || 'Error al crear cuenta'))
       setLoading(false)
       return
+    }
+
+    // 2. Vincular usuario_id en servidores_inscripcion inmediatamente
+    // Usamos el id del usuario recién creado para que el layout lo encuentre
+    const newUserId = authData?.user?.id
+    if (newUserId) {
+      await supabase
+        .from('servidores_inscripcion')
+        .update({ usuario_id: newUserId })
+        .eq('id', seleccionado.id)
     }
 
     setLoading(false)
@@ -155,7 +166,7 @@ export default function RegistroServidor() {
                   transition: 'all 0.15s'
                 }}
               >
-                {m === 'nombre' ? '👤 Por nombre' : '🪪 Por cédula'}
+                {m === 'nombre' ? 'Por nombre' : 'Por cédula'}
               </button>
             ))}
           </div>
@@ -248,7 +259,7 @@ export default function RegistroServidor() {
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
                   {s.numero_documento && `CC ${s.numero_documento} · `}
                   {s.es_interno ? 'Servidor interno' : 'Servidor externo'}
-                  {s.usuario_id && ' · ⚠️ Cuenta ya creada'}
+                  {s.usuario_id && ' · Cuenta ya creada'}
                 </div>
               </button>
             ))}
@@ -396,7 +407,15 @@ export default function RegistroServidor() {
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
     }}>
       <div style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
-        <div style={{ fontSize: 64, marginBottom: 20 }}>🎉</div>
+        <div style={{
+          width: 64, height: 64, background: '#dcfce7', borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 20px'
+        }}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
         <h2 style={{ margin: '0 0 8px', fontSize: 22, color: '#111827', fontWeight: 700 }}>
           ¡Cuenta creada!
         </h2>
@@ -408,7 +427,7 @@ export default function RegistroServidor() {
           background: '#f0fdf4', borderRadius: 10, padding: '12px 16px',
           fontSize: 13, color: '#166534', marginBottom: 28, lineHeight: 1.5
         }}>
-          ✅ ¡Listo! Ya puedes iniciar sesión.
+          Tu cuenta quedó vinculada correctamente.
         </div>
         <button
           onClick={() => router.push('/')}
