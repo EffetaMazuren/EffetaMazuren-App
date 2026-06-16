@@ -95,6 +95,10 @@ export default function ServidorHome() {
       if (!session) { router.push('/'); return }
 
       const userId = session.user.id
+      const userEmail = session.user.email ?? ''
+      const userMeta = session.user.user_metadata
+
+      // 1. Buscar inscripción ya vinculada por usuario_id
       const { data: srv } = await supabase
         .from('servidores_inscripcion')
         .select('id, nombre, es_interno, usuario_id')
@@ -102,31 +106,46 @@ export default function ServidorHome() {
         .eq('retiro_id', RETIRO_ID)
         .single()
 
-      if (!srv) {
-        const inscripcionId = session.user.user_metadata?.servidor_inscripcion_id
-        if (inscripcionId) {
+      if (srv) {
+        await cargarDatos(srv)
+        return
+      }
+
+      // 2. No está vinculado — intentar vincular por metadata
+      const inscripcionId = userMeta?.servidor_inscripcion_id
+      if (inscripcionId) {
+        // Obtener datos de la inscripción
+        const { data: srvPendiente } = await supabase
+          .from('servidores_inscripcion')
+          .select('id, nombre, es_interno, usuario_id')
+          .eq('id', inscripcionId)
+          .single()
+
+        if (srvPendiente) {
+          // Insertar en usuarios primero (necesario por FK)
+          await supabase
+            .from('usuarios')
+            .upsert({
+              id: userId,
+              nombre: srvPendiente.nombre,
+              correo: userEmail,
+              rol: 'servidor'
+            }, { onConflict: 'id' })
+
+          // Vincular usuario_id en servidores_inscripcion
           await supabase
             .from('servidores_inscripcion')
             .update({ usuario_id: userId })
             .eq('id', inscripcionId)
             .is('usuario_id', null)
 
-          const { data: srvNuevo } = await supabase
-            .from('servidores_inscripcion')
-            .select('id, nombre, es_interno, usuario_id')
-            .eq('usuario_id', userId)
-            .eq('retiro_id', RETIRO_ID)
-            .single()
-
-          if (!srvNuevo) { setLoading(false); return }
-          await cargarDatos(srvNuevo)
+          await cargarDatos({ ...srvPendiente, usuario_id: userId })
           return
         }
-        setLoading(false)
-        return
       }
 
-      await cargarDatos(srv)
+      // 3. Sin inscripción ni metadata — no tiene perfil
+      setLoading(false)
     }
 
     cargar()
