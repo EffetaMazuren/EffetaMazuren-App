@@ -248,7 +248,7 @@ export default function FinanzasPage() {
         `Agregado ${fechaHoy}`
       ]
 
-      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A:H:append?valueInputOption=USER_ENTERED`
+      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A:H/append?valueInputOption=USER_ENTERED`
       const res = await fetch(appendUrl, {
         method: 'POST',
         headers: {
