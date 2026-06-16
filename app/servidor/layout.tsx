@@ -97,6 +97,15 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
       ),
     },
     {
+      href: '/servidor/retiro',
+      label: 'Retiro',
+      icon: (active: boolean) => (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? '#0f1787' : '#9ca3af'} strokeWidth={active ? 2 : 1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      ),
+    },
+    {
       href: '/servidor/pago',
       label: 'Mi pago',
       icon: (active: boolean) => (
