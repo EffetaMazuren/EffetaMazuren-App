@@ -39,14 +39,55 @@ export default function PagoServidor() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/'); return }
 
-      const { data: srv } = await supabase
+      const userId = session.user.id
+      const userEmail = session.user.email ?? ''
+      const userMeta = session.user.user_metadata
+
+      // 1. Buscar inscripción vinculada
+      let { data: srv } = await supabase
         .from('servidores_inscripcion')
-        .select('id, es_interno')
-        .eq('usuario_id', session.user.id)
+        .select('id, es_interno, nombre')
+        .eq('usuario_id', userId)
         .eq('retiro_id', RETIRO_ID)
         .single()
 
-      if (!srv) return
+      // 2. Si no está vinculada, intentar vincular por metadata
+      if (!srv) {
+        const inscripcionIdMeta = userMeta?.servidor_inscripcion_id
+        if (inscripcionIdMeta) {
+          const { data: srvPendiente } = await supabase
+            .from('servidores_inscripcion')
+            .select('id, es_interno, nombre')
+            .eq('id', inscripcionIdMeta)
+            .single()
+
+          if (srvPendiente) {
+            // Insertar en usuarios primero (FK)
+            await supabase
+              .from('usuarios')
+              .upsert({
+                id: userId,
+                nombre: srvPendiente.nombre,
+                correo: userEmail,
+                rol: 'servidor'
+              }, { onConflict: 'id' })
+
+            // Vincular
+            await supabase
+              .from('servidores_inscripcion')
+              .update({ usuario_id: userId })
+              .eq('id', inscripcionIdMeta)
+              .is('usuario_id', null)
+
+            srv = srvPendiente
+          }
+        }
+
+        if (!srv) {
+          setLoading(false)
+          return
+        }
+      }
 
       setInscripcionId(srv.id)
 
@@ -72,16 +113,15 @@ export default function PagoServidor() {
         saldo_pendiente: Math.max(0, costo - pagado)
       })
 
-      const comprobantesFormateados: Comprobante[] = (pagosData ?? []).map(p => ({
+      setComprobantes((pagosData ?? []).map(p => ({
         id: Math.random().toString(),
         monto: p.valor,
         fecha: p.fecha,
         url_comprobante: p.comprobante_url,
         descripcion: null,
         estado: p.estado
-      }))
+      })))
 
-      setComprobantes(comprobantesFormateados)
       setLoading(false)
     }
     cargar()
@@ -134,7 +174,7 @@ export default function PagoServidor() {
     if (pagoErr) {
       setError('Error al registrar: ' + pagoErr.message)
     } else {
-      setExito('✅ Comprobante enviado. Un líder lo verificará pronto.')
+      setExito('Comprobante enviado. Un líder lo verificará pronto.')
       const { data: pagosData } = await supabase
         .from('pagos')
         .select('valor, estado, comprobante_url, fecha')
@@ -176,21 +216,21 @@ export default function PagoServidor() {
     : 100
 
   const estadoColor: Record<string, { bg: string; color: string; label: string }> = {
-    confirmado: { bg: '#f0fdf4', color: '#16a34a', label: '✅ Confirmado' },
-    pendiente: { bg: '#fffbeb', color: '#d97706', label: '⏳ Pendiente' },
-    rechazado: { bg: '#fef2f2', color: '#dc2626', label: '❌ Rechazado' },
+    confirmado: { bg: '#f0fdf4', color: '#16a34a', label: 'Confirmado' },
+    pendiente: { bg: '#fffbeb', color: '#d97706', label: 'Pendiente' },
+    rechazado: { bg: '#fef2f2', color: '#dc2626', label: 'Rechazado' },
   }
 
   return (
     <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 20px' }}>
-        💳 Mi Pago
+        Mi Pago
       </h1>
 
       {resumen && (
         <div style={{
           background: 'white', borderRadius: 14,
-          border: '1.5px solid #e8eaf0', padding: '20px', marginBottom: 20
+          border: '0.5px solid #e8eaf0', padding: '20px', marginBottom: 20
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
@@ -231,7 +271,7 @@ export default function PagoServidor() {
         border: '1.5px dashed #c7d0ff', padding: '20px', marginBottom: 20
       }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 15, color: '#111827', fontWeight: 600 }}>
-          📎 Subir comprobante de pago
+          Subir comprobante de pago
         </h3>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
           Sube tu screenshot o PDF del comprobante de transferencia.
@@ -272,7 +312,7 @@ export default function PagoServidor() {
             boxSizing: 'border-box'
           }}
         >
-          {subiendo ? '⏳ Subiendo...' : '📷 Seleccionar archivo'}
+          {subiendo ? 'Subiendo...' : 'Seleccionar archivo'}
         </label>
         <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9ca3af', textAlign: 'center' }}>
           JPG, PNG, WEBP o PDF · Máx 5MB
@@ -291,7 +331,7 @@ export default function PagoServidor() {
                 <div
                   key={c.id}
                   style={{
-                    background: 'white', border: '1.5px solid #e8eaf0',
+                    background: 'white', border: '0.5px solid #e8eaf0',
                     borderRadius: 12, padding: '14px 16px',
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                   }}
@@ -327,7 +367,7 @@ export default function PagoServidor() {
                         flexShrink: 0, marginLeft: 12
                       }}
                     >
-                      Ver →
+                      Ver
                     </button>
                   )}
                 </div>
@@ -340,7 +380,10 @@ export default function PagoServidor() {
           textAlign: 'center', padding: '32px 20px',
           color: '#9ca3af', fontSize: 14
         }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>📭</div>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 12px', display: 'block' }}>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
           <p style={{ margin: 0 }}>No hay comprobantes registrados aún</p>
         </div>
       )}
