@@ -163,7 +163,7 @@ export default function PagoServidor() {
         persona_id: inscripcionId,
         tipo_persona: 'servidor',
         retiro_id: RETIRO_ID,
-        valor: 0,
+        valor: null,
         fecha: new Date().toISOString().split('T')[0],
         comprobante_url: urlData.publicUrl,
         comprobante_nombre: archivo.name,
