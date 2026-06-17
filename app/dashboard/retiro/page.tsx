@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 type Tab = 'minutominuto' | 'roles' | 'manual'
 type Dia = 'viernes' | 'sabado' | 'domingo'
+type RolesView = 'asignaciones' | 'mesas' | 'descripcion'
 
 interface Actividad {
   hora: string
@@ -219,7 +220,7 @@ const ROLES_RETIRO = [
     color: '#d97706',
     bg: '#fffbeb',
     roles: [
-      { nombre: 'Equipo de Música y Sonido', descripcion: 'Maneja todas las canciones del retiro, grabación del muro y nudo, música del Santísimo (greoriana). Debe conocer el minuto a minuto.' },
+      { nombre: 'Equipo de Música y Sonido', descripcion: 'Maneja todas las canciones del retiro, grabación del muro y nudo, música del Santísimo (gregoriana). Debe conocer el minuto a minuto.' },
       { nombre: 'Equipo de Palancas', descripcion: 'Contacta familiares de caminantes para cartas. Lleva computador e impresora al retiro. Imprime cartas recibidas en el transcurso.' },
       { nombre: 'Equipo de Palanquitas', descripcion: 'Distribuye las palanquitas en las camas de caminantes. Reparte Biblias, hojas y esferos. Organiza bolsas del domingo.' },
       { nombre: 'Equipo de Snacks', descripcion: 'Compra y sirve snacks en los momentos indicados del retiro. Conoce el menú y el cronograma.' },
@@ -248,6 +249,84 @@ const ROLES_RETIRO = [
   }
 ]
 
+interface RolAsignado {
+  nombre: string
+  encargados: string[]
+  nota?: string
+}
+
+const ASIGNACIONES_ROLES: { categoria: string; color: string; bg: string; roles: RolAsignado[] }[] = [
+  {
+    categoria: 'Roles Permanentes',
+    color: '#0f1787',
+    bg: '#f0f2ff',
+    roles: [
+      { nombre: 'Música', encargados: ['Mariana Rodríguez', 'Daniela Alcázar'] },
+      { nombre: 'Palancas', encargados: ['Laura Lucía Cuéllar', 'David Martínez', 'María Paula Rodríguez', 'Paula Agudelo'] },
+      { nombre: 'Snacks', encargados: ['Camila Cárdenas', 'Allison Torres', 'Catalina Ocampo', 'Mariana Isabella Quintero', 'Valentina Mirque Lucio', 'María Paula Tenorio'] },
+      { nombre: 'Pastillero', encargados: ['Ángela Rocío Chaparro Vargas'] },
+      { nombre: 'Bendición de alimentos', encargados: ['Andrés Muñoz', 'Ángela María Picón', 'María Camila Cárdenas', 'Natalia Isabel Cupitra', 'Gabriela Ramírez'] },
+      { nombre: 'Explicación Santísimo', encargados: ['Natalia Jaramillo'] },
+      { nombre: 'Santísimo', encargados: ['Natalia Jaramillo', 'Gabriela Ramírez', 'Isabella Moncada', 'Laura Camacho'] },
+      { nombre: 'Turnos Santísimo y Angelitos', encargados: ['Natalia Jaramillo', 'Gabriela Ramírez'] },
+      { nombre: 'Explicación Palanquitas', encargados: ['Isabella Moncada'] },
+      { nombre: 'Guachafita', encargados: ['Juan Pablo Bedoya', 'Eddy Carvajal', 'Andrés David Noel Mulett'] },
+      { nombre: '¿Por qué oramos cantando?', encargados: ['Mariana Rodríguez'] },
+      { nombre: 'Mantelitos', encargados: ['Laura Lucía Cuéllar'] },
+    ]
+  },
+  {
+    categoria: 'Actividades Generales',
+    color: '#16a34a',
+    bg: '#f0fdf4',
+    roles: [
+      { nombre: 'Bienvenida (5)', encargados: ['Carolina Bucheli', 'Mariana Serrano', 'Paula Sofía Ortiz', 'Santiago Ruiz', 'Juan Pablo León', 'Andrés David Noel Mulett'] },
+      { nombre: 'Recepción (4)', encargados: ['Valery Cardona', 'Natalia Linares', 'María Alejandra Sierra', 'Daniel Villabón'] },
+      { nombre: 'Lobby (7)', encargados: ['Santiago Ruiz', 'Santiago Rodríguez', 'David Sarmiento', 'Allison Torres', 'Catalina Ocampo', 'Natalia Jaramillo', 'Andrés Muñoz'] },
+      { nombre: 'Maleteros (5)', encargados: ['Eddy Carvajal', 'David Martínez', 'Santiago Castañeda', 'Juan José Álvarez', 'Juan Pablo Garrido'] },
+      { nombre: 'Despertar sábado', encargados: ['Gabriela Ramírez', 'Mariana Isabella Quintero', 'Valentina Mirque Lucio', 'Natalia Isabel Cupitra', 'María Paula Rodríguez'] },
+      { nombre: 'Despertar domingo', encargados: ['María Camila Cárdenas', 'María Paula Tenorio', 'Andrés Muñoz', 'Daniel Steeven Chaparro Villabón', 'Juan José Álvarez'] },
+      { nombre: 'Resumen viernes', encargados: ['Diego Urrego'] },
+      { nombre: 'Resumen sábado', encargados: ['Judith'] },
+      { nombre: 'Oración sábado', encargados: ['Santiago Rodríguez'] },
+      { nombre: 'Oración domingo', encargados: ['Jorge Picón'] },
+      { nombre: 'Rosario sábado', encargados: ['Laura Camacho', 'Valery Cardona', 'Ángela María Picón'] },
+      { nombre: 'Rosario domingo', encargados: ['Paula Agudelo', 'Daniela Alcázar', 'Laura Lucía Cuéllar'] },
+      { nombre: 'Cartas de Jesús (3)', encargados: ['María Paula Tenorio', 'Daniel Steeven Chaparro Villabón', 'Catalina Ocampo'] },
+      { nombre: 'Máscaras (8)', encargados: ['Carolina Bucheli', 'Daniel Villabón', 'Juan Pablo León', 'Laura Ramírez', 'Natalia Linares', 'Paula Sofía Ortiz', 'Mariana Serrano', 'Santiago Castañeda'] },
+      { nombre: 'Sanando mi alma (2)', encargados: ['María Alejandra Sierra', 'Allison Torres'] },
+      { nombre: 'Fogata viernes', encargados: ['Daniel Steeven Chaparro Villabón', 'David Martínez'] },
+      { nombre: 'Fogata sábado', encargados: ['Andrés David Noel Mulett', 'David Sarmiento'] },
+      { nombre: 'Camino de la vida', encargados: ['Juan Pablo León', 'Natalia Isabel Cupitra', 'Santiago Castañeda', 'Mariana Isabella Quintero', 'Andrés Muñoz', 'Juan Pablo Cardona', 'Laura Ramírez'] },
+    ]
+  },
+  {
+    categoria: 'Muro y Nudo',
+    color: '#dc2626',
+    bg: '#fef2f2',
+    roles: [
+      { nombre: 'Acomodar en paredes', encargados: ['Antonia', 'Sofía Castañeda', 'Daniel Cuéllar'], nota: '+ todos los líderes de mesa' },
+      { nombre: 'Pared a confesiones (6)', encargados: ['Juan Pablo Cardona', 'Laura Camacho', 'María Paula Tenorio', 'David Sarmiento', 'Santiago Rodríguez'] },
+      { nombre: 'Confesiones a palancas (6)', encargados: ['Carolina Bucheli', 'Daniel Villabón', 'Laura Ramírez', 'María Alejandra Sierra', 'Paula Sofía Ortiz', 'Santiago Ruiz'] },
+      { nombre: 'Palancas a rumba (6)', encargados: ['Valery Cardona', 'Valentina Mirque Lucio', 'David Sarmiento', 'Natalia Linares', 'Andrés Muñoz'] },
+      { nombre: 'Recepción de rumba (5)', encargados: ['Mariana Serrano', 'Isabella Moncada', 'Eddy Carvajal', 'Juan Pablo Bedoya', 'Andrés Noel Mulett', 'Juan Pablo León'] },
+    ]
+  }
+]
+
+const MESAS_RETIRO: { numero: number; encargados: string[] }[] = [
+  { numero: 1, encargados: ['Santiago Ruiz', 'Isabela Moncada'] },
+  { numero: 2, encargados: ['David Sarmiento', 'Laura Camacho'] },
+  { numero: 3, encargados: ['Valery Cardona', 'Juan Pablo León'] },
+  { numero: 4, encargados: ['Paula Sofía Ortiz Maecha', 'Santiago Rodríguez'] },
+  { numero: 5, encargados: ['Natalia Isabel Cupitra', 'Eddy Carvajal'] },
+  { numero: 6, encargados: ['Santiago Castañeda', 'Laura Ramírez'] },
+  { numero: 7, encargados: ['Andrés David Noel Mulett', 'Mariana Serrano'] },
+  { numero: 8, encargados: ['Natalia Linares', 'Juan José Álvarez'] },
+  { numero: 9, encargados: ['Juan Pablo Cardona', 'Carolina Bucheli'] },
+  { numero: 10, encargados: ['Juan Pablo Bedoya', 'María Alejandra Sierra'] },
+]
+
 const colorTipo: Record<string, { bg: string; color: string; label: string }> = {
   charla:    { bg: '#dc2626', color: 'white', label: 'Charla' },
   actividad: { bg: '#7c3aed', color: 'white', label: 'Actividad' },
@@ -261,6 +340,7 @@ export default function RetiroDashboard() {
   const [tab, setTab] = useState<Tab>('minutominuto')
   const [diaActivo, setDiaActivo] = useState<Dia>('viernes')
   const [expandido, setExpandido] = useState<string | null>(null)
+  const [rolesView, setRolesView] = useState<RolesView>('asignaciones')
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'minutominuto', label: 'Minuto a Minuto' },
@@ -272,6 +352,12 @@ export default function RetiroDashboard() {
     { id: 'viernes', label: 'Viernes', fecha: '3 Jul' },
     { id: 'sabado', label: 'Sabado', fecha: '4 Jul' },
     { id: 'domingo', label: 'Domingo', fecha: '5 Jul' },
+  ]
+
+  const rolesViews: { id: RolesView; label: string }[] = [
+    { id: 'asignaciones', label: 'Asignaciones' },
+    { id: 'mesas', label: 'Mesas' },
+    { id: 'descripcion', label: 'Descripción' },
   ]
 
   return (
@@ -409,45 +495,114 @@ export default function RetiroDashboard() {
 
       {/* ROLES */}
       {tab === 'roles' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {ROLES_RETIRO.map((cat, ci) => (
-            <div key={ci}>
-              <h3 style={{
-                fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1,
-                color: cat.color, margin: '0 0 10px'
-              }}>{cat.categoria}</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {cat.roles.map((rol, ri) => (
-                  <div
-                    key={ri}
-                    style={{
-                      background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10,
-                      padding: '12px 14px', borderLeft: `3px solid ${cat.color}`
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 4 }}>
-                      {rol.nombre}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
-                      {rol.descripcion}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          <div style={{
-            background: '#f0f2ff', border: '1.5px solid #c7d2fe', borderRadius: 12,
-            padding: '14px 16px', marginTop: 4
-          }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#0f1787', margin: '0 0 4px' }}>
-              Roles de los servidores del IX Retiro
-            </p>
-            <p style={{ fontSize: 12, color: '#374151', margin: 0 }}>
-              Los roles especificos de cada servidor de este retiro se asignaran pronto desde el dashboard de servidores.
-            </p>
+        <div>
+          {/* Sub-tabs de Roles */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 20, background: '#f3f4f6', borderRadius: 10, padding: 4 }}>
+            {rolesViews.map(rv => (
+              <button
+                key={rv.id}
+                onClick={() => setRolesView(rv.id)}
+                style={{
+                  flex: 1, padding: '8px 4px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  background: rolesView === rv.id ? '#0f1787' : 'transparent',
+                  color: rolesView === rv.id ? 'white' : '#6b7280',
+                }}
+              >{rv.label}</button>
+            ))}
           </div>
+
+          {/* Asignaciones reales del IX Retiro */}
+          {rolesView === 'asignaciones' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {ASIGNACIONES_ROLES.map((cat, ci) => (
+                <div key={ci}>
+                  <h3 style={{
+                    fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1,
+                    color: cat.color, margin: '0 0 10px'
+                  }}>{cat.categoria}</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {cat.roles.map((rol, ri) => (
+                      <div
+                        key={ri}
+                        style={{
+                          background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10,
+                          padding: '12px 14px', borderLeft: `3px solid ${cat.color}`
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 4 }}>
+                          {rol.nombre}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
+                          {rol.encargados.join(', ')}{rol.nota ? ` ${rol.nota}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Mesas */}
+          {rolesView === 'mesas' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+              {MESAS_RETIRO.map(m => (
+                <div
+                  key={m.numero}
+                  style={{
+                    background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12,
+                    padding: '14px 12px',
+                  }}
+                >
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: 28, height: 28, background: '#0f1787', color: 'white', borderRadius: 8,
+                    fontSize: 13, fontWeight: 700, marginBottom: 8,
+                  }}>{m.numero}</div>
+                  <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                    {m.encargados.map((nombre, ni) => (
+                      <div key={ni} style={{ fontWeight: ni === 0 ? 600 : 400, color: ni === 0 ? '#111827' : '#6b7280' }}>
+                        {nombre}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Descripción general de roles */}
+          {rolesView === 'descripcion' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {ROLES_RETIRO.map((cat, ci) => (
+                <div key={ci}>
+                  <h3 style={{
+                    fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1,
+                    color: cat.color, margin: '0 0 10px'
+                  }}>{cat.categoria}</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {cat.roles.map((rol, ri) => (
+                      <div
+                        key={ri}
+                        style={{
+                          background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10,
+                          padding: '12px 14px', borderLeft: `3px solid ${cat.color}`
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 4 }}>
+                          {rol.nombre}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
+                          {rol.descripcion}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
