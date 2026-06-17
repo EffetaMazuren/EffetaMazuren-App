@@ -500,17 +500,6 @@ export default function DashboardPage() {
             <p className="text-sm text-blue-100 leading-tight">Minuto a minuto, roles y manual del retiro</p>
           </button>
 
-          <button
-            onClick={() => router.push('/dashboard/retiro')}
-            className="col-span-2 bg-[#0f1787] rounded-2xl p-4 text-left hover:opacity-90 transition-opacity"
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xl">✝️</span>
-              <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">IX Retiro</span>
-            </div>
-            <p className="text-sm text-blue-100 leading-tight">Minuto a minuto, roles y manual del retiro</p>
-          </button>
-
           
         </div>
 
