@@ -27,6 +27,7 @@ export default function AsistenciasServidor() {
 
   const [reuniones, setReuniones] = useState<Reunion[]>([])
   const [inscripcionId, setInscripcionId] = useState('')
+  const [usuarioId, setUsuarioId] = useState('')
   const [loading, setLoading] = useState(true)
   const [camaraActiva, setCamaraActiva] = useState(false)
   const [reunionActiva, setReunionActiva] = useState<Reunion | null>(null)
@@ -39,6 +40,8 @@ export default function AsistenciasServidor() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/'); return }
 
+      setUsuarioId(session.user.id)
+
       const { data: srv } = await supabase
         .from('servidores_inscripcion')
         .select('id')
@@ -46,7 +49,7 @@ export default function AsistenciasServidor() {
         .eq('retiro_id', RETIRO_ID)
         .single()
 
-      if (!srv) return
+      if (!srv) { setLoading(false); return }
       setInscripcionId(srv.id)
       await cargarReuniones(srv.id)
       setLoading(false)
@@ -106,7 +109,6 @@ export default function AsistenciasServidor() {
     return esHoy(r.fecha) && despuesDe6pm()
   }
 
-  // Puede registrar si es hoy (con o sin horario) y no está cancelada y no ha asistido
   const puedeRegistrar = (r: Reunion) => {
     return esHoy(r.fecha) && !r.cancelada && !r.asistio
   }
@@ -160,7 +162,6 @@ export default function AsistenciasServidor() {
     setSubiendo(true)
     detenerCamara()
 
-    // Determinar si está fuera de horario
     const fueraDeHorario = !esHorarioNormal(reunionActiva)
     const ahora = new Date()
     const horaCol = (ahora.getUTCHours() - 5 + 24) % 24
@@ -194,6 +195,7 @@ export default function AsistenciasServidor() {
       const { error: asistErr } = await supabase
         .from('asistencias')
         .upsert({
+          usuario_id: usuarioId,
           servidor_inscripcion_id: inscripcionId,
           reunion_id: reunionActiva.id,
           asistio: true,
@@ -207,9 +209,9 @@ export default function AsistenciasServidor() {
         setError('Error al registrar asistencia: ' + asistErr.message)
       } else {
         if (fueraDeHorario) {
-          setExito('✅ Asistencia registrada. Los líderes fueron notificados que fue fuera de horario.')
+          setExito('Asistencia registrada. Los líderes fueron notificados que fue fuera de horario.')
         } else {
-          setExito('✅ ¡Asistencia registrada!')
+          setExito('Asistencia registrada correctamente.')
         }
         await cargarReuniones(inscripcionId)
         setTimeout(() => setExito(''), 4000)
@@ -246,15 +248,14 @@ export default function AsistenciasServidor() {
   return (
     <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto', paddingBottom: 100 }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 20px' }}>
-        📅 Asistencias Effetá
+        Asistencias Effeta
       </h1>
 
-      {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
         {[
           { label: 'Asistidas', valor: String(totalAsistidas), color: '#16a34a' },
           { label: 'Total', valor: String(totalValidas), color: '#374151' },
-          { label: 'Racha 🔥', valor: String(racha), color: '#d97706' },
+          { label: 'Racha', valor: String(racha), color: '#d97706' },
         ].map(s => (
           <div key={s.label} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, padding: '14px 10px', textAlign: 'center' }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: s.color }}>{s.valor}</div>
@@ -263,7 +264,6 @@ export default function AsistenciasServidor() {
         ))}
       </div>
 
-      {/* Barra progreso */}
       {totalValidas > 0 && (
         <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '16px 20px', marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -274,30 +274,27 @@ export default function AsistenciasServidor() {
             <div style={{ height: '100%', width: `${porcentaje}%`, background: getColorPct(porcentaje), borderRadius: 6, transition: 'width 0.6s' }} />
           </div>
           <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>
-            {porcentaje >= 80 ? '🌟 ¡Excelente compromiso!' : porcentaje >= 50 ? '💪 Sigue adelante' : '📣 Te esperamos en las reuniones'}
+            {porcentaje >= 80 ? 'Excelente compromiso' : porcentaje >= 50 ? 'Sigue adelante' : 'Te esperamos en las reuniones'}
           </div>
         </div>
       )}
 
-      {/* Mensajes */}
       {error && <p style={{ color: '#dc2626', fontSize: 13, margin: '0 0 16px', background: '#fef2f2', padding: '10px 14px', borderRadius: 10 }}>{error}</p>}
       {exito && <p style={{ color: '#16a34a', fontSize: 13, margin: '0 0 16px', background: '#f0fdf4', padding: '10px 14px', borderRadius: 10 }}>{exito}</p>}
 
-      {/* Cámara */}
       {camaraActiva && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <p style={{ color: 'white', fontSize: 15, fontWeight: 600, marginBottom: 8, textAlign: 'center' }}>
-            📸 Tómate una foto para registrar tu asistencia
+            Tómate una foto para registrar tu asistencia
           </p>
           <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>
             {reunionActiva?.nombre} · {reunionActiva?.fecha && new Date(reunionActiva.fecha + 'T12:00:00').toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
 
-          {/* Aviso fuera de horario */}
           {reunionActiva && !esHorarioNormal(reunionActiva) && (
             <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '8px 14px', marginBottom: 16, maxWidth: 360, width: '100%' }}>
               <p style={{ margin: 0, fontSize: 12, color: '#92400e', textAlign: 'center' }}>
-                ⚠️ Estás registrando fuera del horario normal (después de 6pm). Los líderes recibirán una alerta.
+                Estas registrando fuera del horario normal (después de 6pm). Los líderes recibirán una alerta.
               </p>
             </div>
           )}
@@ -310,16 +307,14 @@ export default function AsistenciasServidor() {
               Cancelar
             </button>
             <button onClick={tomarFoto} disabled={subiendo} style={{ flex: 2, padding: '14px', background: subiendo ? '#9ca3af' : '#16a34a', color: 'white', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: subiendo ? 'not-allowed' : 'pointer' }}>
-              {subiendo ? '⏳ Registrando...' : '📸 Tomar foto'}
+              {subiendo ? 'Registrando...' : 'Tomar foto'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Lista reuniones */}
       {reuniones.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: '#9ca3af' }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>🗓️</div>
           <p style={{ margin: 0, fontSize: 14 }}>Las reuniones comienzan el martes 16 de junio</p>
         </div>
       ) : (
@@ -328,7 +323,7 @@ export default function AsistenciasServidor() {
             <div key={r.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, padding: '14px 16px', opacity: r.cancelada ? 0.6 : 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, background: r.cancelada ? '#f3f4f6' : r.asistio ? '#f0fdf4' : r.asistio === false ? '#fef2f2' : '#f9fafb' }}>
-                  {r.cancelada ? '🚫' : r.asistio ? '✅' : r.asistio === false ? '❌' : '⏳'}
+                  {r.cancelada ? '—' : r.asistio ? '✓' : r.asistio === false ? '✗' : '·'}
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -346,11 +341,11 @@ export default function AsistenciasServidor() {
                     onClick={() => abrirCamara(r)}
                     style={{ padding: '8px 12px', background: despuesDe6pm() ? '#0f1787' : '#d97706', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
                   >
-                    {despuesDe6pm() ? '📸 Foto' : '⚠️ Foto'}
+                    Foto
                   </button>
                 ) : (
                   <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20, flexShrink: 0, background: r.cancelada ? '#f3f4f6' : r.asistio ? '#f0fdf4' : '#f9fafb', color: r.cancelada ? '#9ca3af' : r.asistio ? '#16a34a' : '#9ca3af' }}>
-                    {r.cancelada ? 'Cancelada' : r.asistio ? 'Asistí' : 'Sin registro'}
+                    {r.cancelada ? 'Cancelada' : r.asistio ? 'Asisti' : 'Sin registro'}
                   </span>
                 )}
               </div>
