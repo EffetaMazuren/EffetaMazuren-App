@@ -316,7 +316,7 @@ export default function RetiroDashboard() {
                 key={d.id}
                 onClick={() => setDiaActivo(d.id)}
                 style={{
-                  flex: 1, padding: '10px 8px', border: 'none', borderRadius: 10, cursor: 'pointer',
+                  flex: 1, padding: '10px 8px', borderRadius: 10, cursor: 'pointer',
                   background: diaActivo === d.id ? '#0f1787' : 'white',
                   color: diaActivo === d.id ? 'white' : '#374151',
                   border: diaActivo === d.id ? 'none' : '1.5px solid #e8eaf0',
