@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -75,6 +75,8 @@ export default function ServidorPage() {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [cargando, setCargando] = useState(true);
 
+  const inscripcionIdRef = useRef<string | null>(null);
+
   const versiculoPreview = getVersiculoPreview();
 
   useEffect(() => {
@@ -103,6 +105,7 @@ export default function ServidorPage() {
       .single();
 
     if (inscripcion) {
+      inscripcionIdRef.current = inscripcion.id;
       // CRÍTICO: persona_id en pagos de servidores = inscripcion.id (no user.id)
       const { data: pagosData } = await supabase
         .from('pagos')
@@ -167,7 +170,7 @@ export default function ServidorPage() {
       }, (payload) => {
         const nuevo = payload.new as Mensaje;
         // Mostrar solo si es general o va dirigido a este servidor
-        const inscId = inscripcionId;
+        const inscId = inscripcionIdRef.current;
         if (!nuevo.destinatario_id || nuevo.destinatario_id === inscId) {
           setMensajes(prev => [nuevo, ...prev]);
         }
