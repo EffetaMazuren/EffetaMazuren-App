@@ -32,6 +32,8 @@ interface Mensaje {
   texto: string;
   autor_nombre: string;
   created_at: string;
+  updated_at: string;
+  editado: boolean;
   destinatario_id: string | null;
 }
 
@@ -176,6 +178,14 @@ export default function ServidorPage() {
         }
       })
       .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'mensajes_retiro'
+      }, (payload) => {
+        const updated = payload.new as Mensaje;
+        setMensajes(prev => prev.map(m => m.id === updated.id ? { ...m, texto: updated.texto, editado: updated.editado, updated_at: updated.updated_at } : m));
+      })
+      .on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
         table: 'mensajes_retiro'
@@ -292,9 +302,12 @@ export default function ServidorPage() {
               {mensajes.map((msg, idx) => (
                 <div key={msg.id} style={{ background: idx === 0 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', border: idx === 0 ? '0.5px solid rgba(255,255,255,0.3)' : 'none' }}>
                   <p style={{ margin: '0 0 6px', color: 'white', fontSize: '14px', lineHeight: '1.5' }}>{msg.texto}</p>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
                     <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>{msg.autor_nombre}</span>
-                    <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{formatHora(msg.created_at)}</span>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {msg.editado && <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>editado</span>}
+                      <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{formatHora(msg.created_at)}</span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -412,4 +425,3 @@ export default function ServidorPage() {
     </div>
   );
 }
-
