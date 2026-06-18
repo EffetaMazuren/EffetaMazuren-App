@@ -32,6 +32,7 @@ interface Mensaje {
   texto: string;
   autor_nombre: string;
   created_at: string;
+  destinatario_id: string | null;
 }
 
 function getVersiculoPreview() {
@@ -128,14 +129,28 @@ export default function ServidorPage() {
       .limit(1);
     if (reunionesData && reunionesData.length > 0) setProximaReunion(reunionesData[0]);
 
-    // Cargar mensajes de líderes
-    const { data: mensajesData } = await supabase
+    // Cargar mensajes de líderes: generales (sin destinatario) + los específicos para este servidor
+    const inscripcionIdParaMensajes = inscripcion?.id ?? null;
+    const { data: msgsGenerales } = await supabase
       .from('mensajes_retiro')
-      .select('id, texto, autor_nombre, created_at')
+      .select('id, texto, autor_nombre, created_at, destinatario_id')
       .eq('retiro_id', RETIRO_ID)
+      .is('destinatario_id', null)
       .order('created_at', { ascending: false })
       .limit(10);
-    if (mensajesData) setMensajes(mensajesData);
+    const mensajesCombinados = [...(msgsGenerales ?? [])];
+    if (inscripcionIdParaMensajes) {
+      const { data: msgsPersonales } = await supabase
+        .from('mensajes_retiro')
+        .select('id, texto, autor_nombre, created_at, destinatario_id')
+        .eq('retiro_id', RETIRO_ID)
+        .eq('destinatario_id', inscripcionIdParaMensajes)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      mensajesCombinados.push(...(msgsPersonales ?? []));
+    }
+    mensajesCombinados.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    setMensajes(mensajesCombinados);
 
     setCargando(false);
   }
@@ -150,7 +165,12 @@ export default function ServidorPage() {
         table: 'mensajes_retiro',
         filter: `retiro_id=eq.${RETIRO_ID}`
       }, (payload) => {
-        setMensajes(prev => [payload.new as Mensaje, ...prev]);
+        const nuevo = payload.new as Mensaje;
+        // Mostrar solo si es general o va dirigido a este servidor
+        const inscId = inscripcionId;
+        if (!nuevo.destinatario_id || nuevo.destinatario_id === inscId) {
+          setMensajes(prev => [nuevo, ...prev]);
+        }
       })
       .on('postgres_changes', {
         event: 'DELETE',
