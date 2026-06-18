@@ -162,81 +162,6 @@ export default function MensajesPage() {
     </div>
   )
 
-  // Componente de tarjeta de mensaje reutilizable
-  function TarjetaMensaje({ msg, acento }: { msg: Mensaje; acento: { bg: string; color: string; iconColor: string } }) {
-    const editando = editandoId === msg.id
-    return (
-      <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: '14px 16px' }}>
-        {/* Destinatario (solo personalizados) */}
-        {msg.destinatario_id && (
-          <div style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: acento.color, background: acento.bg, padding: '2px 8px', borderRadius: 20 }}>
-              Para: {msg.servidores_inscripcion?.nombre?.split(' ')[0] ?? '—'}
-            </span>
-          </div>
-        )}
-
-        {/* Cuerpo: edición o vista */}
-        {editando ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <textarea
-              value={editTexto}
-              onChange={e => setEditTexto(e.target.value)}
-              rows={3}
-              autoFocus
-              style={{ width: '100%', border: '0.5px solid #0f1787', borderRadius: 8, padding: '8px 12px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'system-ui, sans-serif', lineHeight: 1.5 }}
-            />
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                onClick={() => guardarEdicion(msg.id)}
-                disabled={editGuardando || !editTexto.trim()}
-                style={{ flex: 1, background: editGuardando || !editTexto.trim() ? '#e5e7eb' : '#0f1787', color: editGuardando || !editTexto.trim() ? '#9ca3af' : '#fff', border: 'none', borderRadius: 8, padding: '8px', fontSize: 13, fontWeight: 500, cursor: editGuardando || !editTexto.trim() ? 'not-allowed' : 'pointer' }}
-              >
-                {editGuardando ? 'Guardando…' : 'Guardar'}
-              </button>
-              <button
-                onClick={() => setEditandoId(null)}
-                style={{ background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p style={{ margin: '0 0 8px', fontSize: 14, color: '#0d0d14', lineHeight: 1.5 }}>{msg.texto}</p>
-        )}
-
-        {/* Footer */}
-        {!editando && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#0f1787', background: '#eef0ff', padding: '2px 8px', borderRadius: 20 }}>{msg.autor_nombre}</span>
-              <span style={{ fontSize: 11, color: '#9ca3af' }}>{formatHora(msg.created_at)}</span>
-              {msg.editado && <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>editado {formatHora(msg.updated_at)}</span>}
-              <span style={{ fontSize: 10, color: '#d97706', background: '#fffbeb', padding: '2px 7px', borderRadius: 20, border: '0.5px solid #fde68a' }}>
-                {tiempoRestante(msg.created_at)}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button
-                onClick={() => iniciarEdicion(msg)}
-                style={{ background: '#f3f4f6', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 12, padding: '4px 10px', borderRadius: 7, fontWeight: 500 }}
-              >
-                Editar
-              </button>
-              <button
-                onClick={() => eliminar(msg.id)}
-                style={{ background: '#fef2f2', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, padding: '4px 10px', borderRadius: 7, fontWeight: 500 }}
-              >
-                Borrar
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc', paddingBottom: 40 }}>
 
@@ -365,7 +290,40 @@ export default function MensajesPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {mensajesGenerales.map(msg => (
-                    <TarjetaMensaje key={msg.id} msg={msg} acento={{ bg: '#eef0ff', color: '#0f1787', iconColor: '#0f1787' }} />
+                    <div key={msg.id} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: '14px 16px' }}>
+                      {editandoId === msg.id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <textarea value={editTexto} onChange={e => setEditTexto(e.target.value)} rows={3} autoFocus
+                            style={{ width: '100%', border: '0.5px solid #0f1787', borderRadius: 8, padding: '8px 12px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'system-ui, sans-serif', lineHeight: 1.5 }} />
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => guardarEdicion(msg.id)} disabled={editGuardando || !editTexto.trim()}
+                              style={{ flex: 1, background: editGuardando || !editTexto.trim() ? '#e5e7eb' : '#0f1787', color: editGuardando || !editTexto.trim() ? '#9ca3af' : '#fff', border: 'none', borderRadius: 8, padding: '8px', fontSize: 13, fontWeight: 500, cursor: editGuardando || !editTexto.trim() ? 'not-allowed' : 'pointer' }}>
+                              {editGuardando ? 'Guardando…' : 'Guardar'}
+                            </button>
+                            <button onClick={() => setEditandoId(null)}
+                              style={{ background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p style={{ margin: '0 0 8px', fontSize: 14, color: '#0d0d14', lineHeight: 1.5 }}>{msg.texto}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#0f1787', background: '#eef0ff', padding: '2px 8px', borderRadius: 20 }}>{msg.autor_nombre}</span>
+                              <span style={{ fontSize: 11, color: '#9ca3af' }}>{formatHora(msg.created_at)}</span>
+                              {msg.editado && <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>editado</span>}
+                              <span style={{ fontSize: 10, color: '#d97706', background: '#fffbeb', padding: '2px 7px', borderRadius: 20, border: '0.5px solid #fde68a' }}>{tiempoRestante(msg.created_at)}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button onClick={() => iniciarEdicion(msg)} style={{ background: '#f3f4f6', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 12, padding: '4px 10px', borderRadius: 7, fontWeight: 500 }}>Editar</button>
+                              <button onClick={() => eliminar(msg.id)} style={{ background: '#fef2f2', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, padding: '4px 10px', borderRadius: 7, fontWeight: 500 }}>Borrar</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -378,7 +336,45 @@ export default function MensajesPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {mensajesPersonalizados.map(msg => (
-                    <TarjetaMensaje key={msg.id} msg={msg} acento={{ bg: '#fdf4ff', color: '#7c3aed', iconColor: '#7c3aed' }} />
+                    <div key={msg.id} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: '14px 16px' }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', background: '#fdf4ff', padding: '2px 8px', borderRadius: 20 }}>
+                          Para: {msg.servidores_inscripcion?.nombre?.split(' ')[0] ?? '—'}
+                        </span>
+                      </div>
+                      {editandoId === msg.id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <textarea value={editTexto} onChange={e => setEditTexto(e.target.value)} rows={3} autoFocus
+                            style={{ width: '100%', border: '0.5px solid #0f1787', borderRadius: 8, padding: '8px 12px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'system-ui, sans-serif', lineHeight: 1.5 }} />
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => guardarEdicion(msg.id)} disabled={editGuardando || !editTexto.trim()}
+                              style={{ flex: 1, background: editGuardando || !editTexto.trim() ? '#e5e7eb' : '#0f1787', color: editGuardando || !editTexto.trim() ? '#9ca3af' : '#fff', border: 'none', borderRadius: 8, padding: '8px', fontSize: 13, fontWeight: 500, cursor: editGuardando || !editTexto.trim() ? 'not-allowed' : 'pointer' }}>
+                              {editGuardando ? 'Guardando…' : 'Guardar'}
+                            </button>
+                            <button onClick={() => setEditandoId(null)}
+                              style={{ background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p style={{ margin: '0 0 8px', fontSize: 14, color: '#0d0d14', lineHeight: 1.5 }}>{msg.texto}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#0f1787', background: '#eef0ff', padding: '2px 8px', borderRadius: 20 }}>{msg.autor_nombre}</span>
+                              <span style={{ fontSize: 11, color: '#9ca3af' }}>{formatHora(msg.created_at)}</span>
+                              {msg.editado && <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>editado</span>}
+                              <span style={{ fontSize: 10, color: '#d97706', background: '#fffbeb', padding: '2px 7px', borderRadius: 20, border: '0.5px solid #fde68a' }}>{tiempoRestante(msg.created_at)}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button onClick={() => iniciarEdicion(msg)} style={{ background: '#f3f4f6', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 12, padding: '4px 10px', borderRadius: 7, fontWeight: 500 }}>Editar</button>
+                              <button onClick={() => eliminar(msg.id)} style={{ background: '#fef2f2', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, padding: '4px 10px', borderRadius: 7, fontWeight: 500 }}>Borrar</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
