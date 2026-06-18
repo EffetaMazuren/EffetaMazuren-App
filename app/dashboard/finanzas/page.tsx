@@ -90,6 +90,11 @@ export default function FinanzasPage() {
   const [cotGuardando, setCotGuardando] = useState(false)
   const [cotMensaje, setCotMensaje] = useState('')
 
+
+  // Categorías personalizadas en cotizaciones
+  const [catsExtra, setCatsExtra] = useState<string[]>([])
+  const [catModoTexto, setCatModoTexto] = useState(false)
+  const [catNuevaTexto, setCatNuevaTexto] = useState('')
   // Edición inline
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ producto: '', cantidad: '', precio_total: '', precio_unidad: '', proveedor: '', notas: '' })
@@ -846,10 +851,55 @@ export default function FinanzasPage() {
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>Nuevo ítem</div>
                 <div>
                   <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Categoría</div>
-                  <select value={cotForm.categoria} onChange={e => setCotForm(p => ({ ...p, categoria: e.target.value }))}
-                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
-                    {CATS_EXCEL.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  {!catModoTexto ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <select value={cotForm.categoria} onChange={e => {
+                        if (e.target.value === '__nueva__') { setCatModoTexto(true); setCatNuevaTexto('') }
+                        else setCotForm(p => ({ ...p, categoria: e.target.value }))
+                      }} style={{ flex: 1, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                        {[...CATS_EXCEL, ...catsExtra].map(c => <option key={c} value={c}>{c}</option>)}
+                        <option value="__nueva__">✏️ Escribir otra…</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <input
+                        type="text"
+                        value={catNuevaTexto}
+                        onChange={e => { setCatNuevaTexto(e.target.value.toUpperCase()); setCotForm(p => ({ ...p, categoria: e.target.value.toUpperCase() })) }}
+                        placeholder="Nombre de la nueva categoría…"
+                        autoFocus
+                        style={{ width: '100%', border: '0.5px solid #0f1787', borderRadius: 10, padding: '9px 14px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }}
+                      />
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          onClick={() => {
+                            const nombre = catNuevaTexto.trim().toUpperCase()
+                            if (nombre && ![...CATS_EXCEL, ...catsExtra].includes(nombre)) {
+                              setCatsExtra(prev => [...prev, nombre])
+                            }
+                            setCotForm(p => ({ ...p, categoria: nombre || p.categoria }))
+                            setCatModoTexto(false)
+                          }}
+                          disabled={!catNuevaTexto.trim()}
+                          style={{ flex: 1, background: catNuevaTexto.trim() ? '#0f1787' : '#e5e7eb', color: catNuevaTexto.trim() ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, padding: '8px', fontSize: 12, fontWeight: 500, cursor: catNuevaTexto.trim() ? 'pointer' : 'not-allowed' }}
+                        >
+                          + Añadir a lista y usar
+                        </button>
+                        <button
+                          onClick={() => { setCatModoTexto(false); setCotForm(p => ({ ...p, categoria: CATS_EXCEL[0] })) }}
+                          style={{ background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      {catNuevaTexto.trim() && (
+                        <div style={{ fontSize: 11, color: '#6b7280', paddingLeft: 2 }}>
+                          Se usará <strong>{catNuevaTexto.trim().toUpperCase()}</strong> y quedará disponible en esta sesión.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Producto *</div>
