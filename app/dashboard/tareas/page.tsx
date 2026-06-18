@@ -68,11 +68,17 @@ export default function TareasPage() {
   }, [])
 
   const cargarTareas = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tareas_retiro')
       .select('*')
       .eq('retiro_id', RETIRO_ID)
       .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error cargando tareas:', error)
+      alert('Error cargando tareas: ' + error.message)
+    }
+
     setTareas(data ?? [])
     setLoading(false)
   }
@@ -80,29 +86,54 @@ export default function TareasPage() {
   const crearTarea = async () => {
     if (!nuevoTitulo.trim()) return
     setGuardando(true)
-    await supabase.from('tareas_retiro').insert({
+
+    const { data, error } = await supabase.from('tareas_retiro').insert({
       retiro_id: RETIRO_ID,
       titulo: nuevoTitulo.trim(),
       descripcion: nuevoDesc.trim() || null,
       estado: 'pendiente',
       prioridad: nuevaPrioridad,
       creado_por: nombreUsuario || 'Líder',
-    })
+    }).select()
+
+    if (error) {
+      console.error('Error creando tarea:', error)
+      alert('No se pudo crear la tarea:\n' + error.message)
+      setGuardando(false)
+      return
+    }
+
     setNuevoTitulo('')
     setNuevoDesc('')
     setNuevaPrioridad('media')
     setMostrarForm(false)
     setGuardando(false)
+    cargarTareas()
   }
 
   const cambiarEstado = async (id: string, estado: Estado) => {
     setCambiandoId(null)
-    await supabase.from('tareas_retiro').update({ estado, updated_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await supabase
+      .from('tareas_retiro')
+      .update({ estado, updated_at: new Date().toISOString() })
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error cambiando estado:', error)
+      alert('No se pudo cambiar el estado:\n' + error.message)
+    }
+    cargarTareas()
   }
 
   const eliminarTarea = async (id: string) => {
     if (!confirm('¿Eliminar esta tarea?')) return
-    await supabase.from('tareas_retiro').delete().eq('id', id)
+    const { error } = await supabase.from('tareas_retiro').delete().eq('id', id)
+
+    if (error) {
+      console.error('Error eliminando tarea:', error)
+      alert('No se pudo eliminar la tarea:\n' + error.message)
+    }
+    cargarTareas()
   }
 
   const tareasFiltradas = filtro === 'todas' ? tareas : tareas.filter(t => t.estado === filtro)
