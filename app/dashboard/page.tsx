@@ -519,6 +519,19 @@ export default function DashboardPage() {
           </button>
 
           <button
+            onClick={() => router.push('/dashboard/mensajes')}
+            className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Mensajes</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Enviar comunicados a servidores en tiempo real</p>
+          </button>
+
+          <button
             onClick={() => router.push('/dashboard/retiro')}
             className="col-span-2 bg-[#0f1787] rounded-2xl p-4 text-left hover:opacity-90 transition-opacity"
           >
