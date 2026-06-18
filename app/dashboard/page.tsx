@@ -25,6 +25,7 @@ interface DashboardData {
   totalPagadoCaminantes: number
   totalCuentaParroquia: number
   totalNequiEffeta: number
+  balanceNequiEffeta: number
   nombreRetiro: string
   fechaInicio: string
   fechaFin: string
@@ -96,18 +97,26 @@ export default function DashboardPage() {
         .eq('retiro_id', RETIRO_ID)
         .eq('estado', 'confirmado')
 
-      const { data: transacciones } = await supabase
+      // Ingresos aprobados en Nequi Effetá
+      const { data: ingresosNequi } = await supabase
         .from('transacciones')
-        .select('valor, tipo, estado')
+        .select('valor')
         .eq('retiro_id', RETIRO_ID)
         .eq('tipo', 'ingreso')
+        .eq('estado', 'aprobado')
+
+      // Egresos aprobados en Nequi Effetá
+      const { data: egresosNequi } = await supabase
+        .from('transacciones')
+        .select('valor')
+        .eq('retiro_id', RETIRO_ID)
+        .eq('tipo', 'egreso')
         .eq('estado', 'aprobado')
 
       const { data: reembolsos } = await supabase
         .from('transacciones')
         .select('id, estado')
         .eq('retiro_id', RETIRO_ID)
-        .eq('tipo', 'egreso')
         .eq('estado', 'pendiente')
 
       const { data: alertas } = await supabase
@@ -116,7 +125,9 @@ export default function DashboardPage() {
         .eq('fuera_de_horario', true)
 
       const totalCuentaParroquia = pagos?.reduce((acc, p) => acc + (p.valor ?? 0), 0) ?? 0
-      const totalNequiEffeta = transacciones?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
+      const totalNequiEffeta = ingresosNequi?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
+      const totalEgresosNequi = egresosNequi?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
+      const balanceNequiEffeta = totalNequiEffeta - totalEgresosNequi
       const totalRecaudado = totalCuentaParroquia + totalNequiEffeta
 
       setData({
@@ -132,6 +143,7 @@ export default function DashboardPage() {
         totalPagadoCaminantes,
         totalCuentaParroquia,
         totalNequiEffeta,
+        balanceNequiEffeta,
         nombreRetiro: retiro?.nombre ?? 'Effetá Mazuren · Julio 2026',
         fechaInicio: fechaInicio.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         fechaFin: fechaFin.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -299,21 +311,21 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Nequi Effetá */}
+          {/* Nequi Effetá — balance neto */}
           <div className="bg-[#1a2a9b] rounded-2xl p-4 overflow-hidden relative">
             <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-white/5 rounded-full" />
             <div className="relative z-10">
               <p className="text-[9px] font-semibold tracking-[0.15em] text-blue-300 uppercase mb-3">
-                Nequi Effetá
+                Nequi Effetá · Balance
               </p>
               <p className="text-2xl font-bold text-white tracking-tight leading-none">
-                {data ? formatCOP(data.totalNequiEffeta) : '$0'}
+                {data ? formatCOP(data.balanceNequiEffeta) : '$0'}
               </p>
               <p className="text-[10px] text-blue-200/60 mt-1 leading-tight">
-                ingresos registrados en finanzas
+                ingresos menos egresos aprobados
               </p>
               <p className="text-[10px] text-blue-300/80 mt-2 font-medium">
-                {formatCOPFull(data?.totalNequiEffeta ?? 0)}
+                {formatCOPFull(data?.balanceNequiEffeta ?? 0)}
               </p>
             </div>
           </div>
@@ -451,8 +463,10 @@ export default function DashboardPage() {
             className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative"
           >
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-xl">🧾</span>
-              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Reembolsos</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Facturas</span>
             </div>
             <p className="text-sm text-gray-600 leading-tight">Facturas de servidores pendientes</p>
             {(data?.reembolsosPendientes ?? 0) > 0 && (
@@ -462,7 +476,7 @@ export default function DashboardPage() {
             )}
           </button>
 
-<button
+          <button
             onClick={() => router.push('/dashboard/reuniones')}
             className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
           >
@@ -473,8 +487,7 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Martes y días especiales</p>
           </button>
 
-
-<button
+          <button
             onClick={() => router.push('/dashboard/tareas')}
             className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
           >
@@ -486,8 +499,8 @@ export default function DashboardPage() {
             </div>
             <p className="text-sm text-gray-600 leading-tight">Tareas pendientes del retiro</p>
           </button>
-          
-<button
+
+          <button
             onClick={() => router.push('/dashboard/asistencias')}
             className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative"
           >
@@ -513,8 +526,6 @@ export default function DashboardPage() {
             </div>
             <p className="text-sm text-blue-100 leading-tight">Minuto a minuto, roles y manual del retiro</p>
           </button>
-
-          
         </div>
 
         {/* Indicador en tiempo real */}
