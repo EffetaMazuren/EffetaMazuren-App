@@ -143,7 +143,7 @@ export default function ServidorPage() {
       .is('destinatario_id', null)
       .order('created_at', { ascending: false })
       .limit(10);
-    const mensajesCombinados = [...(msgsGenerales ?? [])];
+    const mensajesCombinados: Mensaje[] = [...(msgsGenerales ?? []) as Mensaje[]];
     if (inscripcionIdParaMensajes) {
       const { data: msgsPersonales } = await supabase
         .from('mensajes_retiro')
