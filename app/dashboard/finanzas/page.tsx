@@ -26,18 +26,18 @@ type Categoria = {
   activa?: boolean
 }
 
-type ItemCotizacion = {
+type CotItem = {
+  id: string
+  retiro_id: string
+  categoria: string
   producto: string
   cantidad: string
-  precioUnidad: number
-  precioTotal: number
+  precio_total: number
+  precio_unidad: number
   proveedor: string
-}
-
-type CategoriaCotizacion = {
-  nombre: string
-  totalGastado: number
-  items: ItemCotizacion[]
+  pagado: boolean
+  notas: string
+  fila_sheet: number | null
 }
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
@@ -48,6 +48,7 @@ const SHEETS_API_KEY = 'AIzaSyCFp4MHCcKKOgeirEpccEoeO_5W5Qff4aE'
 const GOOGLE_CLIENT_ID = '309085978370-38krrj9n4bkr9lsa7d01nungtesofmvr.apps.googleusercontent.com'
 const OAUTH_SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
 const REDIRECT_URI = 'https://effeta-mazuren-app.vercel.app/dashboard/finanzas'
+const APP_SHEET = 'App Cotizaciones'
 
 const CATS_EXCEL = ['TORNEO', 'SNACKS', 'MATERIALES RELIGIOSOS', 'SANTISIMO', 'MATERIALES LOGISTICOS', 'MUSICA', 'CASA PINARES - MATRICULAS Y RIFA', 'ROPA', 'VENTAS 1ERA FECHA', 'VENTAS 2NDA FECHA', 'VENTAS 3ERA FECHA']
 
@@ -75,17 +76,26 @@ export default function FinanzasPage() {
   const [catEliminando, setCatEliminando] = useState('')
 
   // Estado tab cotizaciones
-  const [cotizaciones, setCotizaciones] = useState<CategoriaCotizacion[]>([])
+  const [cotItems, setCotItems] = useState<CotItem[]>([])
   const [cotLoading, setCotLoading] = useState(false)
   const [cotError, setCotError] = useState('')
-  const [catExpandida, setCatExpandida] = useState<string | null>(null)
+  const [cotFiltro, setCotFiltro] = useState<'todos' | 'pagados' | 'pendientes'>('todos')
+  const [cotCatFiltro, setCotCatFiltro] = useState<string>('todas')
+  const [googleToken, setGoogleToken] = useState<string | null>(null)
+  const [sincronizando, setSincronizando] = useState(false)
+
+  // Formulario nueva cotización
   const [mostrarFormCot, setMostrarFormCot] = useState(false)
-  const [cotForm, setCotForm] = useState({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', proveedor: '' })
+  const [cotForm, setCotForm] = useState({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', precioTotal: '', proveedor: '', notas: '' })
   const [cotGuardando, setCotGuardando] = useState(false)
   const [cotMensaje, setCotMensaje] = useState('')
-  const [googleToken, setGoogleToken] = useState<string | null>(null)
 
-  // Procesar token OAuth del hash de la URL
+  // Edición inline
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ producto: '', cantidad: '', precio_total: '', precio_unidad: '', proveedor: '', notas: '' })
+  const [editGuardando, setEditGuardando] = useState(false)
+
+  // Procesar token OAuth
   useEffect(() => {
     if (typeof window === 'undefined') return
     const hash = window.location.hash
@@ -96,11 +106,9 @@ export default function FinanzasPage() {
         setGoogleToken(token)
         sessionStorage.setItem('google_sheets_token', token)
         setTab('cotizaciones')
-        // Limpiar hash de la URL
         window.history.replaceState(null, '', window.location.pathname)
       }
     } else {
-      // Recuperar token de sesión si ya había iniciado
       const saved = sessionStorage.getItem('google_sheets_token')
       if (saved) setGoogleToken(saved)
     }
@@ -109,8 +117,10 @@ export default function FinanzasPage() {
   useEffect(() => { cargar() }, [])
 
   useEffect(() => {
-    if (tab === 'cotizaciones' && cotizaciones.length === 0) cargarCotizaciones()
-  }, [tab])
+    if (tab === 'cotizaciones' && retiroId && cotItems.length === 0) {
+      cargarCotizacionesDB()
+    }
+  }, [tab, retiroId])
 
   function conectarGoogle() {
     const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(OAUTH_SCOPE)}&prompt=consent`
@@ -120,6 +130,11 @@ export default function FinanzasPage() {
   function desconectarGoogle() {
     setGoogleToken(null)
     sessionStorage.removeItem('google_sheets_token')
+  }
+
+  function parsePeso(str: string): number {
+    if (!str) return 0
+    return Number(str.replace(/[$\s.]/g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '')) || 0
   }
 
   async function cargar() {
@@ -144,133 +159,196 @@ export default function FinanzasPage() {
     setLoading(false)
   }
 
-  function parsePeso(str: string): number {
-    if (!str) return 0
-    return Number(str.replace(/[$\s.]/g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '')) || 0
-  }
-
-  const cargarCotizaciones = useCallback(async () => {
+  // Cargar items desde Supabase
+  async function cargarCotizacionesDB() {
     setCotLoading(true)
     setCotError('')
     try {
-      const token = googleToken || sessionStorage.getItem('google_sheets_token')
-      const headers: Record<string, string> = token
-        ? { 'Authorization': `Bearer ${token}` }
-        : {}
-
-      const urlResumen = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Resumen%20Cotizaciones!A1:G20${token ? '' : `?key=${SHEETS_API_KEY}`}`
-      const resResumen = await fetch(urlResumen, { headers })
-      const dataResumen = await resResumen.json()
-      const filasResumen: string[][] = dataResumen.values || []
-
-      const urlDetalle = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A1:G200${token ? '' : `?key=${SHEETS_API_KEY}`}`
-      const resDetalle = await fetch(urlDetalle, { headers })
-      const dataDetalle = await resDetalle.json()
-      const filasDetalle: string[][] = dataDetalle.values || []
-
-      const resumenMap: Record<string, number> = {}
-      filasResumen.forEach(fila => {
-        const nombre = (fila[0] || '').trim().toUpperCase()
-        const valor = parsePeso(fila[1] || '0')
-        if (nombre && nombre !== 'GASTO TOTAL' && nombre !== 'SUMA TOTAL') {
-          resumenMap[nombre] = valor
-        }
-      })
-
-      const detalleMap: Record<string, ItemCotizacion[]> = {}
-      let catActual = ''
-      filasDetalle.forEach(fila => {
-        const col0 = (fila[0] || '').trim().toUpperCase()
-        const col1 = (fila[1] || '').trim()
-        if (col0 && CATS_EXCEL.some(c => col0.startsWith(c))) {
-          catActual = col0
-          if (!detalleMap[catActual]) detalleMap[catActual] = []
-          if (col1) {
-            detalleMap[catActual].push({
-              producto: col1,
-              cantidad: fila[2] || '',
-              precioUnidad: parsePeso(fila[4] || '0'),
-              precioTotal: parsePeso(fila[5] || '0'),
-              proveedor: fila[6] || ''
-            })
-          }
-        } else if (!col0 && col1 && catActual) {
-          if (!detalleMap[catActual]) detalleMap[catActual] = []
-          detalleMap[catActual].push({
-            producto: col1,
-            cantidad: fila[2] || '',
-            precioUnidad: parsePeso(fila[4] || '0'),
-            precioTotal: parsePeso(fila[5] || '0'),
-            proveedor: fila[6] || ''
-          })
-        }
-      })
-
-      const resultado: CategoriaCotizacion[] = Object.entries(resumenMap)
-        .filter(([, total]) => total > 0)
-        .map(([nombre, totalGastado]) => ({
-          nombre,
-          totalGastado,
-          items: detalleMap[nombre] || []
-        }))
-
-      setCotizaciones(resultado)
+      const { data, error } = await supabase
+        .from('cotizaciones_items')
+        .select('*')
+        .eq('retiro_id', retiroId)
+        .order('categoria')
+        .order('producto')
+      if (error) throw error
+      setCotItems(data ?? [])
     } catch {
-      setCotError('No se pudo cargar el Excel. Intenta de nuevo.')
+      setCotError('No se pudieron cargar las cotizaciones.')
     }
     setCotLoading(false)
-  }, [googleToken])
+  }
 
-  async function guardarCotizacion() {
-    if (!cotForm.producto.trim() || !cotForm.precioUnidad.trim()) {
-      setCotMensaje('El producto y precio son obligatorios.')
-      return
-    }
+  // Sincronizar desde Google Sheets → Supabase (no borra items existentes, hace upsert por categoria+producto)
+  async function sincronizarDesdeSheet() {
     const token = googleToken || sessionStorage.getItem('google_sheets_token')
-    if (!token) { setCotMensaje('Primero conecta tu cuenta Google.'); return }
+    if (!token) { setCotError('Primero conecta tu cuenta Google.'); return }
+    setSincronizando(true)
+    setCotError('')
+    try {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/${encodeURIComponent(APP_SHEET)}!A2:F500`
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+      if (res.status === 401) { desconectarGoogle(); setCotError('Sesión Google expirada. Vuelve a conectar.'); setSincronizando(false); return }
+      const data = await res.json()
+      const filas: string[][] = data.values || []
 
+      const itemsSheet: Omit<CotItem, 'id' | 'pagado' | 'notas'>[] = filas
+        .filter(f => f[0] && f[1])
+        .map((f, idx) => ({
+          retiro_id: retiroId,
+          categoria: (f[0] || '').trim().toUpperCase(),
+          producto: (f[1] || '').trim(),
+          cantidad: f[2] || '',
+          precio_unidad: parsePeso(f[3] || '0'),
+          precio_total: parsePeso(f[4] || '0'),
+          proveedor: f[5] || '',
+          fila_sheet: idx + 2,
+        }))
+
+      // Upsert: mantiene pagado/notas existentes
+      for (const item of itemsSheet) {
+        const { data: existing } = await supabase
+          .from('cotizaciones_items')
+          .select('id, pagado, notas')
+          .eq('retiro_id', retiroId)
+          .eq('categoria', item.categoria)
+          .eq('producto', item.producto)
+          .maybeSingle()
+
+        if (existing) {
+          await supabase.from('cotizaciones_items').update({
+            cantidad: item.cantidad,
+            precio_total: item.precio_total,
+            precio_unidad: item.precio_unidad,
+            proveedor: item.proveedor,
+            fila_sheet: item.fila_sheet,
+          }).eq('id', existing.id)
+        } else {
+          await supabase.from('cotizaciones_items').insert({ ...item, pagado: false, notas: '' })
+        }
+      }
+      await cargarCotizacionesDB()
+      setCotMensaje('Sincronización completada.')
+      setTimeout(() => setCotMensaje(''), 2500)
+    } catch {
+      setCotError('Error al sincronizar con Google Sheets.')
+    }
+    setSincronizando(false)
+  }
+
+  // Marcar/desmarcar pagado en Supabase
+  async function togglePagado(item: CotItem) {
+    const nuevoPagado = !item.pagado
+    setCotItems(prev => prev.map(i => i.id === item.id ? { ...i, pagado: nuevoPagado } : i))
+    await supabase.from('cotizaciones_items').update({ pagado: nuevoPagado, updated_at: new Date().toISOString() }).eq('id', item.id)
+  }
+
+  // Guardar edición
+  async function guardarEdicion(item: CotItem) {
+    setEditGuardando(true)
+    const updates = {
+      producto: editForm.producto.trim() || item.producto,
+      cantidad: editForm.cantidad,
+      precio_total: parsePeso(editForm.precio_total) || item.precio_total,
+      precio_unidad: parsePeso(editForm.precio_unidad) || item.precio_unidad,
+      proveedor: editForm.proveedor,
+      notas: editForm.notas,
+      updated_at: new Date().toISOString(),
+    }
+    await supabase.from('cotizaciones_items').update(updates).eq('id', item.id)
+
+    // Actualizar en Sheet si tiene fila
+    const token = googleToken || sessionStorage.getItem('google_sheets_token')
+    if (token && item.fila_sheet) {
+      try {
+        const fila = [item.categoria, updates.producto, updates.cantidad, String(updates.precio_unidad), String(updates.precio_total), updates.proveedor]
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/${encodeURIComponent(APP_SHEET)}!A${item.fila_sheet}:F${item.fila_sheet}?valueInputOption=USER_ENTERED`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [fila] })
+        })
+      } catch { /* silencioso si falla el sheet */ }
+    }
+
+    setCotItems(prev => prev.map(i => i.id === item.id ? { ...i, ...updates } : i))
+    setEditandoId(null)
+    setEditGuardando(false)
+  }
+
+  // Eliminar item
+  async function eliminarItem(item: CotItem) {
+    if (!confirm(`¿Eliminar "${item.producto}"?`)) return
+    await supabase.from('cotizaciones_items').delete().eq('id', item.id)
+    setCotItems(prev => prev.filter(i => i.id !== item.id))
+
+    // Borrar fila en Sheet si tiene token y fila
+    const token = googleToken || sessionStorage.getItem('google_sheets_token')
+    if (token && item.fila_sheet) {
+      try {
+        // Obtener sheetId del App Cotizaciones
+        const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}?fields=sheets.properties`, { headers: { 'Authorization': `Bearer ${token}` } })
+        const meta = await metaRes.json()
+        const sheet = meta.sheets?.find((s: { properties: { title: string; sheetId: number } }) => s.properties.title === APP_SHEET)
+        if (sheet) {
+          await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}:batchUpdate`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requests: [{ deleteDimension: { range: { sheetId: sheet.properties.sheetId, dimension: 'ROWS', startIndex: item.fila_sheet - 1, endIndex: item.fila_sheet } } }] })
+          })
+        }
+      } catch { /* silencioso */ }
+    }
+  }
+
+  // Agregar nuevo item
+  async function agregarItem() {
+    if (!cotForm.producto.trim()) { setCotMensaje('El producto es obligatorio.'); return }
     setCotGuardando(true)
     setCotMensaje('')
     try {
-      const precioU = Number(cotForm.precioUnidad.replace(/[^0-9]/g, ''))
-      const cantidad = cotForm.cantidad ? Number(cotForm.cantidad.replace(/[^0-9]/g, '')) : 1
-      const precioT = precioU * cantidad
-      const fechaHoy = new Date().toLocaleDateString('es-CO')
+      const precioU = parsePeso(cotForm.precioUnidad)
+      const precioT = cotForm.precioTotal ? parsePeso(cotForm.precioTotal) : (precioU * (Number(cotForm.cantidad) || 1))
+      const newItem = {
+        retiro_id: retiroId,
+        categoria: cotForm.categoria,
+        producto: cotForm.producto.trim(),
+        cantidad: cotForm.cantidad || '1',
+        precio_unidad: precioU,
+        precio_total: precioT,
+        proveedor: cotForm.proveedor,
+        notas: cotForm.notas,
+        pagado: false,
+        fila_sheet: null,
+      }
+      const { data, error } = await supabase.from('cotizaciones_items').insert(newItem).select().single()
+      if (error) throw error
 
-      const fila = [
-        '',
-        cotForm.producto,
-        cotForm.cantidad || '1',
-        '',
-        `$${precioU.toLocaleString('es-CO')}`,
-        `$${precioT.toLocaleString('es-CO')}`,
-        cotForm.proveedor,
-        `Agregado ${fechaHoy}`
-      ]
-
-      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/Cotizaciones%20totales!A:H/append?valueInputOption=USER_ENTERED`
-      const res = await fetch(appendUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: [fila] })
-      })
-
-      if (res.status === 401) {
-        desconectarGoogle()
-        setCotMensaje('La sesión con Google expiró. Vuelve a conectar.')
-        setCotGuardando(false)
-        return
+      // Agregar al Sheet App Cotizaciones
+      const token = googleToken || sessionStorage.getItem('google_sheets_token')
+      if (token) {
+        try {
+          const fila = [cotForm.categoria, cotForm.producto.trim(), cotForm.cantidad || '1', String(precioU), String(precioT), cotForm.proveedor]
+          const appendRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID_COTIZACIONES}/values/${encodeURIComponent(APP_SHEET)}!A:F/append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [fila] })
+          })
+          const appendData = await appendRes.json()
+          const range = appendData.updates?.updatedRange
+          if (range) {
+            const match = range.match(/!A(\d+)/)
+            if (match) {
+              await supabase.from('cotizaciones_items').update({ fila_sheet: Number(match[1]) }).eq('id', data.id)
+              data.fila_sheet = Number(match[1])
+            }
+          }
+        } catch { /* silencioso */ }
       }
 
-      if (!res.ok) throw new Error('Error al guardar')
-
-      setCotMensaje('¡Cotización guardada!')
-      setCotForm({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', proveedor: '' })
+      setCotItems(prev => [...prev, data])
+      setCotForm({ categoria: CATS_EXCEL[0], producto: '', cantidad: '', precioUnidad: '', precioTotal: '', proveedor: '', notas: '' })
       setMostrarFormCot(false)
-      setTimeout(() => { setCotMensaje(''); cargarCotizaciones() }, 1200)
+      setCotMensaje('Ítem agregado.')
+      setTimeout(() => setCotMensaje(''), 2000)
     } catch {
       setCotMensaje('No se pudo guardar. Intenta de nuevo.')
     }
@@ -320,7 +398,25 @@ export default function FinanzasPage() {
   const txIngresos = transacciones.filter(t => t.tipo === 'ingreso')
   const txEgresos = transacciones.filter(t => t.tipo === 'egreso')
   const txConComprobante = transacciones.filter(t => t.comprobante_url)
-  const totalCotizado = cotizaciones.reduce((s, c) => s + c.totalGastado, 0)
+
+  // Cálculos cotizaciones
+  const cotCats = [...new Set(cotItems.map(i => i.categoria))].sort()
+  const cotItemsFiltrados = cotItems.filter(item => {
+    const matchCat = cotCatFiltro === 'todas' || item.categoria === cotCatFiltro
+    const matchPago = cotFiltro === 'todos' || (cotFiltro === 'pagados' ? item.pagado : !item.pagado)
+    return matchCat && matchPago
+  })
+  const totalCotizado = cotItems.reduce((s, i) => s + (i.precio_total || 0), 0)
+  const totalPagadoCot = cotItems.filter(i => i.pagado).reduce((s, i) => s + (i.precio_total || 0), 0)
+  const totalPendienteCot = totalCotizado - totalPagadoCot
+  const porcentajePagado = totalCotizado > 0 ? (totalPagadoCot / totalCotizado) * 100 : 0
+
+  // Agrupar por categoria para mostrar
+  const groupByCat = cotItemsFiltrados.reduce<Record<string, CotItem[]>>((acc, item) => {
+    if (!acc[item.categoria]) acc[item.categoria] = []
+    acc[item.categoria].push(item)
+    return acc
+  }, {})
 
   const gruposCats = todasCategorias.reduce<Record<string, Categoria[]>>((acc, cat) => {
     const k = cat.tipo_cuenta || 'Sin cuenta'
@@ -650,7 +746,7 @@ export default function FinanzasPage() {
             ))}
             <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px' }}>
               <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
-                <strong>Categorías inactivas</strong> no aparecen al registrar movimientos pero conservan su historial. Solo puedes <strong>eliminar</strong> categorías sin movimientos.
+                <strong>Categorías inactivas</strong> no aparecen al registrar movimientos pero conservan su historial.
               </div>
             </div>
           </>
@@ -659,101 +755,142 @@ export default function FinanzasPage() {
         {/* ── COTIZACIONES ── */}
         {tab === 'cotizaciones' && (
           <>
-            {/* Header total */}
-            <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
-              <div style={{ fontSize: 12, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Total cotizado</div>
-              <div style={{ fontSize: 28, fontWeight: 600, color: '#0d0d14', letterSpacing: '-0.5px' }}>{fmt(totalCotizado)}</div>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Solo referencia — no afecta ingresos ni egresos</div>
+            {/* Balance header */}
+            <div style={{ background: '#0f1787', borderRadius: 16, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Balance cotizaciones</div>
+              <div style={{ display: 'flex', gap: 0, justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{fmt(totalCotizado)}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>total cotizado</div>
+                </div>
+                <div style={{ width: '0.5px', background: 'rgba(255,255,255,0.1)' }} />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{fmt(totalPagadoCot)}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>pagado</div>
+                </div>
+                <div style={{ width: '0.5px', background: 'rgba(255,255,255,0.1)' }} />
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#fca5a5' }}>{fmt(totalPendienteCot)}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>pendiente</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: 6, background: '#86efac', borderRadius: 3, width: `${porcentajePagado}%`, transition: 'width 0.5s' }} />
+                </div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 5, textAlign: 'right' }}>{porcentajePagado.toFixed(0)}% pagado</div>
+              </div>
             </div>
 
-            {/* Estado conexión Google */}
+            {/* Google + Sincronizar */}
             {!googleToken ? (
               <div style={{ background: '#eff6ff', border: '0.5px solid #bfdbfe', borderRadius: 14, padding: '16px' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e40af', marginBottom: 6 }}>Conecta tu cuenta Google</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e40af', marginBottom: 6 }}>Conecta Google para sincronizar y editar</div>
                 <div style={{ fontSize: 12, color: '#3b82f6', marginBottom: 14, lineHeight: 1.6 }}>
-                  Para agregar cotizaciones desde la app necesitas conectar la cuenta Google que tiene acceso al Excel.
+                  Necesitas conectar la cuenta Google con acceso al Sheet para sincronizar ítems y reflejar cambios en el Excel.
                 </div>
                 <button onClick={conectarGoogle} style={{ background: '#0f1787', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 20px', fontSize: 13, fontWeight: 500, cursor: 'pointer', width: '100%' }}>
                   Conectar con Google
                 </button>
               </div>
             ) : (
-              <div style={{ background: '#f0fdf4', border: '0.5px solid #bbf7d0', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 13, color: '#166534' }}>Google conectado</div>
-                <button onClick={desconectarGoogle} style={{ background: 'none', border: '0.5px solid #bbf7d0', borderRadius: 8, padding: '4px 12px', fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>
-                  Desconectar
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ flex: 1, background: '#f0fdf4', border: '0.5px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#166534' }}>
+                  Google conectado
+                </div>
+                <button onClick={sincronizarDesdeSheet} disabled={sincronizando}
+                  style={{ background: sincronizando ? '#e5e7eb' : '#0f1787', color: sincronizando ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 12, fontWeight: 500, cursor: sincronizando ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {sincronizando ? 'Sincronizando…' : '↻ Sync Sheet'}
+                </button>
+                <button onClick={desconectarGoogle} style={{ background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>
+                  ×
                 </button>
               </div>
             )}
 
-            {/* Botones acción */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={cargarCotizaciones} disabled={cotLoading}
-                style={{ flex: 1, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '11px', fontSize: 13, fontWeight: 500, color: cotLoading ? '#9ca3af' : '#0f1787', cursor: cotLoading ? 'not-allowed' : 'pointer' }}>
-                {cotLoading ? 'Cargando…' : '↻ Actualizar'}
-              </button>
-              {googleToken && (
-                <button onClick={() => { setMostrarFormCot(p => !p); setCotMensaje('') }}
-                  style={{ flex: 1, background: mostrarFormCot ? '#f3f4f6' : '#0f1787', color: mostrarFormCot ? '#374151' : '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '11px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                  {mostrarFormCot ? '✕ Cancelar' : '+ Nueva cotización'}
+            {/* Filtros estado */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['todos', 'pendientes', 'pagados'] as const).map(f => (
+                <button key={f} onClick={() => setCotFiltro(f)} style={{
+                  flex: 1, padding: '8px 4px', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  border: '0.5px solid #e5e7eb',
+                  background: cotFiltro === f ? (f === 'pagados' ? '#dcfce7' : f === 'pendientes' ? '#fef2f2' : '#0f1787') : '#fff',
+                  color: cotFiltro === f ? (f === 'pagados' ? '#166534' : f === 'pendientes' ? '#991b1b' : '#fff') : '#6b7280'
+                }}>
+                  {f === 'todos' ? `Todos (${cotItems.length})` : f === 'pagados' ? `✓ Pagados (${cotItems.filter(i => i.pagado).length})` : `○ Pendientes (${cotItems.filter(i => !i.pagado).length})`}
                 </button>
-              )}
+              ))}
             </div>
 
-            {/* Formulario nueva cotización */}
-            {mostrarFormCot && googleToken && (
-              <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>Nueva cotización</div>
+            {/* Filtro por categoría */}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 }}>
+              <button onClick={() => setCotCatFiltro('todas')} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: cotCatFiltro === 'todas' ? '#374151' : '#fff', color: cotCatFiltro === 'todas' ? '#fff' : '#6b7280' }}>
+                Todas
+              </button>
+              {cotCats.map(cat => (
+                <button key={cat} onClick={() => setCotCatFiltro(cat)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: cotCatFiltro === cat ? '#374151' : '#fff', color: cotCatFiltro === cat ? '#fff' : '#6b7280' }}>
+                  {cat}
+                </button>
+              ))}
+            </div>
 
+            {/* Botón agregar */}
+            <button onClick={() => { setMostrarFormCot(p => !p); setCotMensaje('') }}
+              style={{ background: mostrarFormCot ? '#f3f4f6' : '#fff', color: mostrarFormCot ? '#374151' : '#0f1787', border: `0.5px solid ${mostrarFormCot ? '#e5e7eb' : '#0f1787'}`, borderRadius: 12, padding: '11px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+              {mostrarFormCot ? '✕ Cancelar' : '+ Agregar ítem'}
+            </button>
+
+            {/* Formulario nuevo ítem */}
+            {mostrarFormCot && (
+              <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>Nuevo ítem</div>
                 <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Categoría *</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Categoría</div>
                   <select value={cotForm.categoria} onChange={e => setCotForm(p => ({ ...p, categoria: e.target.value }))}
-                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 12px', fontSize: 13, color: '#0d0d14', background: '#fafafa', outline: 'none' }}>
                     {CATS_EXCEL.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-
                 <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Producto / descripción *</div>
-                  <input type="text" value={cotForm.producto} onChange={e => setCotForm(p => ({ ...p, producto: e.target.value }))} placeholder="Ej. Empanadas, Biblias…"
-                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Producto *</div>
+                  <input type="text" value={cotForm.producto} onChange={e => setCotForm(p => ({ ...p, producto: e.target.value }))} placeholder="Ej. Empanadas…"
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
                 </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div>
-                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Cantidad</div>
-                    <input type="number" value={cotForm.cantidad} onChange={e => setCotForm(p => ({ ...p, cantidad: e.target.value }))} placeholder="1"
-                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Cantidad</div>
+                    <input type="text" value={cotForm.cantidad} onChange={e => setCotForm(p => ({ ...p, cantidad: e.target.value }))} placeholder="1"
+                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Precio unitario *</div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Precio unitario</div>
                     <input type="number" value={cotForm.precioUnidad} onChange={e => setCotForm(p => ({ ...p, precioUnidad: e.target.value }))} placeholder="0"
-                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                      style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
                   </div>
                 </div>
-
                 <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Proveedor</div>
-                  <input type="text" value={cotForm.proveedor} onChange={e => setCotForm(p => ({ ...p, proveedor: e.target.value }))} placeholder="Ej. Giovanny Avila…"
-                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Precio total (opcional)</div>
+                  <input type="number" value={cotForm.precioTotal} onChange={e => setCotForm(p => ({ ...p, precioTotal: e.target.value }))} placeholder="Se calcula automático"
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
                 </div>
-
-                {cotForm.cantidad && cotForm.precioUnidad && (
-                  <div style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 13, color: '#6b7280' }}>Total</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>{fmt(Number(cotForm.cantidad) * Number(cotForm.precioUnidad))}</span>
-                  </div>
-                )}
-
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Proveedor</div>
+                  <input type="text" value={cotForm.proveedor} onChange={e => setCotForm(p => ({ ...p, proveedor: e.target.value }))} placeholder="Ej. Giovanny Avila…"
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Notas</div>
+                  <input type="text" value={cotForm.notas} onChange={e => setCotForm(p => ({ ...p, notas: e.target.value }))} placeholder="Observaciones opcionales…"
+                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                </div>
                 {cotMensaje && (
-                  <div style={{ background: cotMensaje.includes('!') ? '#f0fdf4' : '#fef2f2', border: `0.5px solid ${cotMensaje.includes('!') ? '#bbf7d0' : '#fecaca'}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color: cotMensaje.includes('!') ? '#166534' : '#991b1b' }}>
+                  <div style={{ background: cotMensaje.includes('agregado') || cotMensaje.includes('completada') ? '#f0fdf4' : '#fef2f2', border: `0.5px solid ${cotMensaje.includes('agregado') || cotMensaje.includes('completada') ? '#bbf7d0' : '#fecaca'}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color: cotMensaje.includes('agregado') || cotMensaje.includes('completada') ? '#166534' : '#991b1b' }}>
                     {cotMensaje}
                   </div>
                 )}
-
-                <button onClick={guardarCotizacion} disabled={cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad}
-                  style={{ background: cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad ? '#e5e7eb' : '#0f1787', color: cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: 13, fontSize: 14, fontWeight: 500, cursor: cotGuardando || !cotForm.producto.trim() || !cotForm.precioUnidad ? 'not-allowed' : 'pointer' }}>
-                  {cotGuardando ? 'Guardando…' : 'Guardar cotización'}
+                <button onClick={agregarItem} disabled={cotGuardando || !cotForm.producto.trim()}
+                  style={{ background: cotGuardando || !cotForm.producto.trim() ? '#e5e7eb' : '#0f1787', color: cotGuardando || !cotForm.producto.trim() ? '#9ca3af' : '#fff', border: 'none', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 500, cursor: cotGuardando || !cotForm.producto.trim() ? 'not-allowed' : 'pointer' }}>
+                  {cotGuardando ? 'Guardando…' : 'Agregar ítem'}
                 </button>
               </div>
             )}
@@ -761,56 +898,117 @@ export default function FinanzasPage() {
             {cotError && (
               <div style={{ background: '#fef2f2', border: '0.5px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#991b1b' }}>{cotError}</div>
             )}
-
             {cotMensaje && !mostrarFormCot && (
               <div style={{ background: '#f0fdf4', border: '0.5px solid #bbf7d0', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#166534' }}>{cotMensaje}</div>
             )}
 
-            {/* Lista de categorías */}
+            {/* Lista items agrupados por categoría */}
             {cotLoading ? (
-              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Leyendo Excel…</div>
-            ) : cotizaciones.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Sin cotizaciones cargadas</div>
-            ) : cotizaciones.map((cat, idx) => {
-              const color = COLORES[idx % COLORES.length]
-              const expandida = catExpandida === cat.nombre
+              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando cotizaciones…</div>
+            ) : Object.keys(groupByCat).length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>
+                {cotItems.length === 0 ? 'Sin cotizaciones. Usa "↻ Sync Sheet" para importar del Excel.' : 'Sin ítems con este filtro.'}
+              </div>
+            ) : Object.entries(groupByCat).map(([cat, items], catIdx) => {
+              const color = COLORES[catIdx % COLORES.length]
+              const pagadosCat = items.filter(i => i.pagado).length
+              const totalCat = items.reduce((s, i) => s + (i.precio_total || 0), 0)
               return (
-                <div key={cat.nombre} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
-                  <button onClick={() => setCatExpandida(expandida ? null : cat.nombre)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: expandida ? color.bg : '#fff', border: 'none', cursor: 'pointer', borderBottom: expandida ? `0.5px solid ${color.border}` : 'none' }}>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: expandida ? color.texto : '#0d0d14', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{cat.nombre}</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{cat.items.length} ítem{cat.items.length !== 1 ? 's' : ''}</div>
+                <div key={cat} style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
+                  {/* Header categoría */}
+                  <div style={{ background: color.bg, borderBottom: `0.5px solid ${color.border}`, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: color.texto, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{cat}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{pagadosCat}/{items.length} pagados</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: '#0d0d14' }}>{fmt(cat.totalGastado)}</div>
-                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{expandida ? '▲' : '▼'}</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#0d0d14' }}>{fmt(totalCat)}</div>
+                      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>total categoría</div>
                     </div>
-                  </button>
-                  {expandida && cat.items.length > 0 && (
-                    <div>
-                      {cat.items.map((item, i) => (
-                        <div key={i} style={{ padding: '11px 16px', borderTop: '0.5px solid #f3f4f6', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>{item.producto}</div>
-                            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                              {item.cantidad && <span>Cant: {item.cantidad} · </span>}
-                              {item.proveedor && <span>{item.proveedor}</span>}
+                  </div>
+
+                  {/* Items */}
+                  {items.map((item, i) => (
+                    <div key={item.id}>
+                      {editandoId === item.id ? (
+                        /* ── Formulario edición inline ── */
+                        <div style={{ padding: '14px 16px', borderTop: i > 0 ? '0.5px solid #f3f4f6' : 'none', background: '#fafbff' }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#0f1787', marginBottom: 10 }}>Editar ítem</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Producto</div>
+                              <input type="text" value={editForm.producto} onChange={e => setEditForm(p => ({ ...p, producto: e.target.value }))}
+                                style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                              <div>
+                                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Cantidad</div>
+                                <input type="text" value={editForm.cantidad} onChange={e => setEditForm(p => ({ ...p, cantidad: e.target.value }))}
+                                  style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Precio total</div>
+                                <input type="number" value={editForm.precio_total} onChange={e => setEditForm(p => ({ ...p, precio_total: e.target.value }))}
+                                  style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Proveedor</div>
+                              <input type="text" value={editForm.proveedor} onChange={e => setEditForm(p => ({ ...p, proveedor: e.target.value }))}
+                                style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Notas</div>
+                              <input type="text" value={editForm.notas} onChange={e => setEditForm(p => ({ ...p, notas: e.target.value }))} placeholder="Observaciones…"
+                                style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                              <button onClick={() => guardarEdicion(item)} disabled={editGuardando}
+                                style={{ flex: 1, background: editGuardando ? '#e5e7eb' : '#0f1787', color: editGuardando ? '#9ca3af' : '#fff', border: 'none', borderRadius: 8, padding: '9px', fontSize: 13, fontWeight: 500, cursor: editGuardando ? 'not-allowed' : 'pointer' }}>
+                                {editGuardando ? 'Guardando…' : 'Guardar'}
+                              </button>
+                              <button onClick={() => setEditandoId(null)}
+                                style={{ flex: 1, background: '#fff', color: '#6b7280', border: '0.5px solid #e5e7eb', borderRadius: 8, padding: '9px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                                Cancelar
+                              </button>
+                              <button onClick={() => eliminarItem(item)}
+                                style={{ background: '#fef2f2', color: '#dc2626', border: '0.5px solid #fecaca', borderRadius: 8, padding: '9px 12px', fontSize: 13, cursor: 'pointer' }}>
+                                Eliminar
+                              </button>
                             </div>
                           </div>
+                        </div>
+                      ) : (
+                        /* ── Vista normal del ítem ── */
+                        <div style={{ padding: '12px 16px', borderTop: i > 0 ? '0.5px solid #f3f4f6' : 'none', display: 'flex', alignItems: 'flex-start', gap: 10, opacity: item.pagado ? 0.65 : 1 }}>
+                          {/* Checkbox pagado */}
+                          <button onClick={() => togglePagado(item)}
+                            style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${item.pagado ? '#16a34a' : '#d1d5db'}`, background: item.pagado ? '#16a34a' : '#fff', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+                            {item.pagado && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                          </button>
+                          {/* Info */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14', textDecoration: item.pagado ? 'line-through' : 'none' }}>{item.producto}</div>
+                            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                              {item.cantidad && <span>x{item.cantidad} </span>}
+                              {item.proveedor && <span>· {item.proveedor}</span>}
+                            </div>
+                            {item.notas && <div style={{ fontSize: 11, color: '#6366f1', marginTop: 2, fontStyle: 'italic' }}>{item.notas}</div>}
+                          </div>
+                          {/* Precio + editar */}
                           <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                            {item.precioTotal > 0 && <div style={{ fontSize: 13, fontWeight: 600, color: '#0d0d14' }}>{fmt(item.precioTotal)}</div>}
-                            {item.precioUnidad > 0 && item.precioTotal !== item.precioUnidad && (
-                              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{fmt(item.precioUnidad)} c/u</div>
+                            {item.precio_total > 0 && (
+                              <div style={{ fontSize: 13, fontWeight: 600, color: item.pagado ? '#16a34a' : '#0d0d14' }}>{fmt(item.precio_total)}</div>
                             )}
+                            <button onClick={() => { setEditandoId(item.id); setEditForm({ producto: item.producto, cantidad: item.cantidad || '', precio_total: String(item.precio_total || ''), precio_unidad: String(item.precio_unidad || ''), proveedor: item.proveedor || '', notas: item.notas || '' }) }}
+                              style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 11, padding: '2px 0', marginTop: 2 }}>
+                              editar
+                            </button>
                           </div>
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                  {expandida && cat.items.length === 0 && (
-                    <div style={{ padding: '14px 16px', fontSize: 13, color: '#9ca3af', textAlign: 'center' }}>Sin ítems detallados</div>
-                  )}
+                  ))}
                 </div>
               )
             })}
