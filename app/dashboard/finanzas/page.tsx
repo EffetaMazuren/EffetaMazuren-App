@@ -306,7 +306,7 @@ export default function FinanzasPage() {
     setCotMensaje('')
     try {
       const precioU = parsePeso(cotForm.precioUnidad)
-      const precioT = cotForm.precioTotal ? parsePeso(cotForm.precioTotal) : (precioU * (Number(cotForm.cantidad) || 1))
+      const precioT = parsePeso(cotForm.precioTotal)
       const newItem = {
         retiro_id: retiroId,
         categoria: cotForm.categoria,
@@ -869,9 +869,9 @@ export default function FinanzasPage() {
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Precio total (opcional)</div>
-                  <input type="number" value={cotForm.precioTotal} onChange={e => setCotForm(p => ({ ...p, precioTotal: e.target.value }))} placeholder="Se calcula automático"
-                    style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fafafa' }} />
+                  <div style={{ fontSize: 11, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5, fontWeight: 600 }}>Precio total ✓ (el que se suma al balance)</div>
+                  <input type="number" value={cotForm.precioTotal} onChange={e => setCotForm(p => ({ ...p, precioTotal: e.target.value }))} placeholder="Total de todas las unidades"
+                    style={{ width: '100%', border: '0.5px solid #86efac', borderRadius: 10, padding: '9px 14px', fontSize: 14, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#f0fdf4' }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Proveedor</div>
@@ -940,16 +940,21 @@ export default function FinanzasPage() {
                               <input type="text" value={editForm.producto} onChange={e => setEditForm(p => ({ ...p, producto: e.target.value }))}
                                 style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                               <div>
                                 <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Cantidad</div>
                                 <input type="text" value={editForm.cantidad} onChange={e => setEditForm(p => ({ ...p, cantidad: e.target.value }))}
                                   style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
                               </div>
                               <div>
-                                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Precio total</div>
-                                <input type="number" value={editForm.precio_total} onChange={e => setEditForm(p => ({ ...p, precio_total: e.target.value }))}
+                                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>P. unitario</div>
+                                <input type="number" value={editForm.precio_unidad} onChange={e => setEditForm(p => ({ ...p, precio_unidad: e.target.value }))}
                                   style={{ width: '100%', border: '0.5px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>P. total ✓</div>
+                                <input type="number" value={editForm.precio_total} onChange={e => setEditForm(p => ({ ...p, precio_total: e.target.value }))}
+                                  style={{ width: '100%', border: '0.5px solid #86efac', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#0d0d14', outline: 'none', boxSizing: 'border-box', background: '#f0fdf4' }} />
                               </div>
                             </div>
                             <div>
