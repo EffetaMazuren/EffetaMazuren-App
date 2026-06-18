@@ -147,12 +147,12 @@ export default function ServidorPage() {
     if (inscripcionIdParaMensajes) {
       const { data: msgsPersonales } = await supabase
         .from('mensajes_retiro')
-        .select('id, texto, autor_nombre, created_at, destinatario_id')
+        .select('id, texto, autor_nombre, created_at, updated_at, editado, destinatario_id')
         .eq('retiro_id', RETIRO_ID)
         .eq('destinatario_id', inscripcionIdParaMensajes)
         .order('created_at', { ascending: false })
         .limit(10);
-      mensajesCombinados.push(...(msgsPersonales ?? []));
+      mensajesCombinados.push(...(msgsPersonales ?? []) as Mensaje[]);
     }
     mensajesCombinados.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     setMensajes(mensajesCombinados);
