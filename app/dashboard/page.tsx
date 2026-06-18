@@ -472,6 +472,20 @@ export default function DashboardPage() {
             </div>
             <p className="text-sm text-gray-600 leading-tight">Martes y días especiales</p>
           </button>
+
+
+<button
+            onClick={() => router.push('/dashboard/tareas')}
+            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">To Do</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Tareas pendientes del retiro</p>
+          </button>
           
 <button
             onClick={() => router.push('/dashboard/asistencias')}
