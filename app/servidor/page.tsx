@@ -138,7 +138,7 @@ export default function ServidorPage() {
     const inscripcionIdParaMensajes = inscripcion?.id ?? null;
     const { data: msgsGenerales } = await supabase
       .from('mensajes_retiro')
-      .select('id, texto, autor_nombre, created_at, destinatario_id')
+      .select('id, texto, autor_nombre, created_at, updated_at, editado, destinatario_id')
       .eq('retiro_id', RETIRO_ID)
       .is('destinatario_id', null)
       .order('created_at', { ascending: false })
