@@ -24,6 +24,11 @@ type CaminanteSalud = {
   eps: string | null
 }
 
+type CaminanteNota = {
+  id: string; nombre: string; edad: number
+  observaciones: string
+}
+
 type Orden = 'inscrito_reciente' | 'inscrito_primero' | 'pago_reciente' | 'pago_primero'
 
 const FILTROS = [
@@ -34,6 +39,7 @@ const FILTROS = [
   { key: 'sorpresa', label: 'Sorpresa' },
   { key: 'sin_enviar', label: 'Sin correo' },
   { key: 'salud', label: '🏥 Salud' },
+  { key: 'notas', label: '📝 Notas' },
 ]
 
 const ORDENES: { key: Orden; label: string; icono: string }[] = [
@@ -51,26 +57,20 @@ function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 
 function aplicarOrden(lista: Caminante[], orden: Orden): Caminante[] {
   return [...lista].sort((a, b) => {
-    if (orden === 'inscrito_reciente') {
-      return new Date(b.fecha_inscripcion ?? 0).getTime() - new Date(a.fecha_inscripcion ?? 0).getTime()
-    }
-    if (orden === 'inscrito_primero') {
-      return new Date(a.fecha_inscripcion ?? 0).getTime() - new Date(b.fecha_inscripcion ?? 0).getTime()
-    }
+    if (orden === 'inscrito_reciente') return new Date(b.fecha_inscripcion ?? 0).getTime() - new Date(a.fecha_inscripcion ?? 0).getTime()
+    if (orden === 'inscrito_primero') return new Date(a.fecha_inscripcion ?? 0).getTime() - new Date(b.fecha_inscripcion ?? 0).getTime()
     if (orden === 'pago_reciente') {
       const fa = a.fecha_ultimo_pago ? new Date(a.fecha_ultimo_pago).getTime() : 0
       const fb = b.fecha_ultimo_pago ? new Date(b.fecha_ultimo_pago).getTime() : 0
       if (fa === 0 && fb === 0) return a.nombre.localeCompare(b.nombre)
-      if (fa === 0) return 1
-      if (fb === 0) return -1
+      if (fa === 0) return 1; if (fb === 0) return -1
       return fb - fa
     }
     if (orden === 'pago_primero') {
       const fa = a.fecha_ultimo_pago ? new Date(a.fecha_ultimo_pago).getTime() : 0
       const fb = b.fecha_ultimo_pago ? new Date(b.fecha_ultimo_pago).getTime() : 0
       if (fa === 0 && fb === 0) return a.nombre.localeCompare(b.nombre)
-      if (fa === 0) return 1
-      if (fb === 0) return -1
+      if (fa === 0) return 1; if (fb === 0) return -1
       return fa - fb
     }
     return 0
@@ -82,6 +82,7 @@ function CaminantesContent() {
   const searchParams = useSearchParams()
   const [caminantes, setCaminantes] = useState<Caminante[]>([])
   const [caminantesSalud, setCaminantesSalud] = useState<CaminanteSalud[]>([])
+  const [caminantesNotas, setCaminantesNotas] = useState<CaminanteNota[]>([])
   const [filtro, setFiltro] = useState(searchParams.get('filtro') || 'todos')
   const [busqueda, setBusqueda] = useState('')
   const [orden, setOrden] = useState<Orden>('inscrito_reciente')
@@ -99,7 +100,6 @@ function CaminantesContent() {
         .select('*')
         .eq('retiro_id', r.id)
         .order('fecha_inscripcion', { ascending: false })
-
       if (data) setCaminantes(data as Caminante[])
 
       const { data: c } = await supabase.from('vista_cupos').select('*').eq('retiro_id', r.id).single()
@@ -112,6 +112,15 @@ function CaminantesContent() {
         .or('alergias.not.is.null,restricciones_alimentarias.not.is.null,medicamentos.not.is.null')
         .order('nombre')
       if (salud) setCaminantesSalud(salud as CaminanteSalud[])
+
+      const { data: notas } = await supabase
+        .from('caminantes')
+        .select('id, nombre, edad, observaciones')
+        .eq('retiro_id', r.id)
+        .not('observaciones', 'is', null)
+        .neq('observaciones', '')
+        .order('nombre')
+      if (notas) setCaminantesNotas(notas as CaminanteNota[])
 
       setLoading(false)
     }
@@ -126,25 +135,24 @@ function CaminantesContent() {
   }, [mostrarOrden])
 
   const esSalud = filtro === 'salud'
+  const esNotas = filtro === 'notas'
 
   const filtrados = caminantes.filter(c => {
     const matchBusqueda = c.nombre.toLowerCase().includes(busqueda.toLowerCase()) || c.numero_documento.includes(busqueda)
     const matchFiltro = filtro === 'todos' ? true
       : filtro === 'sorpresa' ? c.es_sorpresa
       : filtro === 'sin_enviar' ? c.estado_correo === 'sin_enviar'
-      : filtro === 'salud' ? true
+      : filtro === 'salud' || filtro === 'notas' ? true
       : c.estado_pago === filtro
     return matchBusqueda && matchFiltro
   })
 
   const ordenados = aplicarOrden(filtrados, orden)
 
-  const saludFiltrados = caminantesSalud.filter(c =>
-    c.nombre.toLowerCase().includes(busqueda.toLowerCase())
-  )
+  const saludFiltrados = caminantesSalud.filter(c => c.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+  const notasFiltrados = caminantesNotas.filter(c => c.nombre.toLowerCase().includes(busqueda.toLowerCase()))
 
   const pctCupo = cupos ? Math.round((cupos.caminantes_con_abono / 50) * 100) : 0
-
   const colorAvatar = (estado: string) =>
     estado === 'completo' ? { bg: '#dcfce7', color: '#166534' }
     : estado === 'parcial' ? { bg: '#fef3c7', color: '#92400e' }
@@ -168,80 +176,24 @@ function CaminantesContent() {
       <div style={{ padding: '0 20px 14px', display: 'flex', gap: 8, alignItems: 'center' }}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '10px 14px' }}>
           <Search size={16} color="#9ca3af" />
-          <input
-            value={busqueda}
-            onChange={e => setBusqueda(e.target.value)}
-            placeholder="Buscar por nombre o documento…"
-            style={{ border: 'none', outline: 'none', fontSize: 14, color: '#0d0d14', background: 'transparent', flex: 1 }}
-          />
+          <input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar por nombre o documento…"
+            style={{ border: 'none', outline: 'none', fontSize: 14, color: '#0d0d14', background: 'transparent', flex: 1 }} />
         </div>
-
-        {/* Botón ordenar */}
         <div style={{ position: 'relative' }}>
-          <button
-            onClick={e => { e.stopPropagation(); setMostrarOrden(v => !v) }}
-            style={{
-              height: 42,
-              padding: '0 12px',
-              borderRadius: 12,
-              background: mostrarOrden || orden !== 'inscrito_reciente' ? '#0f1787' : '#fff',
-              border: '0.5px solid #e5e7eb',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <button onClick={e => { e.stopPropagation(); setMostrarOrden(v => !v) }}
+            style={{ height: 42, padding: '0 12px', borderRadius: 12, background: mostrarOrden || orden !== 'inscrito_reciente' ? '#0f1787' : '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <ArrowUpDown size={15} color={mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280'} />
-            <span style={{ fontSize: 14, color: mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280' }}>
-              {ordenActual.icono}
-            </span>
+            <span style={{ fontSize: 14, color: mostrarOrden || orden !== 'inscrito_reciente' ? '#fff' : '#6b7280' }}>{ordenActual.icono}</span>
           </button>
-
-          {/* Dropdown */}
           {mostrarOrden && (
-            <div
-              onClick={e => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: 48,
-                right: 0,
-                background: '#fff',
-                border: '0.5px solid #e5e7eb',
-                borderRadius: 14,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
-                zIndex: 50,
-                minWidth: 200,
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ padding: '10px 14px 6px', fontSize: 11, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                Ordenar por
-              </div>
+            <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 48, right: 0, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', zIndex: 50, minWidth: 200, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 14px 6px', fontSize: 11, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Ordenar por</div>
               {ORDENES.map((o, i) => (
-                <button
-                  key={o.key}
-                  onClick={() => { setOrden(o.key); setMostrarOrden(false) }}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    background: orden === o.key ? '#f0f1ff' : 'transparent',
-                    border: 'none',
-                    borderTop: i === 2 ? '0.5px solid #f3f4f6' : 'none',
-                    cursor: 'pointer',
-                  }}
-                >
+                <button key={o.key} onClick={() => { setOrden(o.key); setMostrarOrden(false) }}
+                  style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, background: orden === o.key ? '#f0f1ff' : 'transparent', border: 'none', borderTop: i === 2 ? '0.5px solid #f3f4f6' : 'none', cursor: 'pointer' }}>
                   <span style={{ fontSize: 16 }}>{o.icono}</span>
-                  <span style={{ fontSize: 13, fontWeight: orden === o.key ? 600 : 400, color: orden === o.key ? '#0f1787' : '#374151' }}>
-                    {o.label}
-                  </span>
-                  {orden === o.key && (
-                    <span style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: '#0f1787' }} />
-                  )}
+                  <span style={{ fontSize: 13, fontWeight: orden === o.key ? 600 : 400, color: orden === o.key ? '#0f1787' : '#374151' }}>{o.label}</span>
+                  {orden === o.key && <span style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: '#0f1787' }} />}
                 </button>
               ))}
             </div>
@@ -256,6 +208,7 @@ function CaminantesContent() {
             : f.key === 'sorpresa' ? caminantes.filter(c => c.es_sorpresa).length
             : f.key === 'sin_enviar' ? caminantes.filter(c => c.estado_correo === 'sin_enviar').length
             : f.key === 'salud' ? caminantesSalud.length
+            : f.key === 'notas' ? caminantesNotas.length
             : caminantes.filter(c => c.estado_pago === f.key).length
           return (
             <button key={f.key} onClick={() => setFiltro(f.key)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', border: '0.5px solid #e5e7eb', background: filtro === f.key ? '#0f1787' : '#fff', color: filtro === f.key ? '#fff' : '#6b7280' }}>
@@ -284,15 +237,50 @@ function CaminantesContent() {
         </div>
       )}
 
-      {/* ── VISTA SALUD ── */}
-      {esSalud ? (
+      {/* ── VISTA NOTAS ── */}
+      {esNotas ? (
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando...</div>
+          ) : notasFiltrados.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
+              <div style={{ color: '#9ca3af', fontSize: 14 }}>
+                {busqueda ? 'Sin resultados' : 'Ningún caminante tiene observaciones aún'}
+              </div>
+              <div style={{ color: '#d1d5db', fontSize: 12, marginTop: 6 }}>
+                Entra a la ficha de un caminante para agregar una observación
+              </div>
+            </div>
+          ) : notasFiltrados.map(c => (
+            <div key={c.id} onClick={() => router.push(`/dashboard/caminantes/${c.id}`)}
+              style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#f0f9ff', color: '#0369a1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
+                  {iniciales(c.nombre)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#0d0d14' }}>{c.nombre}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{c.edad} años</div>
+                </div>
+                <svg width="14" height="14" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" viewBox="0 0 24 24">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+              </div>
+              <div style={{ background: '#f8faff', borderRadius: 10, padding: '10px 12px', borderLeft: '3px solid #0f1787' }}>
+                <p style={{ margin: 0, fontSize: 13, color: '#374151', lineHeight: 1.6 }}>{c.observaciones}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+      /* ── VISTA SALUD ── */
+      ) : esSalud ? (
         <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando...</div>
           ) : saludFiltrados.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>
-              Ningún caminante tiene información médica registrada
-            </div>
+            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Ningún caminante tiene información médica registrada</div>
           ) : saludFiltrados.map(c => (
             <div key={c.id} onClick={() => router.push(`/dashboard/caminantes/${c.id}`)}
               style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb', cursor: 'pointer' }}>
@@ -334,8 +322,9 @@ function CaminantesContent() {
             </div>
           ))}
         </div>
+
+      /* ── VISTA NORMAL ── */
       ) : (
-        /* ── VISTA NORMAL ── */
         <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 14, padding: 40 }}>Cargando...</div>
