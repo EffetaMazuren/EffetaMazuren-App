@@ -43,7 +43,6 @@ export default function PagoServidor() {
       const userEmail = session.user.email ?? ''
       const userMeta = session.user.user_metadata
 
-      // 1. Buscar inscripción vinculada
       let { data: srv } = await supabase
         .from('servidores_inscripcion')
         .select('id, es_interno, nombre')
@@ -51,7 +50,6 @@ export default function PagoServidor() {
         .eq('retiro_id', RETIRO_ID)
         .single()
 
-      // 2. Si no está vinculada, intentar vincular por metadata
       if (!srv) {
         const inscripcionIdMeta = userMeta?.servidor_inscripcion_id
         if (inscripcionIdMeta) {
@@ -62,7 +60,6 @@ export default function PagoServidor() {
             .single()
 
           if (srvPendiente) {
-            // Insertar en usuarios primero (FK)
             await supabase
               .from('usuarios')
               .upsert({
@@ -72,7 +69,6 @@ export default function PagoServidor() {
                 rol: 'servidor'
               }, { onConflict: 'id' })
 
-            // Vincular
             await supabase
               .from('servidores_inscripcion')
               .update({ usuario_id: userId })
@@ -98,7 +94,7 @@ export default function PagoServidor() {
         .eq('tipo_persona', 'servidor')
         .eq('retiro_id', RETIRO_ID)
 
-      const costo: number = srv.es_interno ? 380000 : 0
+      const costo: number = srv.es_interno ? 380000 : 260000
       const pagado: number = pagosData
         ?.filter(p => p.estado === 'confirmado')
         .reduce((sum, p) => sum + (p.valor || 0), 0) ?? 0
@@ -163,18 +159,18 @@ export default function PagoServidor() {
         persona_id: inscripcionId,
         tipo_persona: 'servidor',
         retiro_id: RETIRO_ID,
-        valor: null,
+        valor: 0,
         fecha: new Date().toISOString().split('T')[0],
         comprobante_url: urlData.publicUrl,
         comprobante_nombre: archivo.name,
         estado: 'pendiente',
-        notas: 'Subido por servidor — pendiente verificación'
+        notas: 'Subido por servidor — pendiente verificación del monto'
       })
 
     if (pagoErr) {
       setError('Error al registrar: ' + pagoErr.message)
     } else {
-      setExito('Comprobante enviado. Un líder lo verificará pronto.')
+      setExito('Comprobante enviado. Un líder verificará el monto y actualizará tu saldo.')
       const { data: pagosData } = await supabase
         .from('pagos')
         .select('valor, estado, comprobante_url, fecha')
@@ -202,11 +198,7 @@ export default function PagoServidor() {
 
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-      <div style={{
-        width: 32, height: 32, border: '3px solid #e2e4f0',
-        borderTopColor: '#0f1787', borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite'
-      }} />
+      <div style={{ width: 32, height: 32, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
@@ -217,7 +209,7 @@ export default function PagoServidor() {
 
   const estadoColor: Record<string, { bg: string; color: string; label: string }> = {
     confirmado: { bg: '#f0fdf4', color: '#16a34a', label: 'Confirmado' },
-    pendiente: { bg: '#fffbeb', color: '#d97706', label: 'Pendiente' },
+    pendiente: { bg: '#fffbeb', color: '#d97706', label: 'Pendiente — en revisión' },
     rechazado: { bg: '#fef2f2', color: '#dc2626', label: 'Rechazado' },
   }
 
@@ -228,10 +220,7 @@ export default function PagoServidor() {
       </h1>
 
       {resumen && (
-        <div style={{
-          background: 'white', borderRadius: 14,
-          border: '0.5px solid #e8eaf0', padding: '20px', marginBottom: 20
-        }}>
+        <div style={{ background: 'white', borderRadius: 14, border: '0.5px solid #e8eaf0', padding: '20px', marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>TOTAL PAGADO</div>
@@ -241,41 +230,28 @@ export default function PagoServidor() {
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>PENDIENTE</div>
-              <div style={{
-                fontSize: 26, fontWeight: 700,
-                color: resumen.saldo_pendiente > 0 ? '#d97706' : '#16a34a'
-              }}>
+              <div style={{ fontSize: 26, fontWeight: 700, color: resumen.saldo_pendiente > 0 ? '#d97706' : '#16a34a' }}>
                 ${resumen.saldo_pendiente.toLocaleString('es-CO')}
               </div>
             </div>
           </div>
-
           <div style={{ height: 8, background: '#f3f4f6', borderRadius: 6, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', width: `${porcentaje}%`,
-              background: porcentaje === 100 ? '#16a34a' : '#d97706',
-              borderRadius: 6, transition: 'width 0.6s'
-            }} />
+            <div style={{ height: '100%', width: `${porcentaje}%`, background: porcentaje === 100 ? '#16a34a' : '#d97706', borderRadius: 6, transition: 'width 0.6s' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
             <span style={{ fontSize: 12, color: '#6b7280' }}>{porcentaje}% pagado</span>
-            <span style={{ fontSize: 12, color: '#6b7280' }}>
-              Total: ${resumen.costo_retiro.toLocaleString('es-CO')}
-            </span>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>Total: ${resumen.costo_retiro.toLocaleString('es-CO')}</span>
           </div>
         </div>
       )}
 
-      <div style={{
-        background: 'white', borderRadius: 14,
-        border: '1.5px dashed #c7d0ff', padding: '20px', marginBottom: 20
-      }}>
+      {/* Subir comprobante */}
+      <div style={{ background: 'white', borderRadius: 14, border: '1.5px dashed #c7d0ff', padding: '20px', marginBottom: 20 }}>
         <h3 style={{ margin: '0 0 8px', fontSize: 15, color: '#111827', fontWeight: 600 }}>
           Subir comprobante de pago
         </h3>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
-          Sube tu screenshot o PDF del comprobante de transferencia.
-          Un líder lo verificará y actualizará tu saldo.
+          Sube tu screenshot o PDF del comprobante de transferencia. Un líder lo verificará y actualizará tu saldo.
         </p>
 
         <input
@@ -288,30 +264,13 @@ export default function PagoServidor() {
         />
 
         {error && (
-          <p style={{
-            color: '#dc2626', fontSize: 13, margin: '0 0 12px',
-            background: '#fef2f2', padding: '8px 12px', borderRadius: 8
-          }}>{error}</p>
+          <p style={{ color: '#dc2626', fontSize: 13, margin: '0 0 12px', background: '#fef2f2', padding: '8px 12px', borderRadius: 8 }}>{error}</p>
         )}
-
         {exito && (
-          <p style={{
-            color: '#16a34a', fontSize: 13, margin: '0 0 12px',
-            background: '#f0fdf4', padding: '8px 12px', borderRadius: 8
-          }}>{exito}</p>
+          <p style={{ color: '#16a34a', fontSize: 13, margin: '0 0 12px', background: '#f0fdf4', padding: '8px 12px', borderRadius: 8 }}>{exito}</p>
         )}
 
-        <label
-          htmlFor="file-comprobante"
-          style={{
-            display: 'block', width: '100%', padding: '12px',
-            background: subiendo ? '#9ca3af' : '#0f1787',
-            color: 'white', borderRadius: 10, textAlign: 'center',
-            fontSize: 14, fontWeight: 600,
-            cursor: subiendo ? 'not-allowed' : 'pointer',
-            boxSizing: 'border-box'
-          }}
-        >
+        <label htmlFor="file-comprobante" style={{ display: 'block', width: '100%', padding: '12px', background: subiendo ? '#9ca3af' : '#0f1787', color: 'white', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 600, cursor: subiendo ? 'not-allowed' : 'pointer', boxSizing: 'border-box' }}>
           {subiendo ? 'Subiendo...' : 'Seleccionar archivo'}
         </label>
         <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9ca3af', textAlign: 'center' }}>
@@ -319,54 +278,28 @@ export default function PagoServidor() {
         </p>
       </div>
 
+      {/* Historial */}
       {comprobantes.length > 0 ? (
         <div>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, color: '#374151', fontWeight: 600 }}>
-            Historial de pagos
-          </h3>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, color: '#374151', fontWeight: 600 }}>Historial de pagos</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {comprobantes.map(c => {
               const cfg = estadoColor[c.estado ?? ''] ?? { bg: '#f9fafb', color: '#6b7280', label: c.estado ?? '—' }
               return (
-                <div
-                  key={c.id}
-                  style={{
-                    background: 'white', border: '0.5px solid #e8eaf0',
-                    borderRadius: 12, padding: '14px 16px',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                  }}
-                >
+                <div key={c.id} style={{ background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 12, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>
-                      {c.monto > 0
-                        ? `$${c.monto.toLocaleString('es-CO')}`
-                        : 'Monto por verificar'}
+                      {c.monto > 0 ? `$${c.monto.toLocaleString('es-CO')}` : 'Monto por verificar'}
                     </div>
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      {c.fecha
-                        ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-CO', {
-                            day: 'numeric', month: 'long', year: 'numeric'
-                          })
-                        : '—'}
+                      {c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
                     </div>
-                    <div style={{
-                      display: 'inline-block', marginTop: 4,
-                      fontSize: 11, padding: '2px 8px', borderRadius: 20,
-                      background: cfg.bg, color: cfg.color, fontWeight: 600
-                    }}>
+                    <div style={{ display: 'inline-block', marginTop: 4, fontSize: 11, padding: '2px 8px', borderRadius: 20, background: cfg.bg, color: cfg.color, fontWeight: 600 }}>
                       {cfg.label}
                     </div>
                   </div>
                   {c.url_comprobante && (
-                    <button
-                      onClick={() => abrirComprobante(c.url_comprobante!)}
-                      style={{
-                        padding: '8px 12px', background: '#f0f2ff',
-                        color: '#0f1787', borderRadius: 8, fontSize: 12,
-                        fontWeight: 600, border: 'none', cursor: 'pointer',
-                        flexShrink: 0, marginLeft: 12
-                      }}
-                    >
+                    <button onClick={() => abrirComprobante(c.url_comprobante!)} style={{ padding: '8px 12px', background: '#f0f2ff', color: '#0f1787', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', flexShrink: 0, marginLeft: 12 }}>
                       Ver
                     </button>
                   )}
@@ -376,10 +309,7 @@ export default function PagoServidor() {
           </div>
         </div>
       ) : (
-        <div style={{
-          textAlign: 'center', padding: '32px 20px',
-          color: '#9ca3af', fontSize: 14
-        }}>
+        <div style={{ textAlign: 'center', padding: '32px 20px', color: '#9ca3af', fontSize: 14 }}>
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 12px', display: 'block' }}>
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
