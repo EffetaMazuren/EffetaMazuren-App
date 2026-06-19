@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Plus, Trash2, Upload, X } from 'lucide-react'
+import { ChevronLeft, Plus, Trash2, Upload, X, Check } from 'lucide-react'
 
 type Servidor = {
   id: string; nombre: string; numero_documento: string; tipo_documento: string
@@ -18,6 +18,7 @@ type Servidor = {
 type Pago = {
   id: string; valor: number; created_at: string
   comprobante_url: string | null; comprobante_nombre: string | null
+  estado: string | null; notas: string | null
 }
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
@@ -56,16 +57,8 @@ function BadgeTipo({ id, esInterno }: { id: string; esInterno: boolean }) {
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        onClick={() => setAbierto(v => !v)}
-        disabled={cargando}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
-          background: opcionActual.bg, color: opcionActual.color,
-          border: 'none', cursor: 'pointer', opacity: cargando ? 0.5 : 1,
-        }}
-      >
+      <button onClick={() => setAbierto(v => !v)} disabled={cargando}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500, background: opcionActual.bg, color: opcionActual.color, border: 'none', cursor: 'pointer', opacity: cargando ? 0.5 : 1 }}>
         {cargando ? '...' : opcionActual.label}
         {!cargando && (
           <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor">
@@ -78,22 +71,9 @@ function BadgeTipo({ id, esInterno }: { id: string; esInterno: boolean }) {
           <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setAbierto(false)} />
           <div style={{ position: 'absolute', left: 0, top: '110%', zIndex: 20, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.10)', border: '0.5px solid #e5e7eb', padding: '4px 0', minWidth: 110 }}>
             {opciones.map(op => (
-              <button
-                key={String(op.valor)}
-                onClick={() => cambiar(op.valor)}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12,
-                  fontWeight: op.valor === actual ? 600 : 400,
-                  color: op.valor === actual ? '#0f1787' : '#374151',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                }}
-              >
-                <span style={{
-                  width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                  background: op.valor === actual ? '#0f1787' : 'transparent',
-                  border: op.valor === actual ? 'none' : '1.5px solid #d1d5db',
-                }} />
+              <button key={String(op.valor)} onClick={() => cambiar(op.valor)}
+                style={{ width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12, fontWeight: op.valor === actual ? 600 : 400, color: op.valor === actual ? '#0f1787' : '#374151', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: op.valor === actual ? '#0f1787' : 'transparent', border: op.valor === actual ? 'none' : '1.5px solid #d1d5db' }} />
                 {op.label}
               </button>
             ))}
@@ -117,6 +97,9 @@ export default function ServidorPage() {
   const [previsualizacion, setPrevisualizacion] = useState<string | null>(null)
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [borrandoId, setBorrandoId] = useState<string | null>(null)
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
+  const [valorConfirmar, setValorConfirmar] = useState('')
+  const [guardandoConfirm, setGuardandoConfirm] = useState(false)
 
   useEffect(() => { cargar() }, [id])
 
@@ -130,7 +113,7 @@ export default function ServidorPage() {
 
     const { data: p } = await supabase
       .from('pagos')
-      .select('id, valor, created_at, comprobante_url, comprobante_nombre')
+      .select('id, valor, created_at, comprobante_url, comprobante_nombre, estado, notas')
       .eq('persona_id', id)
       .eq('tipo_persona', 'servidor')
       .order('created_at', { ascending: false })
@@ -151,48 +134,46 @@ export default function ServidorPage() {
   async function registrarPago() {
     if (!valorPago || !servidor) return
     setGuardandoPago(true)
-
     try {
       let comprovanteUrl = null
       let comprobanteName = null
-
       if (archivo) {
         const ext = archivo.name.split('.').pop()
         const path = `servidores/${id}/${Date.now()}.${ext}`
-        const { data: up } = await supabase.storage
-          .from('comprobantes-pagos')
-          .upload(path, archivo, { contentType: archivo.type })
+        const { data: up } = await supabase.storage.from('comprobantes-pagos').upload(path, archivo, { contentType: archivo.type })
         if (up) {
           const { data: url } = supabase.storage.from('comprobantes-pagos').getPublicUrl(path)
           comprovanteUrl = url.publicUrl
           comprobanteName = archivo.name
         }
       }
-
       const res = await fetch('/api/pagos/servidor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          servidorId: id,
-          valor: Number(valorPago),
-          comprovanteUrl,
-          comprobanteName,
-        }),
+        body: JSON.stringify({ servidorId: id, valor: Number(valorPago), comprovanteUrl, comprobanteName }),
       })
-
       const data = await res.json()
       if (!data.success) throw new Error(data.error || 'Error registrando pago')
-
-      setValorPago('')
-      setArchivo(null)
-      setPrevisualizacion(null)
-      setMostrarFormPago(false)
+      setValorPago(''); setArchivo(null); setPrevisualizacion(null); setMostrarFormPago(false)
       cargar()
-    } catch (err: any) {
-      alert('Error: ' + err.message)
+    } catch (err: unknown) {
+      alert('Error: ' + (err instanceof Error ? err.message : String(err)))
     }
-
     setGuardandoPago(false)
+  }
+
+  async function confirmarPago(pagoId: string) {
+    if (!valorConfirmar || Number(valorConfirmar) <= 0) return
+    setGuardandoConfirm(true)
+    await supabase.from('pagos').update({
+      estado: 'confirmado',
+      valor: Number(valorConfirmar),
+      notas: 'Confirmado por líder desde ficha servidor'
+    }).eq('id', pagoId)
+    setConfirmandoId(null)
+    setValorConfirmar('')
+    setGuardandoConfirm(false)
+    cargar()
   }
 
   async function borrarPago(pagoId: string) {
@@ -207,10 +188,21 @@ export default function ServidorPage() {
     </div>
   )
 
-  const pct = Math.min((servidor.total_pagado / VALOR_TOTAL) * 100, 100)
-  const colorEstado = servidor.estado_pago === 'completo' ? { bg: '#dcfce7', color: '#166534', label: 'Pago completo' }
-    : servidor.estado_pago === 'parcial' ? { bg: '#fef3c7', color: '#92400e', label: 'Abono parcial' }
+  const totalConfirmado = pagos.filter(p => p.estado === 'confirmado').reduce((s, p) => s + (p.valor || 0), 0)
+  const pagosPendientes = pagos.filter(p => p.estado === 'pendiente')
+  const pct = Math.min((totalConfirmado / VALOR_TOTAL) * 100, 100)
+
+  const estadoColor = totalConfirmado >= VALOR_TOTAL
+    ? { bg: '#dcfce7', color: '#166534', label: 'Pago completo' }
+    : totalConfirmado > 0
+    ? { bg: '#fef3c7', color: '#92400e', label: 'Abono parcial' }
     : { bg: '#f3f4f6', color: '#6b7280', label: 'Sin pago' }
+
+  const badgeEstado: Record<string, { bg: string; color: string; label: string }> = {
+    confirmado: { bg: '#dcfce7', color: '#166534', label: 'Confirmado' },
+    pendiente: { bg: '#fef3c7', color: '#92400e', label: 'Pendiente — requiere aprobación' },
+    rechazado: { bg: '#fee2e2', color: '#991b1b', label: 'Rechazado' },
+  }
 
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 40 }}>
@@ -221,9 +213,26 @@ export default function ServidorPage() {
           <ChevronLeft size={18} color="#6b7280" />
         </button>
         <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>Ficha servidor</div>
+        {pagosPendientes.length > 0 && (
+          <span style={{ marginLeft: 'auto', background: '#d97706', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '3px 10px' }}>
+            {pagosPendientes.length} pago{pagosPendientes.length > 1 ? 's' : ''} pendiente{pagosPendientes.length > 1 ? 's' : ''}
+          </span>
+        )}
       </div>
 
       <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* Alerta pagos pendientes */}
+        {pagosPendientes.length > 0 && (
+          <div style={{ background: '#fffbeb', border: '0.5px solid #fde68a', borderRadius: 12, padding: '12px 16px' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
+              {pagosPendientes.length === 1 ? 'Hay 1 comprobante pendiente de verificar' : `Hay ${pagosPendientes.length} comprobantes pendientes de verificar`}
+            </div>
+            <div style={{ fontSize: 12, color: '#a16207' }}>
+              Este servidor subió un comprobante. Revísalo y confirma el monto.
+            </div>
+          </div>
+        )}
 
         {/* Hero card */}
         <div style={{ background: '#fff', borderRadius: 14, padding: '20px', border: '0.5px solid #e5e7eb' }}>
@@ -235,19 +244,18 @@ export default function ServidorPage() {
               <div style={{ fontSize: 16, fontWeight: 600, color: '#0d0d14' }}>{servidor.nombre}</div>
               <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{servidor.tipo_documento} {servidor.numero_documento}</div>
               <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: colorEstado.bg, color: colorEstado.color }}>
-                  {colorEstado.label}
+                <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: estadoColor.bg, color: estadoColor.color }}>
+                  {estadoColor.label}
                 </span>
                 <BadgeTipo id={servidor.id} esInterno={servidor.es_interno} />
               </div>
             </div>
           </div>
 
-          {/* Barra pago */}
           <div style={{ marginBottom: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: '#6b7280' }}>Pagado: <strong>{fmt(servidor.total_pagado)}</strong></span>
-              <span style={{ fontSize: 12, color: '#6b7280' }}>Saldo: <strong style={{ color: servidor.saldo_pendiente > 0 ? '#d97706' : '#16a34a' }}>{fmt(servidor.saldo_pendiente)}</strong></span>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>Confirmado: <strong>{fmt(totalConfirmado)}</strong></span>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>Saldo: <strong style={{ color: (VALOR_TOTAL - totalConfirmado) > 0 ? '#d97706' : '#16a34a' }}>{fmt(Math.max(0, VALOR_TOTAL - totalConfirmado))}</strong></span>
             </div>
             <div style={{ height: 6, background: '#f3f4f6', borderRadius: 3 }}>
               <div style={{ height: 6, borderRadius: 3, background: pct >= 100 ? '#16a34a' : '#0f1787', width: `${pct}%`, transition: 'width 0.5s' }} />
@@ -302,31 +310,23 @@ export default function ServidorPage() {
         <div style={{ background: '#fff', borderRadius: 14, padding: '16px', border: '0.5px solid #e5e7eb' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#0f1787', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Pagos · {servidor.numero_abonos}
+              Pagos · {pagos.length}
             </div>
-            {servidor.estado_pago !== 'completo' && (
-              <button onClick={() => setMostrarFormPago(v => !v)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, background: '#0f1787', border: 'none', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-                <Plus size={13} /> Registrar pago
-              </button>
-            )}
+            <button onClick={() => setMostrarFormPago(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, background: '#0f1787', border: 'none', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+              <Plus size={13} /> Registrar pago
+            </button>
           </div>
 
-          {/* Formulario pago */}
+          {/* Form registrar pago */}
           {mostrarFormPago && (
             <div style={{ background: '#f7f8fc', borderRadius: 12, padding: '14px', marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6 }}>Valor del abono</div>
-                <input
-                  type="number"
-                  placeholder="380000"
-                  value={valorPago}
-                  onChange={e => setValorPago(e.target.value)}
-                  style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 15, fontWeight: 600, color: '#0d0d14', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
-                />
+                <input type="number" placeholder="380000" value={valorPago} onChange={e => setValorPago(e.target.value)}
+                  style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 15, fontWeight: 600, color: '#0d0d14', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
                 {valorPago && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{fmt(Number(valorPago))}</div>}
               </div>
-
               {!previsualizacion ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, border: '1.5px dashed #e5e7eb', cursor: 'pointer', background: '#fff' }}>
                   <input type="file" accept="image/*" onChange={seleccionarArchivo} style={{ display: 'none' }} />
@@ -342,7 +342,6 @@ export default function ServidorPage() {
                   </button>
                 </div>
               )}
-
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => { setMostrarFormPago(false); setValorPago(''); setArchivo(null); setPrevisualizacion(null) }}
                   style={{ flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, background: '#f3f4f6', border: 'none', cursor: 'pointer', color: '#6b7280', fontWeight: 500 }}>
@@ -359,38 +358,86 @@ export default function ServidorPage() {
           {/* Lista pagos */}
           {pagos.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: 13, padding: '20px 0' }}>Sin pagos registrados</div>
-          ) : pagos.map(p => (
-            <div key={p.id} style={{ marginBottom: 10 }}>
-              {borrandoId === p.id ? (
-                <div style={{ background: '#fee2e2', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                  <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 500 }}>¿Borrar este pago?</span>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setBorrandoId(null)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 12, background: '#fff', border: '0.5px solid #e5e7eb', cursor: 'pointer', color: '#6b7280' }}>Cancelar</button>
-                    <button onClick={() => borrarPago(p.id)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 12, background: '#dc2626', border: 'none', cursor: 'pointer', color: '#fff', fontWeight: 500 }}>Borrar</button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '0.5px solid #f3f4f6' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#166534' }}>{fmt(p.valor)}</div>
-                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                      {new Date(p.created_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+          ) : pagos.map(p => {
+            const badge = badgeEstado[p.estado ?? ''] ?? { bg: '#f3f4f6', color: '#6b7280', label: p.estado ?? '—' }
+            const esPendiente = p.estado === 'pendiente'
+            const confirmando = confirmandoId === p.id
+
+            return (
+              <div key={p.id} style={{ marginBottom: 12 }}>
+                {borrandoId === p.id ? (
+                  <div style={{ background: '#fee2e2', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 500 }}>¿Borrar este pago?</span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setBorrandoId(null)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 12, background: '#fff', border: '0.5px solid #e5e7eb', cursor: 'pointer', color: '#6b7280' }}>Cancelar</button>
+                      <button onClick={() => borrarPago(p.id)} style={{ padding: '5px 12px', borderRadius: 20, fontSize: 12, background: '#dc2626', border: 'none', cursor: 'pointer', color: '#fff', fontWeight: 500 }}>Borrar</button>
                     </div>
-                    {p.comprobante_url && (
-                      <a href={p.comprobante_url} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: 11, color: '#0f1787', marginTop: 4, display: 'inline-block', textDecoration: 'underline' }}>
-                        Ver comprobante
-                      </a>
+                  </div>
+                ) : (
+                  <div style={{ border: esPendiente ? '1px solid #fde68a' : '0.5px solid #f3f4f6', borderRadius: 12, padding: '12px 14px', background: esPendiente ? '#fffbeb' : '#fff' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: p.estado === 'confirmado' ? '#166534' : '#374151' }}>
+                            {p.valor > 0 ? fmt(p.valor) : 'Monto por verificar'}
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: badge.bg, color: badge.color }}>
+                            {badge.label}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                          {new Date(p.created_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
+                        {p.notas && p.notas !== 'Confirmado por líder desde ficha servidor' && (
+                          <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, fontStyle: 'italic' }}>{p.notas}</div>
+                        )}
+                        {p.comprobante_url && (
+                          <button onClick={() => window.open(p.comprobante_url!, '_blank')}
+                            style={{ marginTop: 6, fontSize: 12, color: '#0f1787', background: '#eef0ff', border: 'none', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}>
+                            Ver comprobante
+                          </button>
+                        )}
+                      </div>
+                      <button onClick={() => setBorrandoId(p.id)}
+                        style={{ width: 28, height: 28, borderRadius: '50%', background: '#fee2e2', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                        <Trash2 size={12} color="#dc2626" />
+                      </button>
+                    </div>
+
+                    {/* Formulario confirmación */}
+                    {esPendiente && (
+                      <div style={{ marginTop: 10 }}>
+                        {confirmando ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ fontSize: 11, color: '#92400e', fontWeight: 600 }}>¿Cuánto pagó realmente?</div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <input type="number" value={valorConfirmar} onChange={e => setValorConfirmar(e.target.value)}
+                                placeholder="Ej: 380000" autoFocus
+                                style={{ flex: 1, border: '0.5px solid #fde68a', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 600, color: '#0d0d14', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
+                              <button onClick={() => confirmarPago(p.id)} disabled={!valorConfirmar || guardandoConfirm}
+                                style={{ background: !valorConfirmar ? '#e5e7eb' : '#16a34a', color: !valorConfirmar ? '#9ca3af' : '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: !valorConfirmar ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Check size={14} /> {guardandoConfirm ? '...' : 'OK'}
+                              </button>
+                              <button onClick={() => { setConfirmandoId(null); setValorConfirmar('') }}
+                                style={{ background: '#f3f4f6', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', color: '#6b7280' }}>
+                                ✕
+                              </button>
+                            </div>
+                            {valorConfirmar && <div style={{ fontSize: 11, color: '#6b7280' }}>{fmt(Number(valorConfirmar))}</div>}
+                          </div>
+                        ) : (
+                          <button onClick={() => { setConfirmandoId(p.id); setValorConfirmar('') }}
+                            style={{ width: '100%', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, padding: '9px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                            <Check size={14} /> Aprobar y confirmar monto
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                  <button onClick={() => setBorrandoId(p.id)}
-                    style={{ width: 30, height: 30, borderRadius: '50%', background: '#fee2e2', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                    <Trash2 size={13} color="#dc2626" />
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            )
+          })}
         </div>
 
         {servidor.observaciones && (
