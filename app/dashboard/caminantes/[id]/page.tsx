@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Download, MoreHorizontal, Plus, Mail, CheckCircle, EyeOff, ChevronDown, Upload, X, ExternalLink, Loader, Trash2, Pencil } from 'lucide-react'
+import { ArrowLeft, Download, MoreHorizontal, Plus, Mail, CheckCircle, EyeOff, ChevronDown, Upload, X, ExternalLink, Loader, Trash2, Pencil, MessageSquare } from 'lucide-react'
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 
@@ -45,6 +45,63 @@ function DataRow({ label, value, valueColor }: any) {
   )
 }
 
+function SeccionObservaciones({ caminanteId, observacionInicial }: { caminanteId: string; observacionInicial: string | null }) {
+  const [texto, setTexto] = useState(observacionInicial || '')
+  const [guardando, setGuardando] = useState(false)
+  const [guardado, setGuardado] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  async function guardar() {
+    setGuardando(true)
+    await supabase.from('caminantes').update({ observaciones: texto.trim() || null }).eq('id', caminanteId)
+    setGuardando(false)
+    setGuardado(true)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => setGuardado(false), 2000)
+  }
+
+  const cambio = texto !== (observacionInicial || '')
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', marginBottom: 8, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '15px 18px', borderBottom: '0.5px solid #f3f4f6' }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: texto ? '#0f1787' : '#d1d5db', flexShrink: 0 }} />
+        <span style={{ fontSize: 14, fontWeight: 500, color: '#111827', flex: 1 }}>Observaciones</span>
+        {texto && !cambio && (
+          <span style={{ fontSize: 11, color: '#9ca3af', background: '#f3f4f6', padding: '2px 8px', borderRadius: 20 }}>
+            {texto.length} car.
+          </span>
+        )}
+      </div>
+      <div style={{ padding: '14px 18px' }}>
+        <textarea
+          value={texto}
+          onChange={e => { setTexto(e.target.value); setGuardado(false) }}
+          placeholder="Escribe observaciones sobre este caminante… (comportamiento, necesidades especiales, contexto familiar, etc.)"
+          rows={4}
+          style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#111827', outline: 'none', resize: 'vertical', fontFamily: 'system-ui, sans-serif', lineHeight: 1.6, boxSizing: 'border-box', background: '#fafafa' }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+          {guardado ? (
+            <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 500 }}>✓ Guardado</span>
+          ) : (
+            <span style={{ fontSize: 12, color: '#9ca3af' }}>
+              {cambio ? 'Cambios sin guardar' : texto ? 'Sin cambios' : 'Sin observaciones'}
+            </span>
+          )}
+          <button
+            onClick={guardar}
+            disabled={guardando || !cambio}
+            style={{ background: guardando || !cambio ? '#e5e7eb' : '#0f1787', color: guardando || !cambio ? '#9ca3af' : '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: guardando || !cambio ? 'not-allowed' : 'pointer' }}
+          >
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function FichaCaminante() {
   const router = useRouter()
   const { id } = useParams()
@@ -73,9 +130,7 @@ export default function FichaCaminante() {
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuAbierto(false)
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuAbierto(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -109,21 +164,11 @@ export default function FichaCaminante() {
   }
 
   function abrirModal() {
-    setPaso('subir')
-    setArchivo(null)
-    setPrevisualizacion(null)
-    setValorManual('')
-    setNotas('')
-    setModalPago(true)
+    setPaso('subir'); setArchivo(null); setPrevisualizacion(null); setValorManual(''); setNotas(''); setModalPago(true)
   }
 
   function cerrarModal() {
-    setModalPago(false)
-    setPaso('subir')
-    setArchivo(null)
-    setPrevisualizacion(null)
-    setValorManual('')
-    setNotas('')
+    setModalPago(false); setPaso('subir'); setArchivo(null); setPrevisualizacion(null); setValorManual(''); setNotas('')
   }
 
   function seleccionarArchivo(e: React.ChangeEvent<HTMLInputElement>) {
@@ -150,13 +195,8 @@ export default function FichaCaminante() {
       const { data: retiro } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       const { data: { user } } = await supabase.auth.getUser()
       const pagoRes = await fetch('/api/pagos/registrar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          caminanteId: id, retiroId: retiro?.id, valor,
-          fileUrl: driveData.fileUrl, fileName: driveData.fileName,
-          filePath: driveData.fileId, registradoPor: user?.id, notas: notas || null,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caminanteId: id, retiroId: retiro?.id, valor, fileUrl: driveData.fileUrl, fileName: driveData.fileName, filePath: driveData.fileId, registradoPor: user?.id, notas: notas || null }),
       })
       const pagoData = await pagoRes.json()
       if (!pagoData.success) throw new Error('Error registrando pago')
@@ -171,21 +211,13 @@ export default function FichaCaminante() {
   async function eliminarPago(pago: any) {
     if (!confirm(`¿Eliminar este abono de ${fmt(pago.valor)}? Esta acción no se puede deshacer.`)) return
     try {
-      if (pago.comprobante_path) {
-        await supabase.storage.from('comprobantes-pagos').remove([pago.comprobante_path])
-      }
+      if (pago.comprobante_path) await supabase.storage.from('comprobantes-pagos').remove([pago.comprobante_path])
       const { error } = await supabase.from('pagos').delete().eq('id', pago.id)
       if (error) throw error
-      const totalRestante = pagos
-        .filter(p => p.id !== pago.id)
-        .reduce((sum, p) => sum + Number(p.valor), 0)
-      if (totalRestante < 500000) {
-        await supabase.from('caminantes').update({ inscrito_oficialmente: false }).eq('id', id)
-      }
+      const totalRestante = pagos.filter(p => p.id !== pago.id).reduce((sum, p) => sum + Number(p.valor), 0)
+      if (totalRestante < 500000) await supabase.from('caminantes').update({ inscrito_oficialmente: false }).eq('id', id)
       window.location.reload()
-    } catch (err: any) {
-      alert('Error eliminando: ' + err.message)
-    }
+    } catch (err: any) { alert('Error eliminando: ' + err.message) }
   }
 
   async function guardarEdicion() {
@@ -193,38 +225,23 @@ export default function FichaCaminante() {
     if (!valor || valor <= 0) return alert('Ingresa un valor válido')
     const { error } = await supabase.from('pagos').update({ valor }).eq('id', pagoEditando.id)
     if (error) return alert('Error: ' + error.message)
-    const totalNuevo = pagos
-      .filter(p => p.id !== pagoEditando.id)
-      .reduce((sum, p) => sum + Number(p.valor), 0) + valor
-    await supabase.from('caminantes')
-      .update({ inscrito_oficialmente: totalNuevo >= 500000 })
-      .eq('id', id)
-    setModalEditar(false)
-    setPagoEditando(null)
-    setValorEditar('')
+    const totalNuevo = pagos.filter(p => p.id !== pagoEditando.id).reduce((sum, p) => sum + Number(p.valor), 0) + valor
+    await supabase.from('caminantes').update({ inscrito_oficialmente: totalNuevo >= 500000 }).eq('id', id)
+    setModalEditar(false); setPagoEditando(null); setValorEditar('')
     window.location.reload()
   }
 
   async function enviarCorreo() {
     if (!cam) return
     setEnviandoCorreo(true)
-    const res = await fetch('/api/correos/inscripcion', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ caminante_id: cam.id }),
-    })
+    const res = await fetch('/api/correos/inscripcion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caminante_id: cam.id }) })
     if (res.ok) { alert('✅ Correo enviado'); window.location.reload() }
     else alert('Error enviando correo')
     setEnviandoCorreo(false)
   }
 
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <div style={{ color: '#9ca3af' }}>Cargando...</div>
-    </div>
-  )
-
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><div style={{ color: '#9ca3af' }}>Cargando...</div></div>
   if (!cam || !detalle) return <div style={{ padding: 20 }}>Caminante no encontrado</div>
-
   if (eliminandoCaminante) return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 12 }}>
       <Loader size={28} color="#0f1787" style={{ animation: 'spin 1s linear infinite' }} />
@@ -245,20 +262,13 @@ export default function FichaCaminante() {
           <button style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <Download size={16} color="#6b7280" />
           </button>
-          <button
-            onClick={() => setMenuAbierto(!menuAbierto)}
-            style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
+          <button onClick={() => setMenuAbierto(!menuAbierto)} style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <MoreHorizontal size={16} color="#6b7280" />
           </button>
           {menuAbierto && (
             <div style={{ position: 'absolute', top: 40, right: 0, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.08)', zIndex: 100, minWidth: 180, overflow: 'hidden' }}>
-              <button
-                onClick={eliminarCaminante}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#dc2626', textAlign: 'left' }}
-              >
-                <Trash2 size={14} color="#dc2626" />
-                Eliminar caminante
+              <button onClick={eliminarCaminante} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#dc2626', textAlign: 'left' }}>
+                <Trash2 size={14} color="#dc2626" /> Eliminar caminante
               </button>
             </div>
           )}
@@ -274,6 +284,7 @@ export default function FichaCaminante() {
             {cam.estado_pago === 'parcial' && <Chip label="Abono parcial" bg="#fef3c7" color="#92400e" />}
             {cam.estado_pago === 'sin_pago' && <Chip label="Sin pago" bg="#f3f4f6" color="#6b7280" />}
             {detalle.es_sorpresa && <Chip label="Sorpresa" bg="#ede9fe" color="#5b21b6" />}
+            {detalle.observaciones && <Chip label="Con nota" bg="#f0f9ff" color="#0369a1" />}
           </div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -282,9 +293,7 @@ export default function FichaCaminante() {
               <CheckCircle size={13} /> Inscrito
             </div>
           )}
-          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 5 }}>
-            {detalle.inscrito_oficialmente ? 'Cupo asegurado' : 'Sin cupo aún'}
-          </div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 5 }}>{detalle.inscrito_oficialmente ? 'Cupo asegurado' : 'Sin cupo aún'}</div>
         </div>
       </div>
 
@@ -306,6 +315,7 @@ export default function FichaCaminante() {
         </button>
       </div>
 
+      {/* Estado de pago */}
       <div style={{ margin: '0 20px 12px', background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #edf0f7', background: '#f8fdf9' }}>
           <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: 0.8, textTransform: 'uppercase' as const, color: '#16a34a' }}>Estado de pago</span>
@@ -329,7 +339,6 @@ export default function FichaCaminante() {
               <span>$0</span><span>{pct}% pagado</span><span>$500K</span>
             </div>
           </div>
-
           {pagos.length > 0 && (
             <>
               <div style={{ fontSize: 11, fontWeight: 500, color: '#9ca3af', margin: '12px 0 6px', textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>Historial de abonos</div>
@@ -352,16 +361,10 @@ export default function FichaCaminante() {
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      <button
-                        onClick={() => { setPagoEditando(p); setValorEditar(p.valor.toString()); setModalEditar(true) }}
-                        style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid #e5e7eb', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                      >
+                      <button onClick={() => { setPagoEditando(p); setValorEditar(p.valor.toString()); setModalEditar(true) }} style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid #e5e7eb', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                         <Pencil size={12} color="#6b7280" />
                       </button>
-                      <button
-                        onClick={() => eliminarPago(p)}
-                        style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid #fee2e2', background: '#fff5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                      >
+                      <button onClick={() => eliminarPago(p)} style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid #fee2e2', background: '#fff5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                         <Trash2 size={12} color="#dc2626" />
                       </button>
                     </div>
@@ -370,7 +373,6 @@ export default function FichaCaminante() {
               ))}
             </>
           )}
-
           <div style={{ marginTop: 12 }}>
             <button onClick={abrirModal} style={{ width: '100%', height: 38, border: '0.5px solid #e5e7eb', borderRadius: 8, background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#0d0d14' }}>
               <Plus size={14} /> Registrar nuevo abono
@@ -416,23 +418,24 @@ export default function FichaCaminante() {
           ))}
         </Accordion>
 
+        {/* ── OBSERVACIONES (siempre visible, editable) ── */}
+        <SeccionObservaciones caminanteId={id as string} observacionInicial={detalle.observaciones ?? null} />
+
         <Accordion title="Historial" dot="#d1d5db">
           <DataRow label="Fecha de inscripción" value={detalle.fecha_inscripcion ? new Date(detalle.fecha_inscripcion).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : null} />
           <DataRow label="Correo inscripción" value={detalle.estado_correo === 'sin_enviar' ? 'Pendiente' : '✓ Enviado'} valueColor={detalle.estado_correo === 'sin_enviar' ? '#9ca3af' : '#166534'} />
           <DataRow label="Correo pago completo" value={cam.estado_pago === 'completo' ? '✓ Enviado' : 'Pendiente de pago'} valueColor={cam.estado_pago === 'completo' ? '#166534' : '#9ca3af'} />
           <DataRow label="Retiro" value="Effetá Mazuren · Julio 2026" />
-          {detalle.observaciones && <DataRow label="Observaciones" value={detalle.observaciones} />}
         </Accordion>
       </div>
 
+      {/* Modal pago */}
       {modalPago && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
           <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: '#0d0d14' }}>Registrar abono</div>
-              <button onClick={cerrarModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                <X size={18} color="#9ca3af" />
-              </button>
+              <button onClick={cerrarModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={18} color="#9ca3af" /></button>
             </div>
             <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>{detalle.nombre}</div>
             <input ref={inputFileRef} type="file" accept="image/*" onChange={seleccionarArchivo} style={{ display: 'none' }} />
@@ -472,25 +475,17 @@ export default function FichaCaminante() {
         </div>
       )}
 
+      {/* Modal editar pago */}
       {modalEditar && pagoEditando && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 200 }}>
           <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', padding: 24, width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: '#0d0d14' }}>Editar abono</div>
-              <button onClick={() => { setModalEditar(false); setPagoEditando(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                <X size={18} color="#9ca3af" />
-              </button>
+              <button onClick={() => { setModalEditar(false); setPagoEditando(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={18} color="#9ca3af" /></button>
             </div>
-            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>
-              {new Date(pagoEditando.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>{new Date(pagoEditando.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
             <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>Nuevo valor (COP)</div>
-            <input
-              type="number"
-              value={valorEditar}
-              onChange={e => setValorEditar(e.target.value)}
-              style={{ width: '100%', height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 16, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }}
-            />
+            <input type="number" value={valorEditar} onChange={e => setValorEditar(e.target.value)} style={{ width: '100%', height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '0 14px', fontSize: 16, marginBottom: 16, outline: 'none', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setModalEditar(false); setPagoEditando(null) }} style={{ flex: 1, height: 44, border: '0.5px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={guardarEdicion} style={{ flex: 2, height: 44, border: 'none', borderRadius: 10, background: '#0f1787', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Guardar cambio</button>
@@ -499,9 +494,7 @@ export default function FichaCaminante() {
         </div>
       )}
 
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
