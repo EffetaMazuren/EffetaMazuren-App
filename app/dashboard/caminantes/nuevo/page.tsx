@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { ChevronLeft, Check } from 'lucide-react'
 
-const TALLAS = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+const TALLAS = ['XS', 'S', 'M', 'L', 'XL']
 const TIPOS_DOC = ['C.C.', 'TI', 'C.E.', 'Pasaporte']
 const SACRAMENTOS_OPTS = ['Bautismo', 'Comunión', 'Confirmación', 'Matrimonio']
 
