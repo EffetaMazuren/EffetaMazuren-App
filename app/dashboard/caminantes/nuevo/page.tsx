@@ -17,6 +17,7 @@ type Campo = {
   direccion: string
   barrio: string
   telefono_fijo: string
+  fecha_nacimiento: string
   edad: string
   talla_camiseta: string
   sacramentos: string[]
@@ -36,12 +37,12 @@ type Campo = {
 
 const VACIO: Campo = {
   nombre: '', tipo_documento: 'C.C.', numero_documento: '', celular: '',
-  correo: '', direccion: '', barrio: '', telefono_fijo: '', edad: '',
-  talla_camiseta: '', sacramentos: [], es_sorpresa: false,
-  alergias: '', restricciones_alimentarias: '', medicamentos: '', eps: '',
-  observaciones: '', contacto1_nombre: '', contacto1_parentesco: '',
-  contacto1_celular: '', contacto2_nombre: '', contacto2_parentesco: '',
-  contacto2_celular: '',
+  correo: '', direccion: '', barrio: '', telefono_fijo: '',
+  fecha_nacimiento: '', edad: '', talla_camiseta: '', sacramentos: [],
+  es_sorpresa: false, alergias: '', restricciones_alimentarias: '',
+  medicamentos: '', eps: '', observaciones: '',
+  contacto1_nombre: '', contacto1_parentesco: '', contacto1_celular: '',
+  contacto2_nombre: '', contacto2_parentesco: '', contacto2_celular: '',
 }
 
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
@@ -52,8 +53,8 @@ function Label({ children, required }: { children: React.ReactNode; required?: b
   )
 }
 
-function Input({ value, onChange, placeholder, type = 'text', disabled }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean
+function Input({ value, onChange, placeholder, type = 'text' }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; type?: string
 }) {
   return (
     <input
@@ -61,12 +62,10 @@ function Input({ value, onChange, placeholder, type = 'text', disabled }: {
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       type={type}
-      disabled={disabled}
       style={{
         width: '100%', boxSizing: 'border-box', padding: '11px 14px',
         border: '0.5px solid #e5e7eb', borderRadius: 10, fontSize: 14,
-        color: '#0d0d14', background: disabled ? '#f9fafb' : '#fff',
-        outline: 'none', fontFamily: 'inherit',
+        color: '#0d0d14', background: '#fff', outline: 'none', fontFamily: 'inherit',
       }}
     />
   )
@@ -108,7 +107,6 @@ export default function NuevoCaminantePage() {
     setError('')
     if (!form.nombre.trim()) { setError('El nombre es obligatorio.'); return }
     if (!form.numero_documento.trim()) { setError('El número de documento es obligatorio.'); return }
-    if (!form.celular.trim()) { setError('El celular es obligatorio.'); return }
 
     setGuardando(true)
     try {
@@ -121,14 +119,15 @@ export default function NuevoCaminantePage() {
         nombre: form.nombre.trim(),
         tipo_documento: form.tipo_documento,
         numero_documento: form.numero_documento.trim().replace(/\./g, ''),
-        celular: form.celular.trim(),
+        celular: form.celular.trim() || null,
         correo: form.correo.trim() || null,
         direccion: form.direccion.trim() || null,
         barrio: form.barrio.trim() || null,
         telefono_fijo: form.telefono_fijo.trim() || null,
+        fecha_nacimiento: form.fecha_nacimiento || null,
         edad: form.edad ? parseInt(form.edad) : null,
         talla_camiseta: form.talla_camiseta || null,
-        sacramentos: form.sacramentos,
+        sacramentos: form.sacramentos.length > 0 ? form.sacramentos : null,
         es_sorpresa: form.es_sorpresa,
         alergias: form.alergias.trim() || null,
         restricciones_alimentarias: form.restricciones_alimentarias.trim() || null,
@@ -180,7 +179,6 @@ export default function NuevoCaminantePage() {
     }
   }
 
-  /* ── PANTALLA DE ÉXITO ── */
   if (exito) {
     return (
       <div style={{ minHeight: '100vh', background: '#f7f8fc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, padding: 32 }}>
@@ -206,14 +204,14 @@ export default function NuevoCaminantePage() {
 
       <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-        {/* ¿Es sorpresa? */}
+        {/* Sorpresa toggle */}
         <button onClick={() => set('es_sorpresa')(!form.es_sorpresa)}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: form.es_sorpresa ? '#ede9fe' : '#fff', border: form.es_sorpresa ? '1px solid #a78bfa' : '0.5px solid #e5e7eb', borderRadius: 14, padding: '14px 18px', cursor: 'pointer' }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 500, color: form.es_sorpresa ? '#5b21b6' : '#0d0d14' }}>Retiro sorpresa 🤫</div>
             <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>El caminante no sabe que viene al retiro</div>
           </div>
-          <div style={{ width: 22, height: 22, borderRadius: '50%', background: form.es_sorpresa ? '#7c3aed' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 22, height: 22, borderRadius: '50%', background: form.es_sorpresa ? '#7c3aed' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             {form.es_sorpresa && <Check size={13} color="#fff" />}
           </div>
         </button>
@@ -235,12 +233,22 @@ export default function NuevoCaminantePage() {
             </div>
             <div>
               <Label required>Número de documento</Label>
-              <Input value={form.numero_documento} onChange={set('numero_documento')} placeholder="Sin puntos ni espacios" />
+              <Input value={form.numero_documento} onChange={set('numero_documento')} placeholder="Sin puntos" />
             </div>
           </div>
 
           <div>
-            <Label required>Celular</Label>
+            <Label>Fecha de nacimiento</Label>
+            <Input value={form.fecha_nacimiento} onChange={set('fecha_nacimiento')} type="date" />
+          </div>
+
+          <div>
+            <Label>Edad</Label>
+            <Input value={form.edad} onChange={set('edad')} placeholder="Ej: 22" type="number" />
+          </div>
+
+          <div>
+            <Label>Celular</Label>
             <Input value={form.celular} onChange={set('celular')} placeholder="3XXXXXXXXX" type="tel" />
           </div>
 
@@ -252,11 +260,6 @@ export default function NuevoCaminantePage() {
           <div>
             <Label>Correo electrónico</Label>
             <Input value={form.correo} onChange={set('correo')} placeholder="correo@ejemplo.com" type="email" />
-          </div>
-
-          <div>
-            <Label>Edad</Label>
-            <Input value={form.edad} onChange={set('edad')} placeholder="Ej: 22" type="number" />
           </div>
         </Seccion>
 
@@ -302,6 +305,10 @@ export default function NuevoCaminantePage() {
         {/* SALUD */}
         <Seccion titulo="Información médica">
           <div>
+            <Label>EPS</Label>
+            <Input value={form.eps} onChange={set('eps')} placeholder="Ej: Sura, Nueva EPS…" />
+          </div>
+          <div>
             <Label>Alergias</Label>
             <Input value={form.alergias} onChange={set('alergias')} placeholder="Ej: Polen, mariscos… o dejar vacío" />
           </div>
@@ -313,13 +320,9 @@ export default function NuevoCaminantePage() {
             <Label>Medicamentos</Label>
             <Input value={form.medicamentos} onChange={set('medicamentos')} placeholder="Nombre y dosis… o dejar vacío" />
           </div>
-          <div>
-            <Label>EPS</Label>
-            <Input value={form.eps} onChange={set('eps')} placeholder="Ej: Sura, Nueva EPS…" />
-          </div>
         </Seccion>
 
-        {/* CONTACTOS EMERGENCIA */}
+        {/* CONTACTOS */}
         <Seccion titulo="Contacto de emergencia 1">
           <div>
             <Label>Nombre</Label>
@@ -376,12 +379,12 @@ export default function NuevoCaminantePage() {
         )}
       </div>
 
-      {/* Botón guardar fijo */}
+      {/* Botón fijo */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '16px 20px', background: 'rgba(247,248,252,0.95)', backdropFilter: 'blur(8px)', borderTop: '0.5px solid #e5e7eb' }}>
         <button
           onClick={guardar}
           disabled={guardando}
-          style={{ width: '100%', background: guardando ? '#9ca3af' : '#0f1787', color: '#fff', border: 'none', borderRadius: 14, padding: 16, fontSize: 15, fontWeight: 600, cursor: guardando ? 'not-allowed' : 'pointer', transition: 'background 0.2s' }}>
+          style={{ width: '100%', background: guardando ? '#9ca3af' : '#0f1787', color: '#fff', border: 'none', borderRadius: 14, padding: 16, fontSize: 15, fontWeight: 600, cursor: guardando ? 'not-allowed' : 'pointer' }}>
           {guardando ? 'Guardando…' : 'Registrar caminante'}
         </button>
       </div>
