@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import {
-  User, Bell, Shield, Download, RefreshCw, Trash2,
+  User, Bell, Shield, Download, RefreshCw, UserPlus,
   ChevronRight, LogOut, Info, Database, Moon, Globe,
   AlertTriangle, Check
 } from 'lucide-react'
@@ -147,7 +147,7 @@ export default function ConfigPage() {
           chevron={false}
         />
         <Fila
-          icon={Users as React.ElementType} label="Nuevos inscritos" color="#0f1787"
+          icon={Bell} label="Nuevos inscritos" color="#0f1787"
           sublabel="Alerta cuando alguien llena el formulario"
           toggle toggleValue={notifInscritos}
           onClick={() => setNotifInscritos(v => !v)}
