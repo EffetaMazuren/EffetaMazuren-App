@@ -40,9 +40,7 @@ export default function PalancasServidorPage() {
   const [guardando, setGuardando] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<'todos' | 'pendientes'>('todos');
 
-  useEffect(() => {
-    cargarDatos();
-  }, []);
+  useEffect(() => { cargarDatos(); }, []);
 
   async function cargarDatos() {
     setLoading(true);
@@ -74,15 +72,14 @@ export default function PalancasServidorPage() {
 
     if (!seguimiento) { setLoading(false); return; }
 
-    // Cargar contactos de emergencia para cada caminante
     const nombresSet = seguimiento.map(c => c.caminante_nombre);
+
     const { data: todosContactos } = await supabase
       .from('contactos_emergencia')
       .select('persona_id, nombre, parentesco, celular, orden')
       .eq('tipo_persona', 'caminante')
       .order('orden');
 
-    // Cargar caminantes para cruzar nombre → id
     const { data: todosCaminantes } = await supabase
       .from('caminantes')
       .select('id, nombre')
@@ -133,6 +130,7 @@ export default function PalancasServidorPage() {
             type: 'sync_palanca',
             caminante_nombre: caminante.caminante_nombre,
             servidor_nombre: servidorNombre,
+            servidor_inscripcion_id: servidorId,
             es_sorpresa: caminante.es_sorpresa,
             llamo: caminante.llamo,
             envio_cartas: caminante.envio_cartas,
@@ -172,14 +170,12 @@ export default function PalancasServidorPage() {
 
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 100 }}>
-      {/* Header */}
       <div style={{ background: '#0f1787', padding: '20px 20px 16px' }}>
         <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, margin: '0 0 2px', letterSpacing: 1 }}>GRUPO PALANCAS</p>
         <h1 style={{ color: '#fff', fontSize: 20, fontWeight: 600, margin: '0 0 4px', fontFamily: 'Georgia, serif' }}>Mis Caminantes</h1>
         <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, margin: 0 }}>{caminantes.length} asignados · {totalPendientes} con pendientes</p>
       </div>
 
-      {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, padding: '16px 16px 0' }}>
         {(['todos', 'pendientes'] as const).map(f => (
           <button key={f} onClick={() => setFiltro(f)} style={{
@@ -193,14 +189,12 @@ export default function PalancasServidorPage() {
         ))}
       </div>
 
-      {/* Lista */}
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {caminantesFiltrados.map(c => {
           const abierto = expandido === c.id;
           const completo = c.llamo && c.envio_cartas && c.envio_fotos;
           return (
             <div key={c.id} style={{ background: '#fff', borderRadius: 16, border: `0.5px solid ${completo ? '#bbf7d0' : '#e8eaf0'}`, overflow: 'hidden' }}>
-              {/* Cabecera de la card */}
               <button onClick={() => setExpandido(abierto ? null : c.id)} style={{
                 width: '100%', padding: '14px 16px', display: 'flex', alignItems: 'center',
                 justifyContent: 'space-between', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
@@ -231,10 +225,8 @@ export default function PalancasServidorPage() {
                 </svg>
               </button>
 
-              {/* Contenido expandido */}
               {abierto && (
                 <div style={{ borderTop: '0.5px solid #e8eaf0', padding: 16 }}>
-                  {/* Contactos */}
                   {(c.contacto1 || c.contacto2) && (
                     <div style={{ marginBottom: 16 }}>
                       <p style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: 1, margin: '0 0 8px', textTransform: 'uppercase' }}>Contactos</p>
@@ -256,7 +248,6 @@ export default function PalancasServidorPage() {
                     </div>
                   )}
 
-                  {/* Checkboxes */}
                   <p style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: 1, margin: '0 0 10px', textTransform: 'uppercase' }}>Seguimiento</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
                     {[
@@ -283,7 +274,6 @@ export default function PalancasServidorPage() {
                     ))}
                   </div>
 
-                  {/* Campos de texto */}
                   {[
                     { campo: 'donde_palancas' as const, label: '¿Dónde dejaron las palancas?', placeholder: 'Ej: Casa de la familia, correo...' },
                     { campo: 'notas' as const, label: 'Algo importante que debamos saber', placeholder: 'Notas relevantes...' },
@@ -305,7 +295,6 @@ export default function PalancasServidorPage() {
                     </div>
                   ))}
 
-                  {/* Botón guardar */}
                   <button
                     onClick={() => guardarCambios(c)}
                     disabled={guardando === c.id}
