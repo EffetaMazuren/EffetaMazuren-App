@@ -54,7 +54,6 @@ const MESA_POR_NOMBRE: Record<string, { mesa: number; esLider: boolean }> = {
   'Ricardo Torres Sabogal':            { mesa: 3,  esLider: false },
   'Jorge Picón Gaitán':                { mesa: 6,  esLider: false },
   'Diego Urrego Fonseca':              { mesa: 2,  esLider: true },
-  'Juan Pablo Leon Samper':            { mesa: 3,  esLider: true },
 }
 
 const COLOR_ROL: Record<string, { bg: string; dot: string; text: string }> = {
