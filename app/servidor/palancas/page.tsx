@@ -382,7 +382,7 @@ export default function PalancasServidorPage() {
                   ))}
 
                   <button
-                    onClick={() => guardarCambios(c)}
+                    onClick={() => guardarCambios(c.id)}
                     disabled={guardando === c.id}
                     style={{
                       width: '100%', padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer',
