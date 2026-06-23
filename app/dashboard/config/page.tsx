@@ -1,15 +1,21 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import {
   User, Bell, Shield, Download, RefreshCw, UserPlus,
   ChevronRight, LogOut, Info, Database, Moon, Globe,
-  AlertTriangle, Check
+  AlertTriangle, Check, Users, Lock
 } from 'lucide-react'
 
 type Toast = { msg: string; tipo: 'ok' | 'error' } | null
+
+interface ServidorInscripcion {
+  id: string
+  nombre: string
+  grupo: string | null
+}
 
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
@@ -81,6 +87,8 @@ function Modal({ titulo, mensaje, confirmLabel, onConfirm, onCancel, peligro }: 
   )
 }
 
+const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+
 export default function ConfigPage() {
   const router = useRouter()
   const [notifPagos, setNotifPagos] = useState(true)
@@ -88,6 +96,12 @@ export default function ConfigPage() {
   const [modal, setModal] = useState<'cerrar_sesion' | 'sync' | null>(null)
   const [toast, setToast] = useState<Toast>(null)
   const [sincronizando, setSincronizando] = useState(false)
+
+  // Palancas accesos
+  const [mostrarPalancas, setMostrarPalancas] = useState(false)
+  const [servidores, setServidores] = useState<ServidorInscripcion[]>([])
+  const [cargandoSrvs, setCargandoSrvs] = useState(false)
+  const [guardandoId, setGuardandoId] = useState<string | null>(null)
 
   function mostrarToast(msg: string, tipo: 'ok' | 'error') {
     setToast({ msg, tipo })
@@ -103,7 +117,6 @@ export default function ConfigPage() {
     setSincronizando(true)
     setModal(null)
     try {
-      // Refrescar caché tocando Supabase
       const { error } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
       if (error) throw error
       mostrarToast('Datos sincronizados correctamente', 'ok')
@@ -112,6 +125,46 @@ export default function ConfigPage() {
     } finally {
       setSincronizando(false)
     }
+  }
+
+  async function cargarServidoresPalancas() {
+    setCargandoSrvs(true)
+    const { data } = await supabase
+      .from('servidores_inscripcion')
+      .select('id, nombre, grupo')
+      .eq('retiro_id', RETIRO_ID)
+      .order('nombre')
+    setServidores(data || [])
+    setCargandoSrvs(false)
+  }
+
+  async function toggleGrupo(srv: ServidorInscripcion, nuevoGrupo: string | null) {
+    setGuardandoId(srv.id)
+    const { error } = await supabase
+      .from('servidores_inscripcion')
+      .update({ grupo: nuevoGrupo })
+      .eq('id', srv.id)
+    if (error) {
+      mostrarToast('Error al guardar', 'error')
+    } else {
+      setServidores(prev => prev.map(s => s.id === srv.id ? { ...s, grupo: nuevoGrupo } : s))
+      mostrarToast('Acceso actualizado', 'ok')
+    }
+    setGuardandoId(null)
+  }
+
+  useEffect(() => {
+    if (mostrarPalancas) cargarServidoresPalancas()
+  }, [mostrarPalancas])
+
+  const grupoLabel: Record<string, string> = {
+    'palancas': 'Hace seguimiento',
+    'palancas_lider': 'Ve dashboard',
+  }
+
+  const grupoColor: Record<string, { bg: string; text: string }> = {
+    'palancas': { bg: '#f0fdf4', text: '#15803d' },
+    'palancas_lider': { bg: '#eef0ff', text: '#0f1787' },
   }
 
   return (
@@ -153,6 +206,121 @@ export default function ConfigPage() {
           onClick={() => setNotifInscritos(v => !v)}
           chevron={false} ultimo
         />
+      </Seccion>
+
+      {/* PALANCAS — GESTIÓN DE ACCESOS */}
+      <div style={{ marginTop: 20 }} />
+      <Seccion titulo="Grupo Palancas">
+        <Fila
+          icon={Users} label="Gestionar accesos de palancas" color="#0f1787"
+          sublabel="Asignar quién hace seguimiento y quién ve el dashboard"
+          onClick={() => setMostrarPalancas(v => !v)}
+          chevron={!mostrarPalancas}
+          ultimo={!mostrarPalancas}
+        />
+
+        {mostrarPalancas && (
+          <div style={{ borderTop: '0.5px solid #f3f4f6' }}>
+
+            {/* Leyenda */}
+            <div style={{ padding: '12px 16px', display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: '0.5px solid #f3f4f6' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#16a34a' }} />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>Hace seguimiento (app del servidor)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#0f1787' }} />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>Ve dashboard modo líder</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#e5e7eb' }} />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>Sin acceso a palancas</span>
+              </div>
+            </div>
+
+            {/* Nota líderes automáticos */}
+            <div style={{ padding: '10px 16px', background: '#eef0ff', borderBottom: '0.5px solid #e0e4ff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Lock size={13} color="#0f1787" />
+                <span style={{ fontSize: 12, color: '#0f1787', fontWeight: 500 }}>
+                  Los líderes (Antonia, Daniel, Sofía) siempre tienen acceso al dashboard.
+                </span>
+              </div>
+            </div>
+
+            {cargandoSrvs ? (
+              <div style={{ padding: '20px 16px', textAlign: 'center' }}>
+                <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Cargando servidores...</p>
+              </div>
+            ) : (
+              <div>
+                {servidores.map((srv, idx) => {
+                  const esPalancas = srv.grupo === 'palancas'
+                  const esPalancasLider = srv.grupo === 'palancas_lider'
+                  const colorInfo = srv.grupo ? grupoColor[srv.grupo] : null
+                  const esUltimo = idx === servidores.length - 1
+
+                  return (
+                    <div key={srv.id} style={{
+                      padding: '12px 16px',
+                      borderBottom: esUltimo ? 'none' : '0.5px solid #f3f4f6',
+                      display: 'flex', alignItems: 'center', gap: 12,
+                    }}>
+                      {/* Nombre */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {srv.nombre}
+                        </p>
+                        {srv.grupo && colorInfo ? (
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: colorInfo.bg, color: colorInfo.text }}>
+                            {grupoLabel[srv.grupo] || srv.grupo}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 10, color: '#d1d5db' }}>Sin acceso</span>
+                        )}
+                      </div>
+
+                      {/* Controles */}
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        {/* Toggle: hace seguimiento */}
+                        <button
+                          disabled={guardandoId === srv.id}
+                          onClick={() => toggleGrupo(srv, esPalancas ? null : 'palancas')}
+                          title="Hace seguimiento"
+                          style={{
+                            width: 34, height: 34, borderRadius: 8, border: '0.5px solid',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: esPalancas ? '#f0fdf4' : '#f9fafb',
+                            borderColor: esPalancas ? '#86efac' : '#e5e7eb',
+                            opacity: guardandoId === srv.id ? 0.5 : 1,
+                          }}
+                        >
+                          <Users size={15} color={esPalancas ? '#16a34a' : '#d1d5db'} />
+                        </button>
+
+                        {/* Toggle: ve dashboard */}
+                        <button
+                          disabled={guardandoId === srv.id}
+                          onClick={() => toggleGrupo(srv, esPalancasLider ? null : 'palancas_lider')}
+                          title="Ve dashboard modo líder"
+                          style={{
+                            width: 34, height: 34, borderRadius: 8, border: '0.5px solid',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: esPalancasLider ? '#eef0ff' : '#f9fafb',
+                            borderColor: esPalancasLider ? '#c7d0ff' : '#e5e7eb',
+                            opacity: guardandoId === srv.id ? 0.5 : 1,
+                          }}
+                        >
+                          <Shield size={15} color={esPalancasLider ? '#0f1787' : '#d1d5db'} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </Seccion>
 
       {/* DATOS */}
@@ -250,7 +418,6 @@ export default function ConfigPage() {
           onCancel={() => setModal(null)}
         />
       )}
-
       {modal === 'sync' && (
         <Modal
           titulo="Sincronizar datos"
