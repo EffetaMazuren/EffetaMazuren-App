@@ -97,7 +97,6 @@ export default function DashboardPage() {
         .eq('retiro_id', RETIRO_ID)
         .eq('estado', 'confirmado')
 
-      // Ingresos aprobados en Nequi Effetá
       const { data: ingresosNequi } = await supabase
         .from('transacciones')
         .select('valor')
@@ -105,7 +104,6 @@ export default function DashboardPage() {
         .eq('tipo', 'ingreso')
         .eq('estado', 'aprobado')
 
-      // Egresos aprobados en Nequi Effetá
       const { data: egresosNequi } = await supabase
         .from('transacciones')
         .select('valor')
@@ -291,53 +289,29 @@ export default function DashboardPage() {
 
         {/* Dos tarjetas azules: Parroquia y Nequi */}
         <div className="grid grid-cols-2 gap-3 mb-4">
-
-          {/* Cuenta Parroquia */}
           <div className="bg-[#0f1787] rounded-2xl p-4 overflow-hidden relative">
             <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-white/5 rounded-full" />
             <div className="relative z-10">
-              <p className="text-[9px] font-semibold tracking-[0.15em] text-blue-300 uppercase mb-3">
-                Cuenta parroquia
-              </p>
-              <p className="text-2xl font-bold text-white tracking-tight leading-none">
-                {data ? formatCOP(data.totalCuentaParroquia) : '$0'}
-              </p>
-              <p className="text-[10px] text-blue-200/60 mt-1 leading-tight">
-                inscripciones caminantes y servidores
-              </p>
-              <p className="text-[10px] text-blue-300/80 mt-2 font-medium">
-                {formatCOPFull(data?.totalCuentaParroquia ?? 0)}
-              </p>
+              <p className="text-[9px] font-semibold tracking-[0.15em] text-blue-300 uppercase mb-3">Cuenta parroquia</p>
+              <p className="text-2xl font-bold text-white tracking-tight leading-none">{data ? formatCOP(data.totalCuentaParroquia) : '$0'}</p>
+              <p className="text-[10px] text-blue-200/60 mt-1 leading-tight">inscripciones caminantes y servidores</p>
+              <p className="text-[10px] text-blue-300/80 mt-2 font-medium">{formatCOPFull(data?.totalCuentaParroquia ?? 0)}</p>
             </div>
           </div>
-
-          {/* Nequi Effetá — balance neto */}
           <div className="bg-[#1a2a9b] rounded-2xl p-4 overflow-hidden relative">
             <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-white/5 rounded-full" />
             <div className="relative z-10">
-              <p className="text-[9px] font-semibold tracking-[0.15em] text-blue-300 uppercase mb-3">
-                Nequi Effetá · Balance
-              </p>
-              <p className="text-2xl font-bold text-white tracking-tight leading-none">
-                {data ? formatCOP(data.balanceNequiEffeta) : '$0'}
-              </p>
-              <p className="text-[10px] text-blue-200/60 mt-1 leading-tight">
-                ingresos menos egresos aprobados
-              </p>
-              <p className="text-[10px] text-blue-300/80 mt-2 font-medium">
-                {formatCOPFull(data?.balanceNequiEffeta ?? 0)}
-              </p>
+              <p className="text-[9px] font-semibold tracking-[0.15em] text-blue-300 uppercase mb-3">Nequi Effetá · Balance</p>
+              <p className="text-2xl font-bold text-white tracking-tight leading-none">{data ? formatCOP(data.balanceNequiEffeta) : '$0'}</p>
+              <p className="text-[10px] text-blue-200/60 mt-1 leading-tight">ingresos menos egresos aprobados</p>
+              <p className="text-[10px] text-blue-300/80 mt-2 font-medium">{formatCOPFull(data?.balanceNequiEffeta ?? 0)}</p>
             </div>
           </div>
-
         </div>
 
         {/* Tarjeta Caminantes */}
         <div className="bg-white rounded-2xl mb-3 overflow-hidden shadow-sm border border-gray-100">
-          <button
-            onClick={() => setExpandedCard(expandedCard === 'caminantes' ? null : 'caminantes')}
-            className="w-full text-left p-5"
-          >
+          <button onClick={() => setExpandedCard(expandedCard === 'caminantes' ? null : 'caminantes')} className="w-full text-left p-5">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -366,7 +340,6 @@ export default function DashboardPage() {
               </div>
             </div>
           </button>
-
           {expandedCard === 'caminantes' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
@@ -401,10 +374,7 @@ export default function DashboardPage() {
 
         {/* Tarjeta Servidores */}
         <div className="bg-white rounded-2xl mb-3 overflow-hidden shadow-sm border border-gray-100">
-          <button
-            onClick={() => setExpandedCard(expandedCard === 'servidores' ? null : 'servidores')}
-            className="w-full text-left p-5"
-          >
+          <button onClick={() => setExpandedCard(expandedCard === 'servidores' ? null : 'servidores')} className="w-full text-left p-5">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -433,7 +403,6 @@ export default function DashboardPage() {
               </div>
             </div>
           </button>
-
           {expandedCard === 'servidores' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
@@ -458,10 +427,8 @@ export default function DashboardPage() {
 
         {/* Accesos rápidos */}
         <div className="grid grid-cols-2 gap-3 mb-4 mt-1">
-          <button
-            onClick={() => router.push('/dashboard/reembolsos')}
-            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative"
-          >
+
+          <button onClick={() => router.push('/dashboard/reembolsos')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative">
             <div className="flex items-center gap-2 mb-2">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
@@ -476,21 +443,17 @@ export default function DashboardPage() {
             )}
           </button>
 
-          <button
-            onClick={() => router.push('/dashboard/reuniones')}
-            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
-          >
+          <button onClick={() => router.push('/dashboard/reuniones')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-xl">📅</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Reuniones</span>
             </div>
             <p className="text-sm text-gray-600 leading-tight">Martes y días especiales</p>
           </button>
 
-          <button
-            onClick={() => router.push('/dashboard/tareas')}
-            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
-          >
+          <button onClick={() => router.push('/dashboard/tareas')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 mb-2">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
@@ -500,10 +463,7 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Tareas pendientes del retiro</p>
           </button>
 
-          <button
-            onClick={() => router.push('/dashboard/asistencias')}
-            className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative"
-          >
+          <button onClick={() => router.push('/dashboard/asistencias')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative">
             <div className="flex items-center gap-2 mb-2">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
@@ -518,10 +478,24 @@ export default function DashboardPage() {
             )}
           </button>
 
-          <button
-            onClick={() => router.push('/dashboard/mensajes')}
-            className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow"
-          >
+          {/* Palancas — acceso rápido */}
+          <button onClick={() => router.push('/dashboard/palancas')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 mb-2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Grupo Palancas</span>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Seguimiento de contacto con familias · {data ? 44 : '—'} caminantes asignados</p>
+          </button>
+
+          <button onClick={() => router.push('/dashboard/mensajes')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 mb-2">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -531,16 +505,14 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Enviar comunicados a servidores en tiempo real</p>
           </button>
 
-          <button
-            onClick={() => router.push('/dashboard/retiro')}
-            className="col-span-2 bg-[#0f1787] rounded-2xl p-4 text-left hover:opacity-90 transition-opacity"
-          >
+          <button onClick={() => router.push('/dashboard/retiro')} className="col-span-2 bg-[#0f1787] rounded-2xl p-4 text-left hover:opacity-90 transition-opacity">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xl">✝️</span>
               <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">IX Retiro</span>
             </div>
             <p className="text-sm text-blue-100 leading-tight">Minuto a minuto, roles y manual del retiro</p>
           </button>
+
         </div>
 
         {/* Indicador en tiempo real */}
@@ -555,23 +527,20 @@ export default function DashboardPage() {
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-20">
         <div className="flex items-center max-w-2xl mx-auto px-2">
           {[
-            { label: 'Inicio', icon: 'home', href: '/dashboard', active: true },
-            { label: 'Personas', icon: 'users', href: '/dashboard/personas', active: false },
-            { label: 'Finanzas', icon: 'bar-chart', href: '/dashboard/finanzas', active: false },
-            { label: 'Reuniones', icon: 'calendar', href: '/dashboard/reuniones', active: false },
-            { label: 'Config', icon: 'settings', href: '/dashboard/config', active: false },
-          ].map(item => (
-            <button
-              key={item.href}
-              onClick={() => router.push(item.href)}
-              className="flex-1 flex flex-col items-center gap-1 py-3 transition-colors"
-            >
-              <NavIcon name={item.icon} active={item.active} />
-              <span className={`text-[10px] font-medium ${item.active ? 'text-[#0f1787]' : 'text-gray-400'}`}>
-                {item.label}
-              </span>
-            </button>
-          ))}
+            { label: 'Inicio', icon: 'home', href: '/dashboard' },
+            { label: 'Personas', icon: 'users', href: '/dashboard/personas' },
+            { label: 'Finanzas', icon: 'bar-chart', href: '/dashboard/finanzas' },
+            { label: 'Reuniones', icon: 'calendar', href: '/dashboard/reuniones' },
+            { label: 'Config', icon: 'settings', href: '/dashboard/config' },
+          ].map(item => {
+            const active = item.href === '/dashboard'
+            return (
+              <button key={item.href} onClick={() => router.push(item.href)} className="flex-1 flex flex-col items-center gap-1 py-3 transition-colors">
+                <NavIcon name={item.icon} active={active} />
+                <span className={`text-[10px] font-medium ${active ? 'text-[#0f1787]' : 'text-gray-400'}`}>{item.label}</span>
+              </button>
+            )
+          })}
         </div>
       </nav>
 
@@ -632,4 +601,3 @@ function NavIcon({ name, active }: { name: string; active: boolean }) {
   }
   return icons[name] ?? null
 }
-
