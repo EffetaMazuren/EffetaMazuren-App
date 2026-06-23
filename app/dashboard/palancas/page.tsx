@@ -18,7 +18,7 @@ interface Seguimiento {
 }
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_PALANCAS_URL || '';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_QYfs6yiwRH1aQRt2smJoQIgRQ-bzFzWK3fgDFrbD6ApiaUygGIEYJUVcxp7Mf00oOw/exec';
 
 const SERVIDORES_PALANCAS_IDS = [
   '87a34a20-e973-4b76-92a0-4817f01e6778',
