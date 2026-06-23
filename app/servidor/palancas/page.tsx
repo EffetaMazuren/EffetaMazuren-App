@@ -30,6 +30,27 @@ interface CaminanteConContactos extends Caminante {
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_PALANCAS_URL || '';
 
+// Mapa nombre → id para servidores de palancas sin cuenta vinculada
+const PALANCAS_NOMBRE_A_ID: Record<string, string> = {
+  'alejandra arcila cantor':          '87a34a20-e973-4b76-92a0-4817f01e6778',
+  'david martinez rincon':            'fc5f960c-70cc-4c85-be11-14484abb70ff',
+  'andres muñoz':                     'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d',
+  'andrés muñoz':                     'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d',
+  'maria paula rodriguez zuñiga':     'b201c88d-d651-4889-abac-c74ac8a2ffda',
+  'maría paula rodríguez zúñiga':     'b201c88d-d651-4889-abac-c74ac8a2ffda',
+  'santiago ruiz cardozo':            '2852cef9-b8df-4ac1-9f21-e0c6226c63a2',
+  'paula agudelo':                    'c3ece132-f88e-4432-b6dd-5c6b879a1860',
+  'maria paula diaz wittingham':      'f22ec19a-079b-46cb-bbac-3f75804d008a',
+  'maría paula díaz wittingham':      'f22ec19a-079b-46cb-bbac-3f75804d008a',
+  'lucia cuellar':                    '1b4de35a-1165-4364-a0f5-31d5938dabbd',
+  'lucía cuéllar':                    '1b4de35a-1165-4364-a0f5-31d5938dabbd',
+  'diego urrego fonseca':             '56bf1b6c-965c-4b55-937b-d6df8bb05cd8',
+}
+
+function norm(s: string) {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
 export default function PalancasServidorPage() {
   const [caminantes, setCaminantes] = useState<CaminanteConContactos[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,15 +68,55 @@ export default function PalancasServidorPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('No autenticado'); setLoading(false); return; }
 
-    const { data: srv } = await supabase
+    let srv: { id: string; nombre: string; grupo: string | null } | null = null;
+
+    // Intento 1: buscar por usuario_id
+    const { data: srvPorId } = await supabase
       .from('servidores_inscripcion')
       .select('id, nombre, grupo')
       .eq('usuario_id', user.id)
       .eq('retiro_id', RETIRO_ID)
       .single();
 
-    if (!srv || srv.grupo !== 'palancas') {
-      setError('No tienes acceso a esta sección.');
+    if (srvPorId) {
+      srv = srvPorId;
+    } else {
+      // Intento 2: buscar por inscripcion_id en metadata
+      const inscripcionId = user.user_metadata?.servidor_inscripcion_id;
+      if (inscripcionId) {
+        const { data: srvPorMeta } = await supabase
+          .from('servidores_inscripcion')
+          .select('id, nombre, grupo')
+          .eq('id', inscripcionId)
+          .single();
+        if (srvPorMeta) srv = srvPorMeta;
+      }
+    }
+
+    if (!srv) { setError('No tienes acceso a esta sección.'); setLoading(false); return; }
+
+    // Verificar grupo palancas — también permite palancas_lider (Diego)
+    if (srv.grupo !== 'palancas' && srv.grupo !== 'palancas_lider') {
+      // Intento 3: buscar por nombre en el mapa hardcodeado
+      const srvIdPorNombre = PALANCAS_NOMBRE_A_ID[norm(srv.nombre)];
+      if (!srvIdPorNombre) {
+        setError('No tienes acceso a esta sección.');
+        setLoading(false);
+        return;
+      }
+      // Actualizar el grupo en BD para que no pase esto la próxima vez
+      await supabase
+        .from('servidores_inscripcion')
+        .update({ grupo: 'palancas', usuario_id: user.id })
+        .eq('id', srvIdPorNombre)
+        .is('usuario_id', null);
+
+      srv = { ...srv, id: srvIdPorNombre, grupo: 'palancas' };
+    }
+
+    // Si es palancas_lider (Diego) no tiene caminantes asignados
+    if (srv.grupo === 'palancas_lider') {
+      setError('Eres líder observador. Accede al dashboard de líderes para ver el seguimiento completo.');
       setLoading(false);
       return;
     }
