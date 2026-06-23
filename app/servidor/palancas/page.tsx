@@ -166,8 +166,12 @@ export default function PalancasServidorPage() {
     setLoading(false);
   }
 
-  async function guardarCambios(caminante: CaminanteConContactos) {
-    setGuardando(caminante.id);
+  async function guardarCambios(caminanteId: string) {
+  const caminante = caminantes.find(c => c.id === caminanteId);
+  if (!caminante) return;
+  setGuardando(caminanteId);
+  // ... resto igual
+  }
 
     const { error: dbError } = await supabase
       .from('palancas_seguimiento')
