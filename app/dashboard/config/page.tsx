@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import {
-  User, Bell, Shield, Download, RefreshCw, UserPlus,
+  User, Bell, Shield, Download, RefreshCw,
   ChevronRight, LogOut, Info, Database, Moon, Globe,
   AlertTriangle, Check, Users, Lock
 } from 'lucide-react'
@@ -15,6 +15,7 @@ interface ServidorInscripcion {
   id: string
   nombre: string
   grupo: string | null
+  es_lider_palancas: boolean | null
 }
 
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
@@ -97,11 +98,11 @@ export default function ConfigPage() {
   const [toast, setToast] = useState<Toast>(null)
   const [sincronizando, setSincronizando] = useState(false)
 
-  // Palancas accesos
   const [mostrarPalancas, setMostrarPalancas] = useState(false)
   const [servidores, setServidores] = useState<ServidorInscripcion[]>([])
   const [cargandoSrvs, setCargandoSrvs] = useState(false)
   const [guardandoId, setGuardandoId] = useState<string | null>(null)
+  const [busquedaSrv, setBusquedaSrv] = useState('')
 
   function mostrarToast(msg: string, tipo: 'ok' | 'error') {
     setToast({ msg, tipo })
@@ -131,7 +132,7 @@ export default function ConfigPage() {
     setCargandoSrvs(true)
     const { data } = await supabase
       .from('servidores_inscripcion')
-      .select('id, nombre, grupo')
+      .select('id, nombre, grupo, es_lider_palancas')
       .eq('retiro_id', RETIRO_ID)
       .order('nombre')
     setServidores(data || [])
@@ -153,14 +154,29 @@ export default function ConfigPage() {
     setGuardandoId(null)
   }
 
+  async function toggleLiderPalancas(srv: ServidorInscripcion) {
+    setGuardandoId(srv.id)
+    const nuevoValor = !srv.es_lider_palancas
+    const { error } = await supabase
+      .from('servidores_inscripcion')
+      .update({ es_lider_palancas: nuevoValor })
+      .eq('id', srv.id)
+    if (error) {
+      mostrarToast('Error al guardar', 'error')
+    } else {
+      setServidores(prev => prev.map(s => s.id === srv.id ? { ...s, es_lider_palancas: nuevoValor } : s))
+      mostrarToast('Acceso actualizado', 'ok')
+    }
+    setGuardandoId(null)
+  }
+
   useEffect(() => {
     if (mostrarPalancas) cargarServidoresPalancas()
   }, [mostrarPalancas])
 
-  const grupoLabel: Record<string, string> = {
-    'palancas': 'Hace seguimiento',
-    'palancas_lider': 'Ve dashboard',
-  }
+  const servidoresFiltrados = servidores.filter(s =>
+    busquedaSrv === '' || s.nombre.toLowerCase().includes(busquedaSrv.toLowerCase())
+  )
 
   const grupoColor: Record<string, { bg: string; text: string }> = {
     'palancas': { bg: '#f0fdf4', text: '#15803d' },
@@ -170,13 +186,11 @@ export default function ConfigPage() {
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 100 }}>
 
-      {/* Header */}
       <div style={{ padding: '18px 20px 20px' }}>
         <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>Configuración</div>
         <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>IX Retiro Effetá Mazuren · 3–5 julio 2026</div>
       </div>
 
-      {/* Perfil card */}
       <div style={{ margin: '0 20px 20px', background: 'linear-gradient(135deg, #0f1787 0%, #1a23b8 100%)', borderRadius: 18, padding: '20px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
         <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <User size={24} color="#fff" />
@@ -185,30 +199,15 @@ export default function ConfigPage() {
           <div style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>Líder</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Effetá Mazuren</div>
         </div>
-        <div style={{ fontSize: 10, fontWeight: 600, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.15)', color: '#fff', letterSpacing: '0.05em' }}>
-          LÍDER
-        </div>
+        <div style={{ fontSize: 10, fontWeight: 600, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.15)', color: '#fff', letterSpacing: '0.05em' }}>LÍDER</div>
       </div>
 
-      {/* NOTIFICACIONES */}
       <Seccion titulo="Notificaciones">
-        <Fila
-          icon={Bell} label="Nuevos pagos" color="#0f1787"
-          sublabel="Alerta cuando un caminante paga"
-          toggle toggleValue={notifPagos}
-          onClick={() => setNotifPagos(v => !v)}
-          chevron={false}
-        />
-        <Fila
-          icon={Bell} label="Nuevos inscritos" color="#0f1787"
-          sublabel="Alerta cuando alguien llena el formulario"
-          toggle toggleValue={notifInscritos}
-          onClick={() => setNotifInscritos(v => !v)}
-          chevron={false} ultimo
-        />
+        <Fila icon={Bell} label="Nuevos pagos" color="#0f1787" sublabel="Alerta cuando un caminante paga" toggle toggleValue={notifPagos} onClick={() => setNotifPagos(v => !v)} chevron={false} />
+        <Fila icon={Bell} label="Nuevos inscritos" color="#0f1787" sublabel="Alerta cuando alguien llena el formulario" toggle toggleValue={notifInscritos} onClick={() => setNotifInscritos(v => !v)} chevron={false} ultimo />
       </Seccion>
 
-      {/* PALANCAS — GESTIÓN DE ACCESOS */}
+      {/* PALANCAS */}
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Grupo Palancas">
         <Fila
@@ -223,18 +222,14 @@ export default function ConfigPage() {
           <div style={{ borderTop: '0.5px solid #f3f4f6' }}>
 
             {/* Leyenda */}
-            <div style={{ padding: '12px 16px', display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: '0.5px solid #f3f4f6' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#16a34a' }} />
-                <span style={{ fontSize: 11, color: '#6b7280' }}>Hace seguimiento (app del servidor)</span>
+            <div style={{ padding: '10px 16px', display: 'flex', gap: 12, flexWrap: 'wrap', borderBottom: '0.5px solid #f3f4f6' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Users size={12} color="#16a34a" />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>Hace seguimiento</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#0f1787' }} />
-                <span style={{ fontSize: 11, color: '#6b7280' }}>Ve dashboard modo líder</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: '#e5e7eb' }} />
-                <span style={{ fontSize: 11, color: '#6b7280' }}>Sin acceso a palancas</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Shield size={12} color="#0f1787" />
+                <span style={{ fontSize: 11, color: '#6b7280' }}>Ve dashboard</span>
               </div>
             </div>
 
@@ -242,10 +237,28 @@ export default function ConfigPage() {
             <div style={{ padding: '10px 16px', background: '#eef0ff', borderBottom: '0.5px solid #e0e4ff' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Lock size={13} color="#0f1787" />
-                <span style={{ fontSize: 12, color: '#0f1787', fontWeight: 500 }}>
-                  Los líderes (Antonia, Daniel, Sofía) siempre tienen acceso al dashboard.
-                </span>
+                <span style={{ fontSize: 12, color: '#0f1787', fontWeight: 500 }}>Los líderes (Antonia, Daniel, Sofía) siempre tienen acceso al dashboard.</span>
               </div>
+            </div>
+
+            {/* Barra de búsqueda */}
+            <div style={{ padding: '10px 16px', borderBottom: '0.5px solid #f3f4f6', position: 'relative' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)' }}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                value={busquedaSrv}
+                onChange={e => setBusquedaSrv(e.target.value)}
+                placeholder="Buscar servidor..."
+                style={{
+                  width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8,
+                  border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827',
+                  background: '#f9fafb', boxSizing: 'border-box', outline: 'none',
+                }}
+              />
+              {busquedaSrv && (
+                <button onClick={() => setBusquedaSrv('')} style={{ position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>×</button>
+              )}
             </div>
 
             {cargandoSrvs ? (
@@ -254,37 +267,38 @@ export default function ConfigPage() {
               </div>
             ) : (
               <div>
-                {servidores.map((srv, idx) => {
+                {servidoresFiltrados.length === 0 && (
+                  <div style={{ padding: '16px', textAlign: 'center' }}>
+                    <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No hay resultados para "{busquedaSrv}"</p>
+                  </div>
+                )}
+                {servidoresFiltrados.map((srv, idx) => {
                   const esPalancas = srv.grupo === 'palancas'
                   const esPalancasLider = srv.grupo === 'palancas_lider'
-                  const colorInfo = srv.grupo ? grupoColor[srv.grupo] : null
-                  const esUltimo = idx === servidores.length - 1
+                  const esLiderPalancas = !!srv.es_lider_palancas
+                  const esUltimo = idx === servidoresFiltrados.length - 1
 
                   return (
                     <div key={srv.id} style={{
                       padding: '12px 16px',
                       borderBottom: esUltimo ? 'none' : '0.5px solid #f3f4f6',
-                      display: 'flex', alignItems: 'center', gap: 12,
+                      display: 'flex', alignItems: 'center', gap: 10,
                     }}>
-                      {/* Nombre */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {srv.nombre}
                         </p>
-                        {srv.grupo && colorInfo ? (
-                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: colorInfo.bg, color: colorInfo.text }}>
-                            {grupoLabel[srv.grupo] || srv.grupo}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 10, color: '#d1d5db' }}>Sin acceso</span>
-                        )}
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {esPalancas && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: '#f0fdf4', color: '#15803d' }}>Seguimiento</span>}
+                          {(esPalancasLider || esLiderPalancas) && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: '#eef0ff', color: '#0f1787' }}>Ve dashboard</span>}
+                          {!esPalancas && !esPalancasLider && !esLiderPalancas && <span style={{ fontSize: 10, color: '#d1d5db' }}>Sin acceso</span>}
+                        </div>
                       </div>
 
-                      {/* Controles */}
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         {/* Toggle: hace seguimiento */}
                         <button
-                          disabled={guardandoId === srv.id}
+                          disabled={!!guardandoId}
                           onClick={() => toggleGrupo(srv, esPalancas ? null : 'palancas')}
                           title="Hace seguimiento"
                           style={{
@@ -292,7 +306,7 @@ export default function ConfigPage() {
                             cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                             background: esPalancas ? '#f0fdf4' : '#f9fafb',
                             borderColor: esPalancas ? '#86efac' : '#e5e7eb',
-                            opacity: guardandoId === srv.id ? 0.5 : 1,
+                            opacity: guardandoId ? 0.5 : 1,
                           }}
                         >
                           <Users size={15} color={esPalancas ? '#16a34a' : '#d1d5db'} />
@@ -300,18 +314,18 @@ export default function ConfigPage() {
 
                         {/* Toggle: ve dashboard */}
                         <button
-                          disabled={guardandoId === srv.id}
-                          onClick={() => toggleGrupo(srv, esPalancasLider ? null : 'palancas_lider')}
+                          disabled={!!guardandoId}
+                          onClick={() => toggleLiderPalancas(srv)}
                           title="Ve dashboard modo líder"
                           style={{
                             width: 34, height: 34, borderRadius: 8, border: '0.5px solid',
                             cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: esPalancasLider ? '#eef0ff' : '#f9fafb',
-                            borderColor: esPalancasLider ? '#c7d0ff' : '#e5e7eb',
-                            opacity: guardandoId === srv.id ? 0.5 : 1,
+                            background: esLiderPalancas ? '#eef0ff' : '#f9fafb',
+                            borderColor: esLiderPalancas ? '#c7d0ff' : '#e5e7eb',
+                            opacity: guardandoId ? 0.5 : 1,
                           }}
                         >
-                          <Shield size={15} color={esPalancasLider ? '#0f1787' : '#d1d5db'} />
+                          <Shield size={15} color={esLiderPalancas ? '#0f1787' : '#d1d5db'} />
                         </button>
                       </div>
                     </div>
@@ -323,34 +337,22 @@ export default function ConfigPage() {
         )}
       </Seccion>
 
-      {/* DATOS */}
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Datos y sincronización">
+        <Fila icon={sincronizando ? RefreshCw : Database} label={sincronizando ? 'Sincronizando…' : 'Sincronizar datos'} sublabel="Fuerza una actualización desde Supabase" color="#0f1787" onClick={() => !sincronizando && setModal('sync')} />
         <Fila
-          icon={sincronizando ? RefreshCw : Database}
-          label={sincronizando ? 'Sincronizando…' : 'Sincronizar datos'}
-          sublabel="Fuerza una actualización desde Supabase"
-          color="#0f1787"
-          onClick={() => !sincronizando && setModal('sync')}
-        />
-        <Fila
-          icon={Download} label="Exportar caminantes" color="#0f1787"
-          sublabel="Descarga la lista en CSV"
+          icon={Download} label="Exportar caminantes" color="#0f1787" sublabel="Descarga la lista en CSV"
           onClick={async () => {
             const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
             if (!r) { mostrarToast('No hay retiro activo', 'error'); return }
-            const { data } = await supabase
-              .from('vista_pagos_caminantes')
-              .select('nombre, numero_documento, celular, correo, estado_pago, total_pagado')
-              .eq('retiro_id', r.id)
+            const { data } = await supabase.from('vista_pagos_caminantes').select('nombre, numero_documento, celular, correo, estado_pago, total_pagado').eq('retiro_id', r.id)
             if (!data) { mostrarToast('Error al exportar', 'error'); return }
             const headers = ['Nombre', 'Documento', 'Celular', 'Correo', 'Estado pago', 'Total pagado']
             const rows = data.map(c => [c.nombre, c.numero_documento, c.celular, c.correo, c.estado_pago, c.total_pagado].join(','))
             const csv = [headers.join(','), ...rows].join('\n')
             const blob = new Blob([csv], { type: 'text/csv' })
             const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url; a.download = 'caminantes-effeta.csv'; a.click()
+            const a = document.createElement('a'); a.href = url; a.download = 'caminantes-effeta.csv'; a.click()
             URL.revokeObjectURL(url)
             mostrarToast('CSV descargado', 'ok')
           }}
@@ -358,95 +360,47 @@ export default function ConfigPage() {
         />
       </Seccion>
 
-      {/* APP */}
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Aplicación">
-        <Fila
-          icon={Globe} label="Abrir formulario de inscripción" color="#0f1787"
-          sublabel="Link público del Google Form"
-          onClick={() => window.open('https://docs.google.com/forms/d/1jLFD4BZingfwg_-OKGY0DYokFqMH-9eQr8GqlSAGuTM', '_blank')}
-        />
-        <Fila
-          icon={Moon} label="Modo oscuro" color="#0f1787"
-          sublabel="Próximamente"
-          onClick={() => mostrarToast('Próximamente disponible', 'ok')}
-        />
-        <Fila
-          icon={Shield} label="Privacidad y permisos" color="#0f1787"
-          sublabel="Datos almacenados en Supabase · Colombia"
-          onClick={() => mostrarToast('Todos los datos se almacenan de forma segura en Supabase', 'ok')}
-          ultimo
-        />
+        <Fila icon={Globe} label="Abrir formulario de inscripción" color="#0f1787" sublabel="Link público del Google Form" onClick={() => window.open('https://docs.google.com/forms/d/1jLFD4BZingfwg_-OKGY0DYokFqMH-9eQr8GqlSAGuTM', '_blank')} />
+        <Fila icon={Moon} label="Modo oscuro" color="#0f1787" sublabel="Próximamente" onClick={() => mostrarToast('Próximamente disponible', 'ok')} />
+        <Fila icon={Shield} label="Privacidad y permisos" color="#0f1787" sublabel="Datos almacenados en Supabase · Colombia" onClick={() => mostrarToast('Todos los datos se almacenan de forma segura en Supabase', 'ok')} ultimo />
       </Seccion>
 
-      {/* ACERCA DE */}
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Acerca de">
-        <Fila
-          icon={Info} label="Versión de la app" color="#6b7280"
-          sublabel="v1.0 · IX Retiro Effetá Mazuren 2026"
-          chevron={false}
-        />
-        <Fila
-          icon={Globe} label="Effetá Mazuren en Instagram" color="#6b7280"
-          sublabel="@effetamazuren"
-          onClick={() => window.open('https://instagram.com/effetamazuren', '_blank')}
-          ultimo
-        />
+        <Fila icon={Info} label="Versión de la app" color="#6b7280" sublabel="v1.0 · IX Retiro Effetá Mazuren 2026" chevron={false} />
+        <Fila icon={Globe} label="Effetá Mazuren en Instagram" color="#6b7280" sublabel="@effetamazuren" onClick={() => window.open('https://instagram.com/effetamazuren', '_blank')} ultimo />
       </Seccion>
 
-      {/* SESIÓN */}
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Sesión">
-        <Fila
-          icon={LogOut} label="Cerrar sesión" peligro
-          onClick={() => setModal('cerrar_sesion')}
-          ultimo
-        />
+        <Fila icon={LogOut} label="Cerrar sesión" peligro onClick={() => setModal('cerrar_sesion')} ultimo />
       </Seccion>
 
       <div style={{ height: 20 }} />
 
-      {/* MODALES */}
       {modal === 'cerrar_sesion' && (
-        <Modal
-          titulo="¿Cerrar sesión?"
-          mensaje="Se cerrará tu sesión como líder. Tendrás que volver a iniciar sesión para acceder al dashboard."
-          confirmLabel="Cerrar sesión"
-          peligro
-          onConfirm={cerrarSesion}
-          onCancel={() => setModal(null)}
-        />
+        <Modal titulo="¿Cerrar sesión?" mensaje="Se cerrará tu sesión como líder. Tendrás que volver a iniciar sesión para acceder al dashboard." confirmLabel="Cerrar sesión" peligro onConfirm={cerrarSesion} onCancel={() => setModal(null)} />
       )}
       {modal === 'sync' && (
-        <Modal
-          titulo="Sincronizar datos"
-          mensaje="Esto forzará una actualización de los datos desde Supabase. Úsalo si ves información desactualizada en el dashboard."
-          confirmLabel="Sincronizar ahora"
-          onConfirm={sincronizarDatos}
-          onCancel={() => setModal(null)}
-        />
+        <Modal titulo="Sincronizar datos" mensaje="Esto forzará una actualización de los datos desde Supabase. Úsalo si ves información desactualizada en el dashboard." confirmLabel="Sincronizar ahora" onConfirm={sincronizarDatos} onCancel={() => setModal(null)} />
       )}
 
-      {/* TOAST */}
       {toast && (
         <div style={{
           position: 'fixed', bottom: 90, left: 20, right: 20, zIndex: 300,
           background: toast.tipo === 'ok' ? '#0f1787' : '#dc2626',
           color: '#fff', borderRadius: 14, padding: '14px 18px',
           display: 'flex', alignItems: 'center', gap: 10,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-          animation: 'fadeUp 0.25s ease',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.15)', animation: 'fadeUp 0.25s ease',
         }}>
-          {toast.tipo === 'ok'
-            ? <Check size={16} color="#fff" />
-            : <AlertTriangle size={16} color="#fff" />}
+          {toast.tipo === 'ok' ? <Check size={16} color="#fff" /> : <AlertTriangle size={16} color="#fff" />}
           <span style={{ fontSize: 14, fontWeight: 500 }}>{toast.msg}</span>
         </div>
       )}
 
       <style>{`@keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }`}</style>
-
       <BottomNav />
     </div>
   )
