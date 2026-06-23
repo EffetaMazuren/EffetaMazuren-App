@@ -17,11 +17,6 @@ interface Seguimiento {
   updated_at: string;
 }
 
-interface Servidor {
-  id: string;
-  nombre: string;
-}
-
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
 const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_PALANCAS_URL || '';
 
@@ -36,6 +31,18 @@ const SERVIDORES_PALANCAS_IDS = [
   '1b4de35a-1165-4364-a0f5-31d5938dabbd',
   '56bf1b6c-965c-4b55-937b-d6df8bb05cd8',
 ];
+
+const APODOS: Record<string, string> = {
+  '87a34a20-e973-4b76-92a0-4817f01e6778': 'Ale',
+  'fc5f960c-70cc-4c85-be11-14484abb70ff': 'David',
+  'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d': 'Andrés',
+  'b201c88d-d651-4889-abac-c74ac8a2ffda': 'Pau Rodriguez',
+  '2852cef9-b8df-4ac1-9f21-e0c6226c63a2': 'Santi',
+  'c3ece132-f88e-4432-b6dd-5c6b879a1860': 'Pau Agudelo',
+  'f22ec19a-079b-46cb-bbac-3f75804d008a': 'Mapis',
+  '1b4de35a-1165-4364-a0f5-31d5938dabbd': 'Lu Cuellar',
+  '56bf1b6c-965c-4b55-937b-d6df8bb05cd8': 'Diego',
+};
 
 export default function DashboardPalancasPage() {
   const [seguimiento, setSeguimiento] = useState<Seguimiento[]>([]);
@@ -59,7 +66,9 @@ export default function DashboardPalancasPage() {
       .order('nombre');
 
     const mapaServidores: Record<string, string> = {};
-    (srvData || []).forEach((s: Servidor) => { mapaServidores[s.id] = s.nombre; });
+    (srvData || []).forEach((s: { id: string; nombre: string }) => {
+      mapaServidores[s.id] = APODOS[s.id] || s.nombre;
+    });
     setServidores(mapaServidores);
 
     const { data } = await supabase
@@ -75,8 +84,6 @@ export default function DashboardPalancasPage() {
   async function reasignarServidor(seguimientoId: string, nuevoServidorId: string, caminanteNombre: string) {
     setGuardandoReasignacion(seguimientoId);
 
-    const nuevoNombre = servidores[nuevoServidorId] || '';
-
     await supabase
       .from('palancas_seguimiento')
       .update({ servidor_inscripcion_id: nuevoServidorId })
@@ -91,7 +98,8 @@ export default function DashboardPalancasPage() {
             body: JSON.stringify({
               type: 'sync_palanca',
               caminante_nombre: caminanteNombre,
-              servidor_nombre: nuevoNombre,
+              servidor_nombre: APODOS[nuevoServidorId] || '',
+              servidor_inscripcion_id: nuevoServidorId,
               es_sorpresa: actual.es_sorpresa,
               llamo: actual.llamo,
               envio_cartas: actual.envio_cartas,
@@ -112,7 +120,6 @@ export default function DashboardPalancasPage() {
     setGuardandoReasignacion(null);
   }
 
-  // Estadísticas
   const total = seguimiento.length;
   const llamaron = seguimiento.filter(s => s.llamo).length;
   const enviaron_cartas = seguimiento.filter(s => s.envio_cartas).length;
@@ -120,7 +127,6 @@ export default function DashboardPalancasPage() {
   const sorpresas = seguimiento.filter(s => s.es_sorpresa).length;
   const completos = seguimiento.filter(s => s.llamo && s.envio_cartas && s.envio_fotos).length;
 
-  // Filtros
   const servidoresUnicos = [...new Set(seguimiento.map(s => s.servidor_inscripcion_id))];
 
   const filtrados = seguimiento.filter(s => {
@@ -141,12 +147,10 @@ export default function DashboardPalancasPage() {
 
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 40 }}>
-      {/* Header */}
       <div style={{ background: '#0f1787', padding: '28px 24px 24px' }}>
         <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, margin: '0 0 4px', letterSpacing: 1 }}>DASHBOARD LÍDERES</p>
         <h1 style={{ color: '#fff', fontSize: 22, fontWeight: 700, margin: '0 0 16px', fontFamily: 'Georgia, serif', letterSpacing: 1 }}>Grupo Palancas</h1>
 
-        {/* Métricas */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           {[
             { label: 'Total', valor: total, color: 'rgba(255,255,255,0.15)' },
@@ -163,7 +167,6 @@ export default function DashboardPalancasPage() {
           ))}
         </div>
 
-        {/* Barra de progreso */}
         <div style={{ marginTop: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, margin: 0 }}>Progreso general</p>
@@ -175,9 +178,7 @@ export default function DashboardPalancasPage() {
         </div>
       </div>
 
-      {/* Filtros */}
       <div style={{ padding: '16px 16px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {/* Por servidor */}
         <div style={{ overflowX: 'auto', paddingBottom: 4 }}>
           <div style={{ display: 'flex', gap: 6, width: 'max-content' }}>
             <button onClick={() => setFiltroServidor('todos')} style={{
@@ -193,13 +194,12 @@ export default function DashboardPalancasPage() {
                 color: filtroServidor === id ? '#fff' : '#374151',
                 borderColor: filtroServidor === id ? '#0f1787' : '#e8eaf0',
               }}>
-                {(servidores[id] || '').split(' ')[0]}
+                {APODOS[id] || id}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Por estado */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {[
             { val: 'todos', label: 'Todos' },
@@ -218,23 +218,18 @@ export default function DashboardPalancasPage() {
         </div>
       </div>
 
-      {/* Contador filtrado */}
       <div style={{ padding: '10px 16px 0' }}>
         <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>Mostrando {filtrados.length} de {total} caminantes</p>
       </div>
 
-      {/* Lista */}
       <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filtrados.map(s => {
           const completo = s.llamo && s.envio_cartas && s.envio_fotos;
           const abierto = expandido === s.id;
-          const nombreServidor = servidores[s.servidor_inscripcion_id] || '—';
+          const apodoServidor = APODOS[s.servidor_inscripcion_id] || servidores[s.servidor_inscripcion_id] || '—';
 
           return (
-            <div key={s.id} style={{
-              background: '#fff', borderRadius: 14, border: `0.5px solid ${completo ? '#bbf7d0' : '#e8eaf0'}`, overflow: 'hidden',
-            }}>
-              {/* Cabecera */}
+            <div key={s.id} style={{ background: '#fff', borderRadius: 14, border: `0.5px solid ${completo ? '#bbf7d0' : '#e8eaf0'}`, overflow: 'hidden' }}>
               <button onClick={() => setExpandido(abierto ? null : s.id)} style={{
                 width: '100%', padding: '12px 16px', display: 'flex', alignItems: 'center',
                 justifyContent: 'space-between', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
@@ -247,7 +242,7 @@ export default function DashboardPalancasPage() {
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, color: '#6b7280' }}>{nombreServidor.split(' ').slice(0, 2).join(' ')}</span>
+                    <span style={{ fontSize: 11, color: '#6b7280' }}>{apodoServidor}</span>
                     <span style={{ color: '#d1d5db', fontSize: 10 }}>·</span>
                     {[
                       { label: 'Llamó', val: s.llamo },
@@ -267,10 +262,8 @@ export default function DashboardPalancasPage() {
                 </svg>
               </button>
 
-              {/* Detalle expandido */}
               {abierto && (
                 <div style={{ borderTop: '0.5px solid #f3f4f6', padding: '14px 16px' }}>
-                  {/* Reasignar servidor */}
                   <div style={{ marginBottom: 14 }}>
                     <p style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: 1, margin: '0 0 8px', textTransform: 'uppercase' }}>Servidor asignado</p>
                     {reasignando === s.id ? (
@@ -282,14 +275,14 @@ export default function DashboardPalancasPage() {
                           style={{ padding: '8px 10px', borderRadius: 8, border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827', background: '#f9fafb' }}
                         >
                           {SERVIDORES_PALANCAS_IDS.filter(id => id !== '56bf1b6c-965c-4b55-937b-d6df8bb05cd8').map(id => (
-                            <option key={id} value={id}>{servidores[id] || id}</option>
+                            <option key={id} value={id}>{APODOS[id] || id}</option>
                           ))}
                         </select>
                         <button onClick={() => setReasignando(null)} style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>Cancelar</button>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <p style={{ fontSize: 14, color: '#111827', margin: 0, fontWeight: 500 }}>{nombreServidor}</p>
+                        <p style={{ fontSize: 14, color: '#111827', margin: 0, fontWeight: 500 }}>{apodoServidor}</p>
                         <button onClick={() => setReasignando(s.id)} style={{
                           fontSize: 12, color: '#0f1787', background: '#eef0ff', border: '0.5px solid #c7d0ff',
                           padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontWeight: 500,
@@ -298,7 +291,6 @@ export default function DashboardPalancasPage() {
                     )}
                   </div>
 
-                  {/* Estado detallado */}
                   <p style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: 1, margin: '0 0 8px', textTransform: 'uppercase' }}>Estado</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
                     {[
@@ -324,7 +316,6 @@ export default function DashboardPalancasPage() {
                     ))}
                   </div>
 
-                  {/* Notas */}
                   {(s.donde_palancas || s.notas || s.conoce_alguien) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {[
