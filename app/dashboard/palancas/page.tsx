@@ -48,8 +48,10 @@ export default function DashboardPalancasPage() {
   const [seguimiento, setSeguimiento] = useState<Seguimiento[]>([]);
   const [servidores, setServidores] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [accesoDenegado, setAccesoDenegado] = useState(false);
   const [filtroServidor, setFiltroServidor] = useState('todos');
   const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [busqueda, setBusqueda] = useState('');
   const [reasignando, setReasignando] = useState<string | null>(null);
   const [guardandoReasignacion, setGuardandoReasignacion] = useState<string | null>(null);
   const [expandido, setExpandido] = useState<string | null>(null);
@@ -58,6 +60,32 @@ export default function DashboardPalancasPage() {
 
   async function cargarDatos() {
     setLoading(true);
+
+    // Verificar acceso: rol=lider O es_lider_palancas=true
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setAccesoDenegado(true); setLoading(false); return; }
+
+    const { data: usuario } = await supabase
+      .from('usuarios')
+      .select('rol')
+      .eq('id', user.id)
+      .single();
+
+    if (usuario?.rol !== 'lider') {
+      // Verificar si es servidor con es_lider_palancas
+      const { data: srv } = await supabase
+        .from('servidores_inscripcion')
+        .select('es_lider_palancas')
+        .eq('usuario_id', user.id)
+        .eq('retiro_id', RETIRO_ID)
+        .single();
+
+      if (!srv?.es_lider_palancas) {
+        setAccesoDenegado(true);
+        setLoading(false);
+        return;
+      }
+    }
 
     const { data: srvData } = await supabase
       .from('servidores_inscripcion')
@@ -136,12 +164,21 @@ export default function DashboardPalancasPage() {
       || (filtroEstado === 'pendientes' && (!s.llamo || !s.envio_cartas || !s.envio_fotos))
       || (filtroEstado === 'sorpresas' && s.es_sorpresa)
       || (filtroEstado === 'sin_llamar' && !s.llamo);
-    return pasaServidor && pasaEstado;
+    const pasaBusqueda = busqueda === '' ||
+      s.caminante_nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+      (APODOS[s.servidor_inscripcion_id] || '').toLowerCase().includes(busqueda.toLowerCase());
+    return pasaServidor && pasaEstado && pasaBusqueda;
   });
 
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
       <p style={{ color: '#6b7280', fontSize: 14 }}>Cargando...</p>
+    </div>
+  );
+
+  if (accesoDenegado) return (
+    <div style={{ padding: 24 }}>
+      <p style={{ color: '#dc2626', fontSize: 14 }}>No tienes acceso a esta sección.</p>
     </div>
   );
 
@@ -179,6 +216,27 @@ export default function DashboardPalancasPage() {
       </div>
 
       <div style={{ padding: '16px 16px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Barra de búsqueda */}
+        <div style={{ position: 'relative' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar caminante o servidor..."
+            style={{
+              width: '100%', padding: '10px 12px 10px 36px', borderRadius: 10,
+              border: '0.5px solid #e8eaf0', fontSize: 13, color: '#111827',
+              background: '#fff', boxSizing: 'border-box', outline: 'none',
+            }}
+          />
+          {busqueda && (
+            <button onClick={() => setBusqueda('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>×</button>
+          )}
+        </div>
+
+        {/* Filtro por servidor */}
         <div style={{ overflowX: 'auto', paddingBottom: 4 }}>
           <div style={{ display: 'flex', gap: 6, width: 'max-content' }}>
             <button onClick={() => setFiltroServidor('todos')} style={{
@@ -193,13 +251,12 @@ export default function DashboardPalancasPage() {
                 background: filtroServidor === id ? '#0f1787' : '#fff',
                 color: filtroServidor === id ? '#fff' : '#374151',
                 borderColor: filtroServidor === id ? '#0f1787' : '#e8eaf0',
-              }}>
-                {APODOS[id] || id}
-              </button>
+              }}>{APODOS[id] || id}</button>
             ))}
           </div>
         </div>
 
+        {/* Filtro por estado */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {[
             { val: 'todos', label: 'Todos' },
@@ -304,11 +361,7 @@ export default function DashboardPalancasPage() {
                         background: item.val ? '#f0fdf4' : '#f9fafb',
                         border: `0.5px solid ${item.val ? '#bbf7d0' : '#e5e7eb'}`,
                       }}>
-                        <div style={{
-                          width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                          background: item.val ? '#16a34a' : '#e5e7eb',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
+                        <div style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, background: item.val ? '#16a34a' : '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {item.val && <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><polyline points="2 6 5 9 10 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                         </div>
                         <span style={{ fontSize: 11, color: item.val ? '#15803d' : '#9ca3af', fontWeight: item.val ? 500 : 400 }}>{item.label}</span>
