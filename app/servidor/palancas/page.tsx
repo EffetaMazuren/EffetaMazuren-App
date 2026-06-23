@@ -335,8 +335,29 @@ export default function PalancasServidorPage() {
                     ))}
                   </div>
 
+{/* Dónde dejaron las palancas — selector */}
+                  <div style={{ marginBottom: 10 }}>
+                    <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 4px' }}>¿Dónde dejaron las palancas?</p>
+                    <select
+                      value={c.donde_palancas || ''}
+                      onChange={e => actualizarCampo(c.id, 'donde_palancas', e.target.value)}
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid #e5e7eb',
+                        fontSize: 13, color: c.donde_palancas ? '#111827' : '#9ca3af',
+                        background: '#f9fafb', boxSizing: 'border-box', outline: 'none',
+                      }}
+                    >
+                      <option value="">Seleccionar...</option>
+                      <option value="CASA DANI CUELLAR">Casa Dani Cuéllar</option>
+                      <option value="CASA ANTO RIVERA">Casa Anto Rivera</option>
+                      <option value="CASA ANDRES MUÑOZ">Casa Andrés Muñoz</option>
+                      <option value="CASA SANTI CARDOZO">Casa Santi Cardozo</option>
+                      <option value="Correo">Correo</option>
+                    </select>
+                  </div>
+
+                  {/* Notas y conoce alguien — texto libre */}
                   {[
-                    { campo: 'donde_palancas' as const, label: '¿Dónde dejaron las palancas?', placeholder: 'Ej: Casa de la familia, correo...' },
                     { campo: 'notas' as const, label: 'Algo importante que debamos saber', placeholder: 'Notas relevantes...' },
                     { campo: 'conoce_alguien' as const, label: '¿Conoce a alguien del retiro?', placeholder: '¿A quién?' },
                   ].map(item => (
