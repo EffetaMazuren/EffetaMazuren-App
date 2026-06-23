@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
+const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+
 export default function ServidorLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const [nombre, setNombre] = useState('')
   const [loading, setLoading] = useState(true)
+  const [esPalancas, setEsPalancas] = useState(false)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -38,7 +41,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
         if (inscripcionId) {
           const { data: srv } = await supabase
             .from('servidores_inscripcion')
-            .select('id, usuario_id, nombre')
+            .select('id, usuario_id, nombre, grupo')
             .eq('id', inscripcionId)
             .single()
 
@@ -51,15 +54,17 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
           } else if (srv?.nombre) {
             setNombre(srv.nombre)
           }
+          if (srv?.grupo === 'palancas') setEsPalancas(true)
         } else {
           const { data: srv } = await supabase
             .from('servidores_inscripcion')
-            .select('nombre')
+            .select('nombre, grupo')
             .eq('usuario_id', userId)
-            .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
+            .eq('retiro_id', RETIRO_ID)
             .single()
 
           if (srv?.nombre) setNombre(srv.nombre)
+          if (srv?.grupo === 'palancas') setEsPalancas(true)
         }
       }
 
@@ -85,7 +90,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
     )
   }
 
-  const navItems = [
+  const navItemsBase = [
     {
       href: '/servidor',
       label: 'Inicio',
@@ -142,6 +147,21 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
     },
   ]
 
+  const tabPalancas = {
+    href: '/servidor/palancas',
+    label: 'Palancas',
+    icon: (active: boolean) => (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? '#0f1787' : '#9ca3af'} strokeWidth={active ? 2 : 1.6} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+    ),
+  }
+
+  const navItems = esPalancas ? [...navItemsBase, tabPalancas] : navItemsBase
+
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>
 
@@ -192,7 +212,8 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
             >
               {item.icon(active)}
               <span style={{
-                fontSize: 10, fontWeight: active ? 600 : 400,
+                fontSize: esPalancas ? 9 : 10,
+                fontWeight: active ? 600 : 400,
                 color: active ? '#0f1787' : '#9ca3af',
                 letterSpacing: 0.2
               }}>
