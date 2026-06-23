@@ -28,7 +28,6 @@ interface CaminanteConContactos extends Caminante {
 }
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_QYfs6yiwRH1aQRt2smJoQIgRQ-bzFzWK3fgDFrbD6ApiaUygGIEYJUVcxp7Mf00oOw/exec';
 
 const PALANCAS_NOMBRE_A_ID: Record<string, string> = {
   'alejandra arcila cantor':          '87a34a20-e973-4b76-92a0-4817f01e6778',
@@ -164,7 +163,7 @@ export default function PalancasServidorPage() {
     if (!caminante) return;
     setGuardando(caminanteId);
 
-    const { error: dbError } = await supabase
+    await supabase
       .from('palancas_seguimiento')
       .update({
         es_sorpresa: caminante.es_sorpresa,
@@ -178,26 +177,25 @@ export default function PalancasServidorPage() {
       })
       .eq('id', caminante.id);
 
-    if (!dbError && APPS_SCRIPT_URL) {
-      try {
-        await fetch(APPS_SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'sync_palanca',
-            caminante_nombre: caminante.caminante_nombre,
-            servidor_nombre: servidorNombre,
-            servidor_inscripcion_id: servidorId,
-            es_sorpresa: caminante.es_sorpresa,
-            llamo: caminante.llamo,
-            envio_cartas: caminante.envio_cartas,
-            envio_fotos: caminante.envio_fotos,
-            donde_palancas: caminante.donde_palancas || '',
-            notas: caminante.notas || '',
-            conoce_alguien: caminante.conoce_alguien || '',
-          }),
-        });
-      } catch (_) {}
-    }
+    try {
+      await fetch('/api/sync-palanca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'sync_palanca',
+          caminante_nombre: caminante.caminante_nombre,
+          servidor_nombre: servidorNombre,
+          servidor_inscripcion_id: servidorId,
+          es_sorpresa: caminante.es_sorpresa,
+          llamo: caminante.llamo,
+          envio_cartas: caminante.envio_cartas,
+          envio_fotos: caminante.envio_fotos,
+          donde_palancas: caminante.donde_palancas || '',
+          notas: caminante.notas || '',
+          conoce_alguien: caminante.conoce_alguien || '',
+        }),
+      });
+    } catch (_) {}
 
     setGuardando(null);
   }
