@@ -30,7 +30,6 @@ interface CaminanteConContactos extends Caminante {
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_QYfs6yiwRH1aQRt2smJoQIgRQ-bzFzWK3fgDFrbD6ApiaUygGIEYJUVcxp7Mf00oOw/exec';
 
-// Mapa nombre → id para servidores de palancas sin cuenta vinculada
 const PALANCAS_NOMBRE_A_ID: Record<string, string> = {
   'alejandra arcila cantor':          '87a34a20-e973-4b76-92a0-4817f01e6778',
   'david martinez rincon':            'fc5f960c-70cc-4c85-be11-14484abb70ff',
@@ -70,7 +69,6 @@ export default function PalancasServidorPage() {
 
     let srv: { id: string; nombre: string; grupo: string | null } | null = null;
 
-    // Intento 1: buscar por usuario_id
     const { data: srvPorId } = await supabase
       .from('servidores_inscripcion')
       .select('id, nombre, grupo')
@@ -81,7 +79,6 @@ export default function PalancasServidorPage() {
     if (srvPorId) {
       srv = srvPorId;
     } else {
-      // Intento 2: buscar por inscripcion_id en metadata
       const inscripcionId = user.user_metadata?.servidor_inscripcion_id;
       if (inscripcionId) {
         const { data: srvPorMeta } = await supabase
@@ -95,16 +92,13 @@ export default function PalancasServidorPage() {
 
     if (!srv) { setError('No tienes acceso a esta sección.'); setLoading(false); return; }
 
-    // Verificar grupo palancas — también permite palancas_lider (Diego)
     if (srv.grupo !== 'palancas' && srv.grupo !== 'palancas_lider') {
-      // Intento 3: buscar por nombre en el mapa hardcodeado
       const srvIdPorNombre = PALANCAS_NOMBRE_A_ID[norm(srv.nombre)];
       if (!srvIdPorNombre) {
         setError('No tienes acceso a esta sección.');
         setLoading(false);
         return;
       }
-      // Actualizar el grupo en BD para que no pase esto la próxima vez
       await supabase
         .from('servidores_inscripcion')
         .update({ grupo: 'palancas', usuario_id: user.id })
@@ -114,7 +108,6 @@ export default function PalancasServidorPage() {
       srv = { ...srv, id: srvIdPorNombre, grupo: 'palancas' };
     }
 
-    // Si es palancas_lider (Diego) no tiene caminantes asignados
     if (srv.grupo === 'palancas_lider') {
       setError('Eres líder observador. Accede al dashboard de líderes para ver el seguimiento completo.');
       setLoading(false);
@@ -167,11 +160,9 @@ export default function PalancasServidorPage() {
   }
 
   async function guardarCambios(caminanteId: string) {
-  const caminante = caminantes.find(c => c.id === caminanteId);
-  if (!caminante) return;
-  setGuardando(caminanteId);
-  // ... resto igual
-  }
+    const caminante = caminantes.find(c => c.id === caminanteId);
+    if (!caminante) return;
+    setGuardando(caminanteId);
 
     const { error: dbError } = await supabase
       .from('palancas_seguimiento')
@@ -339,7 +330,6 @@ export default function PalancasServidorPage() {
                     ))}
                   </div>
 
-{/* Dónde dejaron las palancas — selector */}
                   <div style={{ marginBottom: 10 }}>
                     <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 4px' }}>¿Dónde dejaron las palancas?</p>
                     <select
@@ -360,7 +350,6 @@ export default function PalancasServidorPage() {
                     </select>
                   </div>
 
-                  {/* Notas y conoce alguien — texto libre */}
                   {[
                     { campo: 'notas' as const, label: 'Algo importante que debamos saber', placeholder: 'Notas relevantes...' },
                     { campo: 'conoce_alguien' as const, label: '¿Conoce a alguien del retiro?', placeholder: '¿A quién?' },
