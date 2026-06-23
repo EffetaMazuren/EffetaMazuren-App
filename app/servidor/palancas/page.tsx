@@ -160,10 +160,11 @@ export default function PalancasServidorPage() {
 
   async function guardarCambios(caminanteId: string) {
     const caminante = caminantes.find(c => c.id === caminanteId);
-    if (!caminante) return;
+    if (!caminante) { console.log('NO SE ENCONTRÓ CAMINANTE'); return; }
     setGuardando(caminanteId);
+    console.log('Guardando:', caminante.caminante_nombre, caminante.id);
 
-    await supabase
+    const { error: dbError } = await supabase
       .from('palancas_seguimiento')
       .update({
         es_sorpresa: caminante.es_sorpresa,
@@ -177,8 +178,11 @@ export default function PalancasServidorPage() {
       })
       .eq('id', caminante.id);
 
+    console.log('DB error:', dbError);
+    console.log('Llamando API sync...');
+
     try {
-      await fetch('/api/sync-palanca', {
+      const res = await fetch('/api/sync-palanca', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -195,7 +199,10 @@ export default function PalancasServidorPage() {
           conoce_alguien: caminante.conoce_alguien || '',
         }),
       });
-    } catch (_) {}
+      console.log('API sync status:', res.status);
+    } catch (e) {
+      console.error('Error sync:', e);
+    }
 
     setGuardando(null);
   }
