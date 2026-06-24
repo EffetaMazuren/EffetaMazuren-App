@@ -387,10 +387,25 @@ export default function RetiroPage() {
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                         {cam.edad ? `${cam.edad} años` : ''}
-                        {cam.edad && !cam.es_sorpresa && cam.celular ? ' · ' : ''}
-                        {!cam.es_sorpresa && cam.celular ? cam.celular : ''}
+                        {!cam.es_sorpresa && cam.celular && (
+                          <>
+                            {cam.edad ? <span> · </span> : null}
+                            <a href={`tel:${cam.celular}`} style={{ color: '#0f1787', fontWeight: 600, textDecoration: 'none', fontSize: 11 }}>
+                              {cam.celular}
+                            </a>
+                            <button
+                              onClick={(ev) => { ev.stopPropagation(); navigator.clipboard.writeText(cam.celular) }}
+                              title="Copiar número"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', display: 'flex', alignItems: 'center' }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                              </svg>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
