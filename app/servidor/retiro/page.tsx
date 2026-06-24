@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
@@ -83,17 +83,11 @@ function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
   return false
 }
 
-// Busca si el servidor es lider/colider en alguna mesa
 function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB; esLider: boolean } | null {
   for (const mesa of mesas) {
-    const candidatos = [mesa.lider, mesa.colider].filter(Boolean)
-    if (nombreEnLista(nombre, candidatos)) {
-      return { mesa, esLider: true }
-    }
-    // Adulto también puede verse como referente
-    if (nombreEnLista(nombre, [mesa.adulto])) {
-      return { mesa, esLider: false }
-    }
+    const lideres = [mesa.lider, mesa.colider].filter(Boolean)
+    if (nombreEnLista(nombre, lideres)) return { mesa, esLider: true }
+    if (nombreEnLista(nombre, [mesa.adulto])) return { mesa, esLider: false }
   }
   return null
 }
@@ -101,16 +95,45 @@ function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB
 export default function RetiroPage() {
   const [info, setInfo] = useState<ServidorInfo | null>(null)
   const [loading, setLoading] = useState(true)
+  const [nombreServidor, setNombreServidor] = useState('')
+  const [actualizado, setActualizado] = useState(false)
+
+  const cargarDatos = useCallback(async (nombre: string) => {
+    const [rolesRes, mesasRes] = await Promise.all([
+      supabase
+        .from('roles_retiro')
+        .select('rol, categoria, encargados')
+        .eq('retiro_id', RETIRO_ID)
+        .order('orden'),
+      supabase
+        .from('mesas')
+        .select('numero, adulto, lider, colider')
+        .eq('retiro_id', RETIRO_ID)
+        .order('numero'),
+    ])
+
+    const misRoles: RolRetiro[] = (rolesRes.data || []).filter(r =>
+      nombreEnLista(nombre, r.encargados || [])
+    )
+
+    const todasMesas: MesaDB[] = mesasRes.data ?? []
+    const mesaEncontrada = buscarMesaParaServidor(nombre, todasMesas)
+
+    setInfo({
+      roles: misRoles,
+      mesa: mesaEncontrada?.mesa,
+      esLiderDeMesa: mesaEncontrada?.esLider,
+    })
+  }, [])
 
   useEffect(() => {
-    const load = async () => {
+    const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { setLoading(false); return }
 
       const userId = session.user.id
       const inscripcionId = session.user.user_metadata?.servidor_inscripcion_id
 
-      // Obtener nombre del servidor
       let csvNombre = ''
       if (inscripcionId) {
         const { data: srv } = await supabase
@@ -131,37 +154,41 @@ export default function RetiroPage() {
 
       if (!csvNombre) { setLoading(false); return }
 
-      // Cargar roles y mesas en paralelo
-      const [rolesRes, mesasRes] = await Promise.all([
-        supabase
-          .from('roles_retiro')
-          .select('rol, categoria, encargados')
-          .eq('retiro_id', RETIRO_ID)
-          .order('orden'),
-        supabase
-          .from('mesas')
-          .select('numero, adulto, lider, colider')
-          .eq('retiro_id', RETIRO_ID)
-          .order('numero'),
-      ])
-
-      const misRoles: RolRetiro[] = (rolesRes.data || []).filter(r =>
-        nombreEnLista(csvNombre, r.encargados || [])
-      )
-
-      const todasMesas: MesaDB[] = mesasRes.data ?? []
-      const mesaEncontrada = buscarMesaParaServidor(csvNombre, todasMesas)
-
-      setInfo({
-        roles: misRoles,
-        mesa: mesaEncontrada?.mesa,
-        esLiderDeMesa: mesaEncontrada?.esLider,
-      })
-
+      setNombreServidor(csvNombre)
+      await cargarDatos(csvNombre)
       setLoading(false)
     }
-    load()
-  }, [])
+    init()
+  }, [cargarDatos])
+
+  // Realtime: escucha cambios en mesas y roles_retiro
+  useEffect(() => {
+    if (!nombreServidor) return
+
+    const channel = supabase
+      .channel('retiro-cambios')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` },
+        () => {
+          cargarDatos(nombreServidor)
+          setActualizado(true)
+          setTimeout(() => setActualizado(false), 3000)
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` },
+        () => {
+          cargarDatos(nombreServidor)
+          setActualizado(true)
+          setTimeout(() => setActualizado(false), 3000)
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [nombreServidor, cargarDatos])
 
   if (loading) {
     return (
@@ -184,6 +211,20 @@ export default function RetiroPage() {
         </h1>
         <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Retiro IX — Effetá Mazuren</p>
       </div>
+
+      {/* Banner de actualización en tiempo real */}
+      {actualizado && (
+        <div style={{
+          background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#16a34a',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Información actualizada
+        </div>
+      )}
 
       {/* ── MESA ── */}
       {info?.mesa && (
@@ -290,4 +331,3 @@ export default function RetiroPage() {
     </div>
   )
 }
- 
