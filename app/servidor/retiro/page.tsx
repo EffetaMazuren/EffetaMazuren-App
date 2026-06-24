@@ -181,7 +181,7 @@ export default function RetiroPage() {
             .select('id, nombre, celular, edad, es_sorpresa')
             .in('id', ids)
 
-          const camList: CaminanteMesa[] = camData ?? []
+          const camList = (camData ?? []) as (Omit<CaminanteMesa, 'asignacion_id' | 'contacto_emergencia'> & { asignacion_id?: string; contacto_emergencia?: ContactoEmergencia | null })[]
 
           // Para los sorpresa, cargar contacto de emergencia
           const sorpresas = camList.filter(c => c.es_sorpresa)
