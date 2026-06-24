@@ -88,12 +88,18 @@ function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
   const tokensServidor = normServidor.split(' ').filter(t => t.length > 2)
   for (const enc of encargados) {
     const normEnc = norm(enc)
+    // Match exacto
     if (normEnc === normServidor) return true
     const tokensEnc = normEnc.split(' ').filter(t => t.length > 2)
+    // Exigir al menos 3 tokens coincidentes para evitar falsos positivos con nombres comunes
     const coincidencias = tokensServidor.filter(t => tokensEnc.includes(t)).length
-    if (coincidencias >= 2) return true
-    if (tokensServidor.length > 0 && tokensEnc.length > 0) {
-      if (tokensEnc.includes(tokensServidor[0]) && tokensEnc.includes(tokensServidor[tokensServidor.length - 1])) return true
+    if (coincidencias >= 3) return true
+    // O: primer nombre + ambos apellidos (cuando el encargado tiene nombre completo)
+    if (tokensServidor.length >= 3 && tokensEnc.length >= 3) {
+      const primerNombre = tokensServidor[0]
+      const apellidos = tokensServidor.slice(1)
+      const apellidosMatch = apellidos.filter(a => tokensEnc.includes(a)).length
+      if (tokensEnc.includes(primerNombre) && apellidosMatch >= 2) return true
     }
   }
   return false
