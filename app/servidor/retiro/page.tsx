@@ -3,57 +3,25 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
+const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+
 interface RolRetiro {
   rol: string
   categoria: string
   encargados: string[]
 }
 
+interface MesaDB {
+  numero: number
+  adulto: string
+  lider: string
+  colider: string
+}
+
 interface ServidorInfo {
   roles: RolRetiro[]
-  mesa?: number
+  mesa?: MesaDB
   esLiderDeMesa?: boolean
-}
-
-const MESAS: Record<number, { adulto: string; lideres: string[] }> = {
-  1:  { adulto: 'Meliii',   lideres: ['Santiago Ruiz', 'Isabella Moncada'] },
-  2:  { adulto: 'Diego',    lideres: ['David Sarmiento', 'Laura Camacho'] },
-  3:  { adulto: 'Richy',    lideres: ['Juan Pablo León', 'Valery Cardona'] },
-  4:  { adulto: 'Vichita',  lideres: ['Paula Sofía Ortiz', 'Judith Neira'] },
-  5:  { adulto: 'Angelita', lideres: ['Natalia Cupitra', 'Eddy Carvajal'] },
-  6:  { adulto: 'Jorge',    lideres: ['Santiago Castañeda', 'Laura Ramírez'] },
-  7:  { adulto: 'Meli',     lideres: ['Mariana Serrano', 'Andres Noel'] },
-  8:  { adulto: 'Diego',    lideres: ['Natalia Linares', 'Daniel Villabón'] },
-  9:  { adulto: 'Rich',     lideres: ['Juan Pablo Cardona', 'Carolina Bucheli'] },
-  10: { adulto: 'Vichita',  lideres: ['Juan Pablo Bedoya', 'Maria Alejandra Sierra'] },
-}
-
-const MESA_POR_NOMBRE: Record<string, { mesa: number; esLider: boolean }> = {
-  'Isabella Moncada Cardozo':          { mesa: 1,  esLider: true },
-  'Laura Camacho':                     { mesa: 2,  esLider: true },
-  'Juan Pablo Leon Samper':            { mesa: 3,  esLider: true },
-  'Valery Cardona Muñoz':              { mesa: 3,  esLider: true },
-  'Paula Sofía Ortiz Mahecha':         { mesa: 4,  esLider: true },
-  'Judith Neira':                      { mesa: 4,  esLider: true },
-  'Natalia Isabel Cupitra Carmona':    { mesa: 5,  esLider: true },
-  'Eddy Carvajal':                     { mesa: 5,  esLider: true },
-  'Angela Rocio Chaparro Vargas':      { mesa: 5,  esLider: true },
-  'Angela Maria Picón Chaparro':       { mesa: 6,  esLider: true },
-  'Santiago Castañeda Carreño':        { mesa: 6,  esLider: true },
-  'Laura Ramírez':                     { mesa: 6,  esLider: true },
-  'Mariana Serrano Pérez':             { mesa: 7,  esLider: true },
-  'Andres David Noel Mulett':          { mesa: 7,  esLider: true },
-  'Natalia Linares Sandoval':          { mesa: 8,  esLider: true },
-  'Daniel Steeven Chaparro Villabón':  { mesa: 8,  esLider: true },
-  'Carolina Bucheli':                  { mesa: 9,  esLider: true },
-  'Juan Pablo Cardona Muñoz':          { mesa: 9,  esLider: true },
-  'Maria Alejandra Sierra Cabezas':    { mesa: 9,  esLider: true },
-  'Juan Pablo Bedoya':                 { mesa: 10, esLider: true },
-  'Santiago Ruiz Cardozo':             { mesa: 1,  esLider: true },
-  'David Fernando Sarmiento Grisales': { mesa: 2,  esLider: true },
-  'Ricardo Torres Sabogal':            { mesa: 3,  esLider: false },
-  'Jorge Picón Gaitán':                { mesa: 6,  esLider: false },
-  'Diego Urrego Fonseca':              { mesa: 2,  esLider: true },
 }
 
 const COLOR_ROL: Record<string, { bg: string; dot: string; text: string }> = {
@@ -102,16 +70,12 @@ function norm(s: string) {
 function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
   const normServidor = norm(nombreServidor)
   const tokensServidor = normServidor.split(' ').filter(t => t.length > 2)
-
   for (const enc of encargados) {
     const normEnc = norm(enc)
-    // Match exacto normalizado
     if (normEnc === normServidor) return true
-    // Match por tokens (mínimo 2 tokens coinciden)
     const tokensEnc = normEnc.split(' ').filter(t => t.length > 2)
     const coincidencias = tokensServidor.filter(t => tokensEnc.includes(t)).length
     if (coincidencias >= 2) return true
-    // Match apellido + primer nombre
     if (tokensServidor.length > 0 && tokensEnc.length > 0) {
       if (tokensEnc.includes(tokensServidor[0]) && tokensEnc.includes(tokensServidor[tokensServidor.length - 1])) return true
     }
@@ -119,10 +83,24 @@ function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
   return false
 }
 
+// Busca si el servidor es lider/colider en alguna mesa
+function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB; esLider: boolean } | null {
+  for (const mesa of mesas) {
+    const candidatos = [mesa.lider, mesa.colider].filter(Boolean)
+    if (nombreEnLista(nombre, candidatos)) {
+      return { mesa, esLider: true }
+    }
+    // Adulto también puede verse como referente
+    if (nombreEnLista(nombre, [mesa.adulto])) {
+      return { mesa, esLider: false }
+    }
+  }
+  return null
+}
+
 export default function RetiroPage() {
   const [info, setInfo] = useState<ServidorInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [nombreServidor, setNombreServidor] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -132,6 +110,7 @@ export default function RetiroPage() {
       const userId = session.user.id
       const inscripcionId = session.user.user_metadata?.servidor_inscripcion_id
 
+      // Obtener nombre del servidor
       let csvNombre = ''
       if (inscripcionId) {
         const { data: srv } = await supabase
@@ -145,32 +124,38 @@ export default function RetiroPage() {
           .from('servidores_inscripcion')
           .select('nombre')
           .eq('usuario_id', userId)
-          .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
+          .eq('retiro_id', RETIRO_ID)
           .single()
         csvNombre = srv?.nombre ?? ''
       }
 
       if (!csvNombre) { setLoading(false); return }
-      setNombreServidor(csvNombre)
 
-      // Cargar roles desde Supabase
-      const { data: rolesData } = await supabase
-        .from('roles_retiro')
-        .select('rol, categoria, encargados')
-        .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
-        .order('orden')
+      // Cargar roles y mesas en paralelo
+      const [rolesRes, mesasRes] = await Promise.all([
+        supabase
+          .from('roles_retiro')
+          .select('rol, categoria, encargados')
+          .eq('retiro_id', RETIRO_ID)
+          .order('orden'),
+        supabase
+          .from('mesas')
+          .select('numero, adulto, lider, colider')
+          .eq('retiro_id', RETIRO_ID)
+          .order('numero'),
+      ])
 
-      const misRoles: RolRetiro[] = (rolesData || []).filter(r =>
+      const misRoles: RolRetiro[] = (rolesRes.data || []).filter(r =>
         nombreEnLista(csvNombre, r.encargados || [])
       )
 
-      // Mesa desde hardcode
-      const mesaInfo = MESA_POR_NOMBRE[csvNombre]
+      const todasMesas: MesaDB[] = mesasRes.data ?? []
+      const mesaEncontrada = buscarMesaParaServidor(csvNombre, todasMesas)
 
       setInfo({
         roles: misRoles,
-        mesa: mesaInfo?.mesa,
-        esLiderDeMesa: mesaInfo?.esLider,
+        mesa: mesaEncontrada?.mesa,
+        esLiderDeMesa: mesaEncontrada?.esLider,
       })
 
       setLoading(false)
@@ -190,8 +175,6 @@ export default function RetiroPage() {
     )
   }
 
-  const mesaData = info?.mesa ? MESAS[info.mesa] : null
-
   return (
     <div style={{ padding: '24px 16px 40px', maxWidth: 480, margin: '0 auto' }}>
 
@@ -202,38 +185,34 @@ export default function RetiroPage() {
         <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Retiro IX — Effetá Mazuren</p>
       </div>
 
-      {(!info || info.roles.length === 0) && (
-        <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '32px 24px', textAlign: 'center' }}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 14px', display: 'block' }}>
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
-          <p style={{ color: '#6b7280', fontSize: 14, margin: 0, lineHeight: 1.7 }}>
-            Aún no tienes roles asignados.<br />Pronto los líderes los configurarán.
-          </p>
-        </div>
-      )}
-
-      {info?.mesa && mesaData && (
+      {/* ── MESA ── */}
+      {info?.mesa && (
         <div style={{ background: 'linear-gradient(135deg, #0f1787 0%, #1e2fa8 100%)', borderRadius: 16, padding: '20px 22px', marginBottom: 14, color: 'white' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
             <div style={{ width: 52, height: 52, flexShrink: 0, background: 'rgba(255,255,255,0.15)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontSize: 24, fontWeight: 800, fontFamily: 'Georgia, serif' }}>{info.mesa}</span>
+              <span style={{ fontSize: 24, fontWeight: 800, fontFamily: 'Georgia, serif' }}>{info.mesa.numero}</span>
             </div>
             <div>
               <p style={{ margin: '0 0 2px', fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: 1 }}>
-                {info.esLiderDeMesa ? 'Líder de Mesa' : 'Mi Mesa'}
+                {info.esLiderDeMesa ? 'Líder de Mesa' : 'Adulto Acompañante'}
               </p>
-              <p style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>Mesa {info.mesa}</p>
+              <p style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>Mesa {info.mesa.numero}</p>
             </div>
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <p style={{ margin: '0 0 6px', fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: 0.8 }}>Adulto acompañante</p>
-            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 600 }}>{mesaData.adulto}</div>
-          </div>
+
+          {info.mesa.adulto && (
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ margin: '0 0 6px', fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: 0.8 }}>Adulto acompañante</p>
+              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 600 }}>
+                {info.mesa.adulto}
+              </div>
+            </div>
+          )}
+
           <div>
             <p style={{ margin: '0 0 8px', fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: 0.8 }}>Líderes de Mesa</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {mesaData.lideres.map((l, i) => (
+              {[info.mesa.lider, info.mesa.colider].filter(Boolean).map((l, i) => (
                 <div key={i} style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -246,6 +225,7 @@ export default function RetiroPage() {
         </div>
       )}
 
+      {/* ── ROLES ── */}
       {info && info.roles.length > 0 && (
         <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '20px 22px', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -280,6 +260,19 @@ export default function RetiroPage() {
         </div>
       )}
 
+      {/* Sin roles ni mesa */}
+      {(!info || (info.roles.length === 0 && !info.mesa)) && (
+        <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '32px 24px', textAlign: 'center', marginBottom: 14 }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 14px', display: 'block' }}>
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <p style={{ color: '#6b7280', fontSize: 14, margin: 0, lineHeight: 1.7 }}>
+            Aún no tienes roles ni mesa asignados.<br />Pronto los líderes los configurarán.
+          </p>
+        </div>
+      )}
+
+      {/* Info general */}
       <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '18px 22px' }}>
         <p style={{ margin: '0 0 12px', fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 600 }}>Información del retiro</p>
         {[
