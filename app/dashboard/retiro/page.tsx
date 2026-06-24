@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 
-type Tab = 'minutominuto' | 'roles' | 'manual'
+type Tab = 'minutominuto' | 'roles' | 'mesas' | 'manual'
 type Dia = 'viernes' | 'sabado' | 'domingo'
 
 interface RolRetiro {
@@ -15,6 +15,14 @@ interface RolRetiro {
   rol: string
   encargados: string[]
   orden: number
+}
+
+interface Mesa {
+  id: string
+  numero: number
+  adulto: string
+  lider: string
+  colider: string
 }
 
 interface Actividad {
@@ -173,8 +181,17 @@ export default function RetiroDashboard() {
   const [guardando, setGuardando] = useState(false)
   const [exito, setExito] = useState('')
 
+  // Mesas
+  const [mesas, setMesas] = useState<Mesa[]>([])
+  const [loadingMesas, setLoadingMesas] = useState(false)
+  const [editandoMesaId, setEditandoMesaId] = useState<string | null>(null)
+  const [editMesa, setEditMesa] = useState({ adulto: '', lider: '', colider: '' })
+  const [guardandoMesa, setGuardandoMesa] = useState(false)
+  const [exitoMesa, setExitoMesa] = useState('')
+
   useEffect(() => {
     if (tab === 'roles') cargarRoles()
+    if (tab === 'mesas') cargarMesas()
   }, [tab])
 
   const cargarRoles = async () => {
@@ -186,6 +203,42 @@ export default function RetiroDashboard() {
       .order('orden')
     setRoles(data ?? [])
     setLoadingRoles(false)
+  }
+
+  const cargarMesas = async () => {
+    setLoadingMesas(true)
+    const { data } = await supabase
+      .from('mesas')
+      .select('id, numero, adulto, lider, colider')
+      .eq('retiro_id', RETIRO_ID)
+      .order('numero')
+    setMesas(data ?? [])
+    setLoadingMesas(false)
+  }
+
+  const iniciarEdicionMesa = (mesa: Mesa) => {
+    setEditandoMesaId(mesa.id)
+    setEditMesa({ adulto: mesa.adulto ?? '', lider: mesa.lider ?? '', colider: mesa.colider ?? '' })
+  }
+
+  const guardarMesa = async (id: string) => {
+    setGuardandoMesa(true)
+    const { error } = await supabase
+      .from('mesas')
+      .update({
+        adulto: editMesa.adulto.trim(),
+        lider: editMesa.lider.trim(),
+        colider: editMesa.colider.trim(),
+      })
+      .eq('id', id)
+
+    if (!error) {
+      setExitoMesa('Guardado')
+      await cargarMesas()
+      setEditandoMesaId(null)
+      setTimeout(() => setExitoMesa(''), 2500)
+    }
+    setGuardandoMesa(false)
   }
 
   const iniciarEdicion = (rol: RolRetiro) => {
@@ -215,19 +268,17 @@ export default function RetiroDashboard() {
     setGuardando(false)
   }
 
-  // Búsqueda: buscar servidor en todos los roles
   const busquedaLower = busqueda.toLowerCase()
   const resultadosBusqueda = busqueda.length > 1
     ? roles.filter(r => r.encargados.some(e => e.toLowerCase().includes(busquedaLower)))
     : []
 
-  // Agrupar roles por categoría
   const categorias = [...new Set(roles.map(r => r.categoria))]
-  const rolesFiltrados = busqueda.length > 1 ? resultadosBusqueda : roles
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'minutominuto', label: 'Minuto a Minuto' },
     { id: 'roles', label: 'Roles' },
+    { id: 'mesas', label: 'Mesas' },
     { id: 'manual', label: 'Manual' },
   ]
 
@@ -253,13 +304,13 @@ export default function RetiroDashboard() {
         >← Dashboard</button>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 24, background: '#f3f4f6', borderRadius: 10, padding: 4 }}>
+      {/* Tabs — scroll horizontal en móvil */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f3f4f6', borderRadius: 10, padding: 4, overflowX: 'auto' }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            flex: 1, padding: '8px 4px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            flex: 1, minWidth: 80, padding: '8px 4px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
             cursor: 'pointer', background: tab === t.id ? '#0f1787' : 'transparent',
-            color: tab === t.id ? 'white' : '#6b7280',
+            color: tab === t.id ? 'white' : '#6b7280', whiteSpace: 'nowrap',
           }}>{t.label}</button>
         ))}
       </div>
@@ -342,7 +393,6 @@ export default function RetiroDashboard() {
             </div>
           )}
 
-          {/* Barra de búsqueda */}
           <div style={{ position: 'relative', marginBottom: 20 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -365,7 +415,6 @@ export default function RetiroDashboard() {
             )}
           </div>
 
-          {/* Resultados de búsqueda */}
           {busqueda.length > 1 && (
             <div style={{ marginBottom: 20 }}>
               {resultadosBusqueda.length === 0 ? (
@@ -403,7 +452,6 @@ export default function RetiroDashboard() {
             </div>
           )}
 
-          {/* Lista completa por categoría */}
           {busqueda.length <= 1 && (
             loadingRoles ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
@@ -478,6 +526,129 @@ export default function RetiroDashboard() {
                 })}
               </div>
             )
+          )}
+        </div>
+      )}
+
+      {/* ── MESAS ── */}
+      {tab === 'mesas' && (
+        <div>
+          {exitoMesa && (
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>
+              ✓ Mesa actualizada correctamente
+            </div>
+          )}
+
+          {loadingMesas ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+              <div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {mesas.map(mesa => (
+                <div key={mesa.id} style={{
+                  background: 'white',
+                  border: '1.5px solid #e8eaf0',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  borderLeft: '3px solid #0f1787',
+                }}>
+                  {editandoMesaId === mesa.id ? (
+                    /* ── Modo edición ── */
+                    <div style={{ padding: '14px' }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: '0 0 14px' }}>
+                        Mesa {mesa.numero}
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>LÍDER ADULTO</label>
+                          <input
+                            value={editMesa.adulto}
+                            onChange={e => setEditMesa(p => ({ ...p, adulto: e.target.value }))}
+                            placeholder="Nombre del líder adulto"
+                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>LÍDER JOVEN</label>
+                          <input
+                            value={editMesa.lider}
+                            onChange={e => setEditMesa(p => ({ ...p, lider: e.target.value }))}
+                            placeholder="Nombre del líder joven"
+                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>CO-LÍDER</label>
+                          <input
+                            value={editMesa.colider}
+                            onChange={e => setEditMesa(p => ({ ...p, colider: e.target.value }))}
+                            placeholder="Nombre del co-líder"
+                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => guardarMesa(mesa.id)}
+                          disabled={guardandoMesa}
+                          style={{ flex: 1, padding: '9px', background: guardandoMesa ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                        >{guardandoMesa ? 'Guardando...' : 'Guardar'}</button>
+                        <button
+                          onClick={() => setEditandoMesaId(null)}
+                          style={{ padding: '9px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
+                        >Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── Modo vista ── */
+                    <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        {/* Número de mesa */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <div style={{
+                            width: 28, height: 28, borderRadius: 8, background: '#0f1787',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0,
+                          }}>
+                            {mesa.numero}
+                          </div>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Mesa {mesa.numero}</span>
+                        </div>
+
+                        {/* Personas */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {mesa.adulto && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Adulto</span>
+                              <span style={{ fontSize: 12, color: '#374151' }}>{mesa.adulto}</span>
+                            </div>
+                          )}
+                          {mesa.lider && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 10, background: '#f0f2ff', color: '#0f1787', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Líder</span>
+                              <span style={{ fontSize: 12, color: '#374151' }}>{mesa.lider}</span>
+                            </div>
+                          )}
+                          {mesa.colider && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 10, background: '#faf5ff', color: '#7c3aed', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Co-líder</span>
+                              <span style={{ fontSize: 12, color: '#374151' }}>{mesa.colider}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => iniciarEdicionMesa(mesa)}
+                        style={{ padding: '6px 10px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+                      >Editar</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
