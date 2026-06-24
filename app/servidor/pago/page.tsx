@@ -29,6 +29,7 @@ export default function PagoServidor() {
   const [comprobantes, setComprobantes] = useState<Comprobante[]>([])
   const [resumen, setResumen] = useState<PagoResumen | null>(null)
   const [inscripcionId, setInscripcionId] = useState('')
+  const [esInterno, setEsInterno] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
   const [subiendo, setSubiendo] = useState(false)
   const [error, setError] = useState('')
@@ -86,6 +87,13 @@ export default function PagoServidor() {
       }
 
       setInscripcionId(srv.id)
+      setEsInterno(srv.es_interno)
+
+      // Externos no pagan — no cargar nada más
+      if (!srv.es_interno) {
+        setLoading(false)
+        return
+      }
 
       const { data: pagosData } = await supabase
         .from('pagos')
@@ -94,13 +102,12 @@ export default function PagoServidor() {
         .eq('tipo_persona', 'servidor')
         .eq('retiro_id', RETIRO_ID)
 
-      const costo: number = srv.es_interno ? 380000 : 260000
+      const costo = 380000
       const pagado: number = pagosData
         ?.filter(p => p.estado === 'confirmado')
         .reduce((sum, p) => sum + (p.valor || 0), 0) ?? 0
 
-      const estadoPago = pagado >= costo && costo > 0 ? 'completo'
-        : pagado > 0 ? 'parcial' : 'sin_pago'
+      const estadoPago = pagado >= costo ? 'completo' : pagado > 0 ? 'parcial' : 'sin_pago'
 
       setResumen({
         total_pagado: pagado,
@@ -203,6 +210,31 @@ export default function PagoServidor() {
     </div>
   )
 
+  // ── EXTERNOS: pantalla simple ──
+  if (esInterno === false) {
+    return (
+      <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 20px' }}>
+          Mi Pago
+        </h1>
+        <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '32px 24px', textAlign: 'center' }}>
+          <div style={{ width: 56, height: 56, background: '#f0fdf4', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <p style={{ fontSize: 17, fontWeight: 700, color: '#111827', margin: '0 0 8px' }}>
+            No tienes costo de retiro
+          </p>
+          <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>
+            Como servidor externo, tu participación en el IX Retiro Effetá Mazuren es completamente gratuita.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── INTERNOS: flujo completo ──
   const porcentaje = resumen && resumen.costo_retiro > 0
     ? Math.min(100, Math.round((resumen.total_pagado / resumen.costo_retiro) * 100))
     : 100
