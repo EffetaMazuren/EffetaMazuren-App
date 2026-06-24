@@ -401,6 +401,15 @@ export default function RetiroDashboard() {
     setGuardandoCam(false)
   }
 
+  const desconfirmarTodas = async () => {
+    setGuardandoCam(true)
+    await supabase.from('asignaciones_mesa').update({ confirmado_por_lider: false }).eq('confirmado_por_lider', true)
+    await cargarCaminantes()
+    setExitoCam('Asignaciones desconfirmadas — ya no son visibles para los líderes')
+    setTimeout(() => setExitoCam(''), 3000)
+    setGuardandoCam(false)
+  }
+
   const cambiarMesaCaminante = async (asignacionId: string, nuevaMesa: Mesa) => {
     setGuardandoCam(true)
     await supabase.from('asignaciones_mesa')
@@ -766,10 +775,16 @@ export default function RetiroDashboard() {
                   style={{ flex: 1, padding: '10px', background: generando ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                   {generando ? 'Generando...' : asignaciones.length > 0 ? 'Regenerar sugerencia' : 'Generar sugerencia automática'}
                 </button>
-                {asignaciones.length > 0 && (
+                {asignaciones.length > 0 && asignaciones.some(a => !a.confirmado_por_lider) && (
                   <button onClick={confirmarTodas} disabled={guardandoCam}
                     style={{ padding: '10px 14px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                     Confirmar todas
+                  </button>
+                )}
+                {asignaciones.length > 0 && asignaciones.some(a => a.confirmado_por_lider) && (
+                  <button onClick={desconfirmarTodas} disabled={guardandoCam}
+                    style={{ padding: '10px 14px', background: '#f3f4f6', color: '#6b7280', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Desconfirmar
                   </button>
                 )}
               </div>
