@@ -301,7 +301,7 @@ export default function RetiroDashboard() {
 
     // Cargar asignaciones existentes con datos del caminante
     const { data: asigData } = await supabase
-      .from('asignacion_mesa')
+      .from('asignaciones_mesa')
       .select('id, caminante_id, mesa_id, mesa_numero, confirmado_por_lider, caminantes(id, nombre, celular, edad)')
       .order('mesa_numero')
 
@@ -370,10 +370,10 @@ export default function RetiroDashboard() {
       const sugeridas = sugerirAsignacion(caminantes, mesasDisponibles)
 
       // Borrar asignaciones anteriores e insertar nuevas
-      await supabase.from('asignacion_mesa').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await supabase.from('asignaciones_mesa').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
       if (sugeridas.length > 0) {
-        await supabase.from('asignacion_mesa').insert(
+        await supabase.from('asignaciones_mesa').insert(
           sugeridas.map(s => ({
             caminante_id: s.caminante_id,
             mesa_id: s.mesa_id,
@@ -393,7 +393,7 @@ export default function RetiroDashboard() {
 
   const confirmarTodas = async () => {
     setGuardandoCam(true)
-    await supabase.from('asignacion_mesa').update({ confirmado_por_lider: true }).eq('confirmado_por_lider', false)
+    await supabase.from('asignaciones_mesa').update({ confirmado_por_lider: true }).eq('confirmado_por_lider', false)
     await cargarCaminantes()
     await sincronizarSheets()
     setExitoCam('Todas confirmadas')
@@ -403,7 +403,7 @@ export default function RetiroDashboard() {
 
   const cambiarMesaCaminante = async (asignacionId: string, nuevaMesa: Mesa) => {
     setGuardandoCam(true)
-    await supabase.from('asignacion_mesa')
+    await supabase.from('asignaciones_mesa')
       .update({ mesa_id: nuevaMesa.id, mesa_numero: nuevaMesa.numero, confirmado_por_lider: true })
       .eq('id', asignacionId)
     setEditandoCamId(null)
@@ -413,7 +413,7 @@ export default function RetiroDashboard() {
   }
 
   const quitarCaminante = async (asignacionId: string) => {
-    await supabase.from('asignacion_mesa').delete().eq('id', asignacionId)
+    await supabase.from('asignaciones_mesa').delete().eq('id', asignacionId)
     await cargarCaminantes()
     await sincronizarSheets()
   }
@@ -421,7 +421,7 @@ export default function RetiroDashboard() {
   const agregarCaminanteAMesa = async (mesaId: string, mesaNumero: number, caminanteId: string) => {
     if (!caminanteId) return
     setGuardandoCam(true)
-    await supabase.from('asignacion_mesa').insert({
+    await supabase.from('asignaciones_mesa').insert({
       caminante_id: caminanteId,
       mesa_id: mesaId,
       mesa_numero: mesaNumero,
@@ -439,7 +439,7 @@ export default function RetiroDashboard() {
     try {
       // Recargar datos frescos para el sheet
       const { data: asigData } = await supabase
-        .from('asignacion_mesa')
+        .from('asignaciones_mesa')
         .select('mesa_numero, mesa_id, caminantes(nombre, celular, edad)')
         .order('mesa_numero')
 
