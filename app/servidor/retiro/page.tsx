@@ -26,6 +26,7 @@ interface ContactoEmergencia {
 
 interface CaminanteMesa {
   id: string
+  asignacion_id: string
   nombre: string
   celular: string
   edad: number | null
@@ -114,12 +115,20 @@ function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB
   return null
 }
 
+interface Seguimiento {
+  id?: string
+  asignacion_mesa_id: string
+  llamado: boolean
+  contesto: boolean
+}
+
 export default function RetiroPage() {
   const [info, setInfo] = useState<ServidorInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [nombreServidor, setNombreServidor] = useState('')
   const [actualizado, setActualizado] = useState(false)
   const [camExpandido, setCamExpandido] = useState<string | null>(null)
+  const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
 
   const cargarDatos = useCallback(async (nombre: string) => {
     const [rolesRes, mesasRes] = await Promise.all([
@@ -158,10 +167,12 @@ export default function RetiroPage() {
       if (mesaRow) {
         const { data: asigData } = await supabase
           .from('asignaciones_mesa')
-          .select('caminante_id, confirmado_por_lider')
+          .select('id, caminante_id, confirmado_por_lider')
           .eq('mesa_id', mesaRow.id)
           .eq('confirmado_por_lider', true)
 
+        const asigMap: Record<string, string> = {}
+        ;(asigData ?? []).forEach((a: any) => { asigMap[a.caminante_id] = a.id })
         const ids = (asigData ?? []).map((a: any) => a.caminante_id)
 
         if (ids.length > 0) {
@@ -192,8 +203,25 @@ export default function RetiroPage() {
 
           caminantes = camList.map(c => ({
             ...c,
+            asignacion_id: asigMap[c.id] ?? '',
             contacto_emergencia: c.es_sorpresa ? (contactosMap[c.id] ?? null) : null,
           }))
+
+          // Cargar seguimientos para esta mesa
+          const { data: asigIds } = await supabase
+            .from('asignaciones_mesa')
+            .select('id')
+            .eq('mesa_id', mesaRow.id)
+            .eq('confirmado_por_lider', true)
+          if (asigIds && asigIds.length > 0) {
+            const { data: segData } = await supabase
+              .from('seguimiento_caminantes')
+              .select('id, asignacion_mesa_id, llamado, contesto')
+              .in('asignacion_mesa_id', asigIds.map((a: any) => a.id))
+            const segMap: Record<string, Seguimiento> = {}
+            ;(segData ?? []).forEach((s: any) => { segMap[s.asignacion_mesa_id] = s })
+            setSeguimientos(segMap)
+          }
         }
       }
     }
@@ -266,6 +294,22 @@ export default function RetiroPage() {
 
     return () => { supabase.removeChannel(channel) }
   }, [nombreServidor, cargarDatos])
+
+  const toggleSeguimiento = async (asignacionMesaId: string, campo: 'llamado' | 'contesto') => {
+    const actual = seguimientos[asignacionMesaId] ?? { llamado: false, contesto: false }
+    const nuevo = { ...actual, [campo]: !actual[campo] }
+    setSeguimientos(prev => ({ ...prev, [asignacionMesaId]: { ...nuevo, asignacion_mesa_id: asignacionMesaId } }))
+    const { data: existing } = await supabase
+      .from('seguimiento_caminantes')
+      .select('id')
+      .eq('asignacion_mesa_id', asignacionMesaId)
+      .single()
+    if (existing?.id) {
+      await supabase.from('seguimiento_caminantes').update({ [campo]: nuevo[campo], updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      await supabase.from('seguimiento_caminantes').insert({ asignacion_mesa_id: asignacionMesaId, llamado: nuevo.llamado, contesto: nuevo.contesto })
+    }
+  }
 
   if (loading) {
     return (
@@ -381,6 +425,17 @@ export default function RetiroPage() {
                         <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
                           {cam.es_sorpresa ? '— Sorpresa —' : cam.nombre}
                         </span>
+                        {!cam.es_sorpresa && (
+                          <button
+                            onClick={(ev) => { ev.stopPropagation(); navigator.clipboard.writeText(cam.nombre) }}
+                            title="Copiar nombre"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', display: 'flex', alignItems: 'center' }}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                          </button>
+                        )}
                         {cam.es_sorpresa && (
                           <span style={{ fontSize: 10, background: '#dc2626', color: 'white', padding: '1px 7px', borderRadius: 20, fontWeight: 700, letterSpacing: 0.5 }}>
                             SORPRESA
@@ -400,13 +455,42 @@ export default function RetiroPage() {
                               title="Copiar número"
                               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', display: 'flex', alignItems: 'center' }}
                             >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                               </svg>
                             </button>
                           </>
                         )}
                       </div>
+                      {/* Checkboxes seguimiento */}
+                      {!cam.es_sorpresa && cam.asignacion_id && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          {(['llamado', 'contesto'] as const).map(campo => {
+                            const seg = seguimientos[cam.asignacion_id] ?? { llamado: false, contesto: false }
+                            const activo = seg[campo]
+                            const label = campo === 'llamado' ? 'Llamado' : 'Contestó'
+                            return (
+                              <button key={campo}
+                                onClick={(ev) => { ev.stopPropagation(); toggleSeguimiento(cam.asignacion_id, campo) }}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 4,
+                                  padding: '3px 8px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600,
+                                  background: activo ? (campo === 'llamado' ? '#dcfce7' : '#eff6ff') : '#f3f4f6',
+                                  color: activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : '#6b7280',
+                                }}
+                              >
+                                <div style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  border: `1.5px solid ${activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : '#9ca3af'}`,
+                                  background: activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : 'transparent',
+                                }}>
+                                  {activo && <svg width="7" height="7" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
+                                </div>
+                                {label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {/* Expandir si es sorpresa */}
