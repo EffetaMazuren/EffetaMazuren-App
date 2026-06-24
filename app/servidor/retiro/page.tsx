@@ -18,10 +18,26 @@ interface MesaDB {
   colider: string
 }
 
+interface ContactoEmergencia {
+  nombre: string
+  parentesco: string | null
+  celular: string | null
+}
+
+interface CaminanteMesa {
+  id: string
+  nombre: string
+  celular: string
+  edad: number | null
+  es_sorpresa: boolean
+  contacto_emergencia?: ContactoEmergencia | null
+}
+
 interface ServidorInfo {
   roles: RolRetiro[]
   mesa?: MesaDB
   esLiderDeMesa?: boolean
+  caminantes: CaminanteMesa[]
 }
 
 const COLOR_ROL: Record<string, { bg: string; dot: string; text: string }> = {
@@ -97,6 +113,7 @@ export default function RetiroPage() {
   const [loading, setLoading] = useState(true)
   const [nombreServidor, setNombreServidor] = useState('')
   const [actualizado, setActualizado] = useState(false)
+  const [camExpandido, setCamExpandido] = useState<string | null>(null)
 
   const cargarDatos = useCallback(async (nombre: string) => {
     const [rolesRes, mesasRes] = await Promise.all([
@@ -119,10 +136,67 @@ export default function RetiroPage() {
     const todasMesas: MesaDB[] = mesasRes.data ?? []
     const mesaEncontrada = buscarMesaParaServidor(nombre, todasMesas)
 
+    // Cargar caminantes de su mesa si es líder
+    let caminantes: CaminanteMesa[] = []
+    if (mesaEncontrada) {
+      const mesaNum = mesaEncontrada.mesa.numero
+
+      // Buscar el id de la mesa
+      const { data: mesaRow } = await supabase
+        .from('mesas')
+        .select('id')
+        .eq('retiro_id', RETIRO_ID)
+        .eq('numero', mesaNum)
+        .single()
+
+      if (mesaRow) {
+        const { data: asigData } = await supabase
+          .from('asignaciones_mesa')
+          .select('caminante_id, confirmado_por_lider')
+          .eq('mesa_id', mesaRow.id)
+          .eq('confirmado_por_lider', true)
+
+        const ids = (asigData ?? []).map((a: any) => a.caminante_id)
+
+        if (ids.length > 0) {
+          const { data: camData } = await supabase
+            .from('caminantes')
+            .select('id, nombre, celular, edad, es_sorpresa')
+            .in('id', ids)
+
+          const camList: CaminanteMesa[] = camData ?? []
+
+          // Para los sorpresa, cargar contacto de emergencia
+          const sorpresas = camList.filter(c => c.es_sorpresa)
+          const contactosMap: Record<string, ContactoEmergencia> = {}
+
+          for (const s of sorpresas) {
+            const { data: contactos } = await supabase
+              .from('contactos_emergencia')
+              .select('nombre, parentesco, celular')
+              .eq('persona_id', s.id)
+              .eq('tipo_persona', 'caminante')
+              .order('orden')
+              .limit(1)
+
+            if (contactos && contactos.length > 0) {
+              contactosMap[s.id] = contactos[0]
+            }
+          }
+
+          caminantes = camList.map(c => ({
+            ...c,
+            contacto_emergencia: c.es_sorpresa ? (contactosMap[c.id] ?? null) : null,
+          }))
+        }
+      }
+    }
+
     setInfo({
       roles: misRoles,
       mesa: mesaEncontrada?.mesa,
       esLiderDeMesa: mesaEncontrada?.esLider,
+      caminantes,
     })
   }, [])
 
@@ -161,30 +235,27 @@ export default function RetiroPage() {
     init()
   }, [cargarDatos])
 
-  // Realtime: escucha cambios en mesas y roles_retiro
+  // Realtime
   useEffect(() => {
     if (!nombreServidor) return
 
     const channel = supabase
       .channel('retiro-cambios')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` },
-        () => {
-          cargarDatos(nombreServidor)
-          setActualizado(true)
-          setTimeout(() => setActualizado(false), 3000)
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` },
-        () => {
-          cargarDatos(nombreServidor)
-          setActualizado(true)
-          setTimeout(() => setActualizado(false), 3000)
-        }
-      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` }, () => {
+        cargarDatos(nombreServidor)
+        setActualizado(true)
+        setTimeout(() => setActualizado(false), 3000)
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, () => {
+        cargarDatos(nombreServidor)
+        setActualizado(true)
+        setTimeout(() => setActualizado(false), 3000)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'asignaciones_mesa' }, () => {
+        cargarDatos(nombreServidor)
+        setActualizado(true)
+        setTimeout(() => setActualizado(false), 3000)
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -212,13 +283,9 @@ export default function RetiroPage() {
         <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Retiro IX — Effetá Mazuren</p>
       </div>
 
-      {/* Banner de actualización en tiempo real */}
+      {/* Banner actualización */}
       {actualizado && (
-        <div style={{
-          background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#16a34a',
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
@@ -263,6 +330,117 @@ export default function RetiroPage() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── CAMINANTES DE LA MESA ── */}
+      {info?.caminantes && info.caminantes.length > 0 && (
+        <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '20px 22px', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 36, height: 36, background: '#fef3c7', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8 }}>Mis caminantes</p>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111827' }}>
+                {info.caminantes.length} caminante{info.caminantes.length !== 1 ? 's' : ''} confirmado{info.caminantes.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {info.caminantes.map((cam, i) => {
+              const expandido = camExpandido === cam.id
+              return (
+                <div key={cam.id} style={{
+                  border: cam.es_sorpresa ? '1.5px solid #fca5a5' : '1px solid #f3f4f6',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  background: cam.es_sorpresa ? '#fff5f5' : '#fafafa',
+                }}>
+                  <button
+                    onClick={() => setCamExpandido(expandido ? null : cam.id)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    {/* Número */}
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: cam.es_sorpresa ? '#dc2626' : '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>
+                      {i + 1}
+                    </div>
+
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
+                          {cam.es_sorpresa ? '— Sorpresa —' : cam.nombre}
+                        </span>
+                        {cam.es_sorpresa && (
+                          <span style={{ fontSize: 10, background: '#dc2626', color: 'white', padding: '1px 7px', borderRadius: 20, fontWeight: 700, letterSpacing: 0.5 }}>
+                            SORPRESA
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                        {cam.edad ? `${cam.edad} años` : ''}
+                        {cam.edad && !cam.es_sorpresa && cam.celular ? ' · ' : ''}
+                        {!cam.es_sorpresa && cam.celular ? cam.celular : ''}
+                      </div>
+                    </div>
+
+                    {/* Expandir si es sorpresa */}
+                    {cam.es_sorpresa && (
+                      <span style={{ fontSize: 11, color: '#dc2626', flexShrink: 0 }}>{expandido ? '▲' : '▼'}</span>
+                    )}
+                  </button>
+
+                  {/* Detalle sorpresa */}
+                  {cam.es_sorpresa && expandido && (
+                    <div style={{ padding: '0 14px 14px', borderTop: '1px solid #fca5a5' }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '10px 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        Contacto para coordinar llegada
+                      </p>
+                      {cam.contacto_emergencia ? (
+                        <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px', border: '1px solid #fca5a5' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 4 }}>
+                            {cam.contacto_emergencia.nombre}
+                            {cam.contacto_emergencia.parentesco && (
+                              <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 400, marginLeft: 6 }}>({cam.contacto_emergencia.parentesco})</span>
+                            )}
+                          </div>
+                          {cam.contacto_emergencia.celular && (
+                            <button
+                              onClick={() => window.open(`https://wa.me/57${cam.contacto_emergencia!.celular!.replace(/\D/g, '')}`, '_blank')}
+                              style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#25d366', color: 'white', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginTop: 6 }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                              </svg>
+                              {cam.contacto_emergencia.celular}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Sin contacto registrado</p>
+                      )}
+                      <p style={{ fontSize: 11, color: '#dc2626', margin: '10px 0 0', lineHeight: 1.5 }}>
+                        Este caminante no sabe que viene al retiro. Coordina la llegada con su contacto sin revelar el destino.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Mensaje si es líder pero sin caminantes confirmados */}
+      {info?.mesa && info.esLiderDeMesa && info.caminantes.length === 0 && (
+        <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '20px 22px', marginBottom: 14, textAlign: 'center' }}>
+          <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>
+            Los líderes aún no han confirmado la asignación de caminantes para tu mesa.
+          </p>
         </div>
       )}
 
