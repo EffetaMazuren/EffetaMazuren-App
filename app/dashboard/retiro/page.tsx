@@ -66,7 +66,7 @@ function SeguimientoBadges({ asignacionId, seguimientos, onToggle }: {
           color: seg.llamado ? '#16a34a' : '#6b7280',
         }}
       >
-        <div style={{ width: 10, height: 10, borderRadius: 3, border: \`1.5px solid \${seg.llamado ? '#16a34a' : '#9ca3af'}\`, background: seg.llamado ? '#16a34a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ width: 10, height: 10, borderRadius: 3, border: '1.5px solid ' + (seg.llamado ? '#16a34a' : '#9ca3af')`, background: seg.llamado ? '#16a34a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           {seg.llamado && <svg width="7" height="7" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
         </div>
         Llamado
@@ -80,7 +80,7 @@ function SeguimientoBadges({ asignacionId, seguimientos, onToggle }: {
           color: seg.contesto ? '#0f1787' : '#6b7280',
         }}
       >
-        <div style={{ width: 10, height: 10, borderRadius: 3, border: \`1.5px solid \${seg.contesto ? '#0f1787' : '#9ca3af'}\`, background: seg.contesto ? '#0f1787' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ width: 10, height: 10, borderRadius: 3, border: '1.5px solid ' + (seg.contesto ? '#0f1787' : '#9ca3af'), background: seg.contesto ? '#0f1787' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           {seg.contesto && <svg width="7" height="7" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
         </div>
         Contestó
