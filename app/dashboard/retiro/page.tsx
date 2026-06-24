@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
 
-type Tab = 'minutominuto' | 'roles' | 'mesas' | 'manual'
+type Tab = 'minutominuto' | 'roles' | 'mesas' | 'caminantes' | 'manual'
 type Dia = 'viernes' | 'sabado' | 'domingo'
 
 interface RolRetiro {
@@ -23,6 +24,22 @@ interface Mesa {
   adulto: string
   lider: string
   colider: string
+}
+
+interface Caminante {
+  id: string
+  nombre: string
+  celular: string
+  edad: number | null
+}
+
+interface Asignacion {
+  id: string
+  caminante_id: string
+  mesa_id: string
+  mesa_numero: number
+  confirmado_por_lider: boolean
+  caminante: Caminante
 }
 
 interface Actividad {
@@ -165,6 +182,55 @@ const CATEGORIAS_COLOR: Record<string, { border: string; badge: string; text: st
   'Muro y Nudo':          { border: '#dc2626', badge: '#fef2f2', text: '#dc2626' },
 }
 
+// ── Sugerencia automática por edad ──
+function sugerirAsignacion(caminantes: Caminante[], mesas: Mesa[]): { caminante_id: string; mesa_id: string; mesa_numero: number }[] {
+  // Calcular edad promedio de líderes por mesa
+  const mesasConEdad = mesas.map(m => {
+    const edades: number[] = []
+    const extraerEdad = (texto: string) => {
+      const match = texto.match(/(\d+)\s*años?/i) || texto.match(/[-–]\s*(\d+)/)
+      return match ? parseInt(match[1]) : null
+    }
+    const edLider = extraerEdad(m.lider)
+    const edColider = extraerEdad(m.colider)
+    if (edLider) edades.push(edLider)
+    if (edColider) edades.push(edColider)
+    const promedio = edades.length > 0 ? edades.reduce((a, b) => a + b, 0) / edades.length : 20
+    return { ...m, edadPromedio: promedio }
+  })
+
+  // Ordenar mesas por edad promedio
+  mesasConEdad.sort((a, b) => a.edadPromedio - b.edadPromedio)
+
+  // Ordenar caminantes por edad
+  const caminantesOrdenados = [...caminantes].sort((a, b) => (a.edad ?? 20) - (b.edad ?? 20))
+
+  // Asignar 5 por mesa en orden de edad (snake draft para balancear)
+  const asignaciones: { caminante_id: string; mesa_id: string; mesa_numero: number }[] = []
+  const cuentaPorMesa: Record<string, number> = {}
+  mesas.forEach(m => { cuentaPorMesa[m.id] = 0 })
+
+  for (const cam of caminantesOrdenados) {
+    // Buscar la mesa con menos caminantes que tenga edad más cercana
+    let mejorMesa = mesasConEdad[0]
+    let menorDiff = Infinity
+    for (const m of mesasConEdad) {
+      if (cuentaPorMesa[m.id] >= 5) continue
+      const diff = Math.abs((cam.edad ?? 20) - m.edadPromedio)
+      if (diff < menorDiff) {
+        menorDiff = diff
+        mejorMesa = m
+      }
+    }
+    if (cuentaPorMesa[mejorMesa.id] < 5) {
+      asignaciones.push({ caminante_id: cam.id, mesa_id: mejorMesa.id, mesa_numero: mejorMesa.numero })
+      cuentaPorMesa[mejorMesa.id]++
+    }
+  }
+
+  return asignaciones
+}
+
 export default function RetiroDashboard() {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('minutominuto')
@@ -189,58 +255,224 @@ export default function RetiroDashboard() {
   const [guardandoMesa, setGuardandoMesa] = useState(false)
   const [exitoMesa, setExitoMesa] = useState('')
 
+  // Caminantes
+  const [asignaciones, setAsignaciones] = useState<Asignacion[]>([])
+  const [loadingCam, setLoadingCam] = useState(false)
+  const [generando, setGenerando] = useState(false)
+  const [guardandoCam, setGuardandoCam] = useState(false)
+  const [exitoCam, setExitoCam] = useState('')
+  const [busquedaCam, setBusquedaCam] = useState('')
+  const [mesaExpandida, setMesaExpandida] = useState<string | null>(null)
+  const [editandoCamId, setEditandoCamId] = useState<string | null>(null) // asignacion.id
+  const [mesasDisponibles, setMesasDisponibles] = useState<Mesa[]>([])
+  const [nuevaMesaId, setNuevaMesaId] = useState('')
+  const [sinAsignar, setSinAsignar] = useState<Caminante[]>([])
+  const [caminantesSinMesa, setCaminantesSinMesa] = useState<Caminante[]>([])
+  const [agregandoACaminante, setAgregandoACaminante] = useState<string | null>(null) // mesa_id
+  const [camSeleccionado, setCamSeleccionado] = useState('')
+
   useEffect(() => {
     if (tab === 'roles') cargarRoles()
     if (tab === 'mesas') cargarMesas()
+    if (tab === 'caminantes') cargarCaminantes()
   }, [tab])
 
   const cargarRoles = async () => {
     setLoadingRoles(true)
-    const { data } = await supabase
-      .from('roles_retiro')
-      .select('*')
-      .eq('retiro_id', RETIRO_ID)
-      .order('orden')
+    const { data } = await supabase.from('roles_retiro').select('*').eq('retiro_id', RETIRO_ID).order('orden')
     setRoles(data ?? [])
     setLoadingRoles(false)
   }
 
   const cargarMesas = async () => {
     setLoadingMesas(true)
-    const { data } = await supabase
-      .from('mesas')
-      .select('id, numero, adulto, lider, colider')
-      .eq('retiro_id', RETIRO_ID)
-      .order('numero')
+    const { data } = await supabase.from('mesas').select('id, numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero')
     setMesas(data ?? [])
     setLoadingMesas(false)
   }
 
-  const iniciarEdicionMesa = (mesa: Mesa) => {
-    setEditandoMesaId(mesa.id)
-    setEditMesa({ adulto: mesa.adulto ?? '', lider: mesa.lider ?? '', colider: mesa.colider ?? '' })
-  }
+  const cargarCaminantes = useCallback(async () => {
+    setLoadingCam(true)
 
-  const guardarMesa = async (id: string) => {
-    setGuardandoMesa(true)
-    const { error } = await supabase
-      .from('mesas')
-      .update({
-        adulto: editMesa.adulto.trim(),
-        lider: editMesa.lider.trim(),
-        colider: editMesa.colider.trim(),
-      })
-      .eq('id', id)
+    // Cargar mesas
+    const { data: mesasData } = await supabase.from('mesas').select('id, numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero')
+    const todasMesas: Mesa[] = mesasData ?? []
+    setMesasDisponibles(todasMesas)
 
-    if (!error) {
-      setExitoMesa('Guardado')
-      await cargarMesas()
-      setEditandoMesaId(null)
-      setTimeout(() => setExitoMesa(''), 2500)
+    // Cargar asignaciones existentes con datos del caminante
+    const { data: asigData } = await supabase
+      .from('asignacion_mesa')
+      .select('id, caminante_id, mesa_id, mesa_numero, confirmado_por_lider, caminantes(id, nombre, celular, edad)')
+      .order('mesa_numero')
+
+    const asigs: Asignacion[] = (asigData ?? []).map((a: any) => ({
+      id: a.id,
+      caminante_id: a.caminante_id,
+      mesa_id: a.mesa_id,
+      mesa_numero: a.mesa_numero,
+      confirmado_por_lider: a.confirmado_por_lider,
+      caminante: a.caminantes,
+    })).filter((a: Asignacion) => a.caminante)
+
+    setAsignaciones(asigs)
+
+    // Caminantes con pago confirmado sin asignar
+    const { data: pagados } = await supabase
+      .from('pagos')
+      .select('persona_id')
+      .eq('retiro_id', RETIRO_ID)
+      .eq('tipo_persona', 'caminante')
+      .eq('estado', 'confirmado')
+
+    const idsPagados = [...new Set((pagados ?? []).map((p: any) => p.persona_id))]
+    const idsAsignados = new Set(asigs.map(a => a.caminante_id))
+
+    if (idsPagados.length > 0) {
+      const { data: camData } = await supabase
+        .from('caminantes')
+        .select('id, nombre, celular, edad')
+        .in('id', idsPagados)
+        .eq('retiro_id', RETIRO_ID)
+        .order('edad')
+
+      const todos: Caminante[] = camData ?? []
+      setSinAsignar(todos.filter(c => !idsAsignados.has(c.id)))
+      setCaminantesSinMesa(todos.filter(c => !idsAsignados.has(c.id)))
+    } else {
+      setSinAsignar([])
+      setCaminantesSinMesa([])
     }
-    setGuardandoMesa(false)
+
+    setLoadingCam(false)
+  }, [])
+
+  const generarSugerencia = async () => {
+    setGenerando(true)
+    try {
+      // Obtener caminantes pagados
+      const { data: pagados } = await supabase
+        .from('pagos')
+        .select('persona_id')
+        .eq('retiro_id', RETIRO_ID)
+        .eq('tipo_persona', 'caminante')
+        .eq('estado', 'confirmado')
+
+      const idsPagados = [...new Set((pagados ?? []).map((p: any) => p.persona_id))]
+      if (idsPagados.length === 0) { setGenerando(false); return }
+
+      const { data: camData } = await supabase
+        .from('caminantes')
+        .select('id, nombre, celular, edad')
+        .in('id', idsPagados)
+        .eq('retiro_id', RETIRO_ID)
+
+      const caminantes: Caminante[] = camData ?? []
+      const sugeridas = sugerirAsignacion(caminantes, mesasDisponibles)
+
+      // Borrar asignaciones anteriores e insertar nuevas
+      await supabase.from('asignacion_mesa').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      if (sugeridas.length > 0) {
+        await supabase.from('asignacion_mesa').insert(
+          sugeridas.map(s => ({
+            caminante_id: s.caminante_id,
+            mesa_id: s.mesa_id,
+            mesa_numero: s.mesa_numero,
+            sugerido_por_sistema: true,
+            confirmado_por_lider: false,
+          }))
+        )
+      }
+
+      await cargarCaminantes()
+      await sincronizarSheets()
+    } finally {
+      setGenerando(false)
+    }
   }
 
+  const confirmarTodas = async () => {
+    setGuardandoCam(true)
+    await supabase.from('asignacion_mesa').update({ confirmado_por_lider: true }).eq('confirmado_por_lider', false)
+    await cargarCaminantes()
+    await sincronizarSheets()
+    setExitoCam('Todas confirmadas')
+    setTimeout(() => setExitoCam(''), 2500)
+    setGuardandoCam(false)
+  }
+
+  const cambiarMesaCaminante = async (asignacionId: string, nuevaMesa: Mesa) => {
+    setGuardandoCam(true)
+    await supabase.from('asignacion_mesa')
+      .update({ mesa_id: nuevaMesa.id, mesa_numero: nuevaMesa.numero, confirmado_por_lider: true })
+      .eq('id', asignacionId)
+    setEditandoCamId(null)
+    await cargarCaminantes()
+    await sincronizarSheets()
+    setGuardandoCam(false)
+  }
+
+  const quitarCaminante = async (asignacionId: string) => {
+    await supabase.from('asignacion_mesa').delete().eq('id', asignacionId)
+    await cargarCaminantes()
+    await sincronizarSheets()
+  }
+
+  const agregarCaminanteAMesa = async (mesaId: string, mesaNumero: number, caminanteId: string) => {
+    if (!caminanteId) return
+    setGuardandoCam(true)
+    await supabase.from('asignacion_mesa').insert({
+      caminante_id: caminanteId,
+      mesa_id: mesaId,
+      mesa_numero: mesaNumero,
+      sugerido_por_sistema: false,
+      confirmado_por_lider: true,
+    })
+    setAgregandoACaminante(null)
+    setCamSeleccionado('')
+    await cargarCaminantes()
+    await sincronizarSheets()
+    setGuardandoCam(false)
+  }
+
+  const sincronizarSheets = async () => {
+    try {
+      // Recargar datos frescos para el sheet
+      const { data: asigData } = await supabase
+        .from('asignacion_mesa')
+        .select('mesa_numero, mesa_id, caminantes(nombre, celular, edad)')
+        .order('mesa_numero')
+
+      const { data: mesasData } = await supabase
+        .from('mesas')
+        .select('id, numero, adulto, lider, colider')
+        .eq('retiro_id', RETIRO_ID)
+        .order('numero')
+
+      const mesasMap: Record<string, Mesa> = {}
+      ;(mesasData ?? []).forEach((m: Mesa) => { mesasMap[m.id] = m })
+
+      // Agrupar por mesa
+      const porMesa: Record<number, { mesa: Mesa; caminantes: { nombre: string; celular: string; edad: number | null }[] }> = {}
+      ;(asigData ?? []).forEach((a: any) => {
+        if (!a.caminantes) return
+        const num = a.mesa_numero
+        if (!porMesa[num]) {
+          porMesa[num] = { mesa: mesasMap[a.mesa_id] ?? { numero: num, adulto: '', lider: '', colider: '', id: '' }, caminantes: [] }
+        }
+        porMesa[num].caminantes.push({ nombre: a.caminantes.nombre, celular: a.caminantes.celular, edad: a.caminantes.edad })
+      })
+
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ tipo: 'actualizar_hoja_mesas', mesas: Object.values(porMesa) }),
+      })
+    } catch (e) {
+      console.error('Error sync sheets:', e)
+    }
+  }
+
+  // ── Roles helpers ──
   const iniciarEdicion = (rol: RolRetiro) => {
     setEditandoId(rol.id)
     setEditRol(rol.rol)
@@ -249,36 +481,40 @@ export default function RetiroDashboard() {
 
   const guardarEdicion = async (id: string) => {
     setGuardando(true)
-    const nuevosEncargados = editEncargados
-      .split(',')
-      .map(e => e.trim())
-      .filter(e => e.length > 0)
-
-    const { error } = await supabase
-      .from('roles_retiro')
-      .update({ rol: editRol, encargados: nuevosEncargados })
-      .eq('id', id)
-
-    if (!error) {
-      setExito('Guardado')
-      await cargarRoles()
-      setEditandoId(null)
-      setTimeout(() => setExito(''), 2000)
-    }
+    const nuevosEncargados = editEncargados.split(',').map(e => e.trim()).filter(e => e.length > 0)
+    const { error } = await supabase.from('roles_retiro').update({ rol: editRol, encargados: nuevosEncargados }).eq('id', id)
+    if (!error) { setExito('Guardado'); await cargarRoles(); setEditandoId(null); setTimeout(() => setExito(''), 2000) }
     setGuardando(false)
   }
 
-  const busquedaLower = busqueda.toLowerCase()
-  const resultadosBusqueda = busqueda.length > 1
-    ? roles.filter(r => r.encargados.some(e => e.toLowerCase().includes(busquedaLower)))
-    : []
+  // ── Mesas helpers ──
+  const iniciarEdicionMesa = (mesa: Mesa) => {
+    setEditandoMesaId(mesa.id)
+    setEditMesa({ adulto: mesa.adulto ?? '', lider: mesa.lider ?? '', colider: mesa.colider ?? '' })
+  }
 
+  const guardarMesa = async (id: string) => {
+    setGuardandoMesa(true)
+    const { error } = await supabase.from('mesas').update({ adulto: editMesa.adulto.trim(), lider: editMesa.lider.trim(), colider: editMesa.colider.trim() }).eq('id', id)
+    if (!error) { setExitoMesa('Guardado'); await cargarMesas(); setEditandoMesaId(null); setTimeout(() => setExitoMesa(''), 2500) }
+    setGuardandoMesa(false)
+  }
+
+  const busquedaLower = busqueda.toLowerCase()
+  const resultadosBusqueda = busqueda.length > 1 ? roles.filter(r => r.encargados.some(e => e.toLowerCase().includes(busquedaLower))) : []
   const categorias = [...new Set(roles.map(r => r.categoria))]
+
+  // Filtrar caminantes por búsqueda
+  const busquedaCamLower = busquedaCam.toLowerCase()
+  const asignacionesFiltradas = busquedaCam.length > 1
+    ? asignaciones.filter(a => a.caminante?.nombre?.toLowerCase().includes(busquedaCamLower))
+    : asignaciones
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'minutominuto', label: 'Minuto a Minuto' },
     { id: 'roles', label: 'Roles' },
     { id: 'mesas', label: 'Mesas' },
+    { id: 'caminantes', label: 'Caminantes' },
     { id: 'manual', label: 'Manual' },
   ]
 
@@ -288,27 +524,29 @@ export default function RetiroDashboard() {
     { id: 'domingo', label: 'Domingo', fecha: '5 Jul' },
   ]
 
+  // Agrupar asignaciones por mesa
+  const asignacionesPorMesa: Record<number, Asignacion[]> = {}
+  asignacionesFiltradas.forEach(a => {
+    if (!asignacionesPorMesa[a.mesa_numero]) asignacionesPorMesa[a.mesa_numero] = []
+    asignacionesPorMesa[a.mesa_numero].push(a)
+  })
+
   return (
     <div style={{ padding: '24px 16px', maxWidth: 700, margin: '0 auto', paddingBottom: 40 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>
-            IX Retiro Effeta Mazuren
-          </h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>IX Retiro Effeta Mazuren</h1>
           <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>3, 4 y 5 de julio de 2026</p>
         </div>
-        <button
-          onClick={() => router.push('/dashboard')}
-          style={{ background: '#f3f4f6', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', color: '#374151' }}
-        >← Dashboard</button>
+        <button onClick={() => router.push('/dashboard')} style={{ background: '#f3f4f6', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', color: '#374151' }}>← Dashboard</button>
       </div>
 
-      {/* Tabs — scroll horizontal en móvil */}
+      {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f3f4f6', borderRadius: 10, padding: 4, overflowX: 'auto' }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            flex: 1, minWidth: 80, padding: '8px 4px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
+            flex: 1, minWidth: 72, padding: '8px 4px', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 600,
             cursor: 'pointer', background: tab === t.id ? '#0f1787' : 'transparent',
             color: tab === t.id ? 'white' : '#6b7280', whiteSpace: 'nowrap',
           }}>{t.label}</button>
@@ -332,18 +570,11 @@ export default function RetiroDashboard() {
               </button>
             ))}
           </div>
-
           {MINUTO_MINUTO[diaActivo].bloques.map((bloque, bi) => (
             <div key={bi} style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>
-                  {bloque.titulo}
-                </h3>
-                {bloque.camiseta && (
-                  <span style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20 }}>
-                    {bloque.camiseta}
-                  </span>
-                )}
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>{bloque.titulo}</h3>
+                {bloque.camiseta && <span style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20 }}>{bloque.camiseta}</span>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {bloque.items.map((item, idx) => {
@@ -352,21 +583,11 @@ export default function RetiroDashboard() {
                   const colores = item.tipo ? colorTipo[item.tipo] : colorTipo.logistica
                   const esCharla = item.tipo === 'charla'
                   return (
-                    <div key={idx} style={{
-                      background: 'white', border: esCharla ? '2px solid #dc2626' : '1.5px solid #e8eaf0',
-                      borderRadius: 10, overflow: 'hidden',
-                    }}>
-                      <button onClick={() => setExpandido(abierto ? null : key)} style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
-                      }}>
+                    <div key={idx} style={{ background: 'white', border: esCharla ? '2px solid #dc2626' : '1.5px solid #e8eaf0', borderRadius: 10, overflow: 'hidden' }}>
+                      <button onClick={() => setExpandido(abierto ? null : key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#0f1787', minWidth: 64, flexShrink: 0 }}>{item.hora}</span>
                         <span style={{ fontSize: 13, fontWeight: esCharla ? 700 : 500, color: '#111827', flex: 1 }}>{item.actividad}</span>
-                        {item.tipo && (
-                          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0, background: colores.bg, color: colores.color }}>
-                            {colores.label}
-                          </span>
-                        )}
+                        {item.tipo && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0, background: colores.bg, color: colores.color }}>{colores.label}</span>}
                         <span style={{ fontSize: 12, color: '#9ca3af', flexShrink: 0 }}>{abierto ? '▲' : '▼'}</span>
                       </button>
                       {abierto && (
@@ -387,62 +608,31 @@ export default function RetiroDashboard() {
       {/* ── ROLES ── */}
       {tab === 'roles' && (
         <div>
-          {exito && (
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>
-              Guardado correctamente
-            </div>
-          )}
-
+          {exito && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>Guardado correctamente</div>}
           <div style={{ position: 'relative', marginBottom: 20 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
             </svg>
-            <input
-              type="text"
-              placeholder="Buscar servidor por nombre..."
-              value={busqueda}
-              onChange={e => setBusqueda(e.target.value)}
-              style={{
-                width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e8eaf0',
-                borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box',
-                background: 'white', fontFamily: 'inherit',
-              }}
-            />
-            {busqueda && (
-              <button onClick={() => setBusqueda('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>
-                ✕
-              </button>
-            )}
+            <input type="text" placeholder="Buscar servidor por nombre..." value={busqueda} onChange={e => setBusqueda(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }} />
+            {busqueda && <button onClick={() => setBusqueda('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>✕</button>}
           </div>
-
           {busqueda.length > 1 && (
             <div style={{ marginBottom: 20 }}>
               {resultadosBusqueda.length === 0 ? (
-                <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10, padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-                  No se encontró ningún servidor con ese nombre
-                </div>
+                <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10, padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No se encontró ningún servidor con ese nombre</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 1 }}>
-                    {resultadosBusqueda.length} resultado{resultadosBusqueda.length !== 1 ? 's' : ''}
-                  </p>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 1 }}>{resultadosBusqueda.length} resultado{resultadosBusqueda.length !== 1 ? 's' : ''}</p>
                   {resultadosBusqueda.map(r => {
                     const c = CATEGORIAS_COLOR[r.categoria] ?? { border: '#6b7280', badge: '#f3f4f6', text: '#374151' }
                     const encargadosMatch = r.encargados.filter(e => e.toLowerCase().includes(busquedaLower))
                     return (
                       <div key={r.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10, padding: '12px 14px', borderLeft: `3px solid ${c.border}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                          <div>
-                            <span style={{ fontSize: 10, background: c.badge, color: c.text, padding: '2px 7px', borderRadius: 20, fontWeight: 600 }}>{r.categoria}</span>
-                            <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '4px 0 6px' }}>{r.rol}</p>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                              {encargadosMatch.map((e, i) => (
-                                <span key={i} style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
-                                  {e}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
+                        <span style={{ fontSize: 10, background: c.badge, color: c.text, padding: '2px 7px', borderRadius: 20, fontWeight: 600 }}>{r.categoria}</span>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '4px 0 6px' }}>{r.rol}</p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {encargadosMatch.map((e, i) => <span key={i} style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>{e}</span>)}
                         </div>
                       </div>
                     )
@@ -451,7 +641,6 @@ export default function RetiroDashboard() {
               )}
             </div>
           )}
-
           {busqueda.length <= 1 && (
             loadingRoles ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
@@ -462,44 +651,25 @@ export default function RetiroDashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 {categorias.map(cat => {
                   const c = CATEGORIAS_COLOR[cat] ?? { border: '#6b7280', badge: '#f3f4f6', text: '#374151' }
-                  const rolesCategoria = roles.filter(r => r.categoria === cat)
                   return (
                     <div key={cat}>
-                      <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: c.text, margin: '0 0 10px' }}>
-                        {cat}
-                      </h3>
+                      <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: c.text, margin: '0 0 10px' }}>{cat}</h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {rolesCategoria.map(rol => (
+                        {roles.filter(r => r.categoria === cat).map(rol => (
                           <div key={rol.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10, overflow: 'hidden', borderLeft: `3px solid ${c.border}` }}>
                             {editandoId === rol.id ? (
                               <div style={{ padding: '14px' }}>
                                 <div style={{ marginBottom: 10 }}>
                                   <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>NOMBRE DEL ROL</label>
-                                  <input
-                                    value={editRol}
-                                    onChange={e => setEditRol(e.target.value)}
-                                    style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                                  />
+                                  <input value={editRol} onChange={e => setEditRol(e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
                                 </div>
                                 <div style={{ marginBottom: 12 }}>
                                   <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>ENCARGADOS (separados por coma)</label>
-                                  <textarea
-                                    value={editEncargados}
-                                    onChange={e => setEditEncargados(e.target.value)}
-                                    rows={3}
-                                    style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
-                                  />
+                                  <textarea value={editEncargados} onChange={e => setEditEncargados(e.target.value)} rows={3} style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
-                                  <button
-                                    onClick={() => guardarEdicion(rol.id)}
-                                    disabled={guardando}
-                                    style={{ flex: 1, padding: '8px', background: guardando ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                                  >{guardando ? 'Guardando...' : 'Guardar'}</button>
-                                  <button
-                                    onClick={() => setEditandoId(null)}
-                                    style={{ padding: '8px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
-                                  >Cancelar</button>
+                                  <button onClick={() => guardarEdicion(rol.id)} disabled={guardando} style={{ flex: 1, padding: '8px', background: guardando ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+                                  <button onClick={() => setEditandoId(null)} style={{ padding: '8px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
                                 </div>
                               </div>
                             ) : (
@@ -507,15 +677,10 @@ export default function RetiroDashboard() {
                                 <div style={{ flex: 1 }}>
                                   <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>{rol.rol}</p>
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                    {rol.encargados.map((e, i) => (
-                                      <span key={i} style={{ fontSize: 11, background: '#f3f4f6', color: '#374151', padding: '2px 8px', borderRadius: 20 }}>{e}</span>
-                                    ))}
+                                    {rol.encargados.map((e, i) => <span key={i} style={{ fontSize: 11, background: '#f3f4f6', color: '#374151', padding: '2px 8px', borderRadius: 20 }}>{e}</span>)}
                                   </div>
                                 </div>
-                                <button
-                                  onClick={() => iniciarEdicion(rol)}
-                                  style={{ padding: '6px 10px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
-                                >Editar</button>
+                                <button onClick={() => iniciarEdicion(rol)} style={{ padding: '6px 10px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>Editar</button>
                               </div>
                             )}
                           </div>
@@ -533,12 +698,7 @@ export default function RetiroDashboard() {
       {/* ── MESAS ── */}
       {tab === 'mesas' && (
         <div>
-          {exitoMesa && (
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>
-              ✓ Mesa actualizada correctamente
-            </div>
-          )}
-
+          {exitoMesa && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ Mesa actualizada correctamente</div>}
           {loadingMesas ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
               <div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -547,108 +707,229 @@ export default function RetiroDashboard() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {mesas.map(mesa => (
-                <div key={mesa.id} style={{
-                  background: 'white',
-                  border: '1.5px solid #e8eaf0',
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  borderLeft: '3px solid #0f1787',
-                }}>
+                <div key={mesa.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, overflow: 'hidden', borderLeft: '3px solid #0f1787' }}>
                   {editandoMesaId === mesa.id ? (
-                    /* ── Modo edición ── */
                     <div style={{ padding: '14px' }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: '0 0 14px' }}>
-                        Mesa {mesa.numero}
-                      </p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: '0 0 14px' }}>Mesa {mesa.numero}</p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>LÍDER ADULTO</label>
-                          <input
-                            value={editMesa.adulto}
-                            onChange={e => setEditMesa(p => ({ ...p, adulto: e.target.value }))}
-                            placeholder="Nombre del líder adulto"
-                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>LÍDER JOVEN</label>
-                          <input
-                            value={editMesa.lider}
-                            onChange={e => setEditMesa(p => ({ ...p, lider: e.target.value }))}
-                            placeholder="Nombre del líder joven"
-                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                          />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>CO-LÍDER</label>
-                          <input
-                            value={editMesa.colider}
-                            onChange={e => setEditMesa(p => ({ ...p, colider: e.target.value }))}
-                            placeholder="Nombre del co-líder"
-                            style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                          />
-                        </div>
+                        {[{ key: 'adulto', label: 'LÍDER ADULTO' }, { key: 'lider', label: 'LÍDER JOVEN' }, { key: 'colider', label: 'CO-LÍDER' }].map(f => (
+                          <div key={f.key}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.label}</label>
+                            <input value={editMesa[f.key as keyof typeof editMesa]} onChange={e => setEditMesa(p => ({ ...p, [f.key]: e.target.value }))}
+                              style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                          </div>
+                        ))}
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          onClick={() => guardarMesa(mesa.id)}
-                          disabled={guardandoMesa}
-                          style={{ flex: 1, padding: '9px', background: guardandoMesa ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                        >{guardandoMesa ? 'Guardando...' : 'Guardar'}</button>
-                        <button
-                          onClick={() => setEditandoMesaId(null)}
-                          style={{ padding: '9px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
-                        >Cancelar</button>
+                        <button onClick={() => guardarMesa(mesa.id)} disabled={guardandoMesa} style={{ flex: 1, padding: '9px', background: guardandoMesa ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{guardandoMesa ? 'Guardando...' : 'Guardar'}</button>
+                        <button onClick={() => setEditandoMesaId(null)} style={{ padding: '9px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
                       </div>
                     </div>
                   ) : (
-                    /* ── Modo vista ── */
                     <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                       <div style={{ flex: 1 }}>
-                        {/* Número de mesa */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                          <div style={{
-                            width: 28, height: 28, borderRadius: 8, background: '#0f1787',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0,
-                          }}>
-                            {mesa.numero}
-                          </div>
+                          <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0 }}>{mesa.numero}</div>
                           <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Mesa {mesa.numero}</span>
                         </div>
-
-                        {/* Personas */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {mesa.adulto && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Adulto</span>
-                              <span style={{ fontSize: 12, color: '#374151' }}>{mesa.adulto}</span>
-                            </div>
-                          )}
-                          {mesa.lider && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 10, background: '#f0f2ff', color: '#0f1787', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Líder</span>
-                              <span style={{ fontSize: 12, color: '#374151' }}>{mesa.lider}</span>
-                            </div>
-                          )}
-                          {mesa.colider && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 10, background: '#faf5ff', color: '#7c3aed', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Co-líder</span>
-                              <span style={{ fontSize: 12, color: '#374151' }}>{mesa.colider}</span>
-                            </div>
-                          )}
+                          {mesa.adulto && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Adulto</span><span style={{ fontSize: 12, color: '#374151' }}>{mesa.adulto}</span></div>}
+                          {mesa.lider && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10, background: '#f0f2ff', color: '#0f1787', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Líder</span><span style={{ fontSize: 12, color: '#374151' }}>{mesa.lider}</span></div>}
+                          {mesa.colider && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10, background: '#faf5ff', color: '#7c3aed', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Co-líder</span><span style={{ fontSize: 12, color: '#374151' }}>{mesa.colider}</span></div>}
                         </div>
                       </div>
-
-                      <button
-                        onClick={() => iniciarEdicionMesa(mesa)}
-                        style={{ padding: '6px 10px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
-                      >Editar</button>
+                      <button onClick={() => iniciarEdicionMesa(mesa)} style={{ padding: '6px 10px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>Editar</button>
                     </div>
                   )}
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── CAMINANTES ── */}
+      {tab === 'caminantes' && (
+        <div>
+          {exitoCam && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ {exitoCam}</div>}
+
+          {loadingCam ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+              <div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          ) : (
+            <>
+              {/* Acciones */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button onClick={generarSugerencia} disabled={generando || guardandoCam}
+                  style={{ flex: 1, padding: '10px', background: generando ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  {generando ? 'Generando...' : asignaciones.length > 0 ? 'Regenerar sugerencia' : 'Generar sugerencia automática'}
+                </button>
+                {asignaciones.length > 0 && (
+                  <button onClick={confirmarTodas} disabled={guardandoCam}
+                    style={{ padding: '10px 14px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Confirmar todas
+                  </button>
+                )}
+              </div>
+
+              {/* Stats */}
+              {asignaciones.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                  <div style={{ flex: 1, background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#0f1787' }}>{asignaciones.length}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Asignados</div>
+                  </div>
+                  <div style={{ flex: 1, background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#d97706' }}>{sinAsignar.length}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Sin asignar</div>
+                  </div>
+                  <div style={{ flex: 1, background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>{asignaciones.filter(a => a.confirmado_por_lider).length}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Confirmados</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Búsqueda */}
+              {asignaciones.length > 0 && (
+                <div style={{ position: 'relative', marginBottom: 16 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                  </svg>
+                  <input type="text" placeholder="Buscar caminante por nombre..." value={busquedaCam} onChange={e => setBusquedaCam(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }} />
+                  {busquedaCam && <button onClick={() => setBusquedaCam('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>✕</button>}
+                </div>
+              )}
+
+              {/* Sin asignar */}
+              {sinAsignar.length > 0 && (
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: '#92400e', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {sinAsignar.length} caminante{sinAsignar.length !== 1 ? 's' : ''} sin mesa
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {sinAsignar.map(c => (
+                      <div key={c.id} style={{ fontSize: 12, color: '#78350f', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>{c.nombre} {c.edad ? `· ${c.edad} años` : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Estado vacío */}
+              {asignaciones.length === 0 && (
+                <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '40px 24px', textAlign: 'center' }}>
+                  <div style={{ width: 48, height: 48, background: '#f0f2ff', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                  </div>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: '0 0 6px' }}>No hay asignaciones aún</p>
+                  <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Haz clic en "Generar sugerencia automática" para asignar caminantes a las mesas según edad.</p>
+                </div>
+              )}
+
+              {/* Lista por mesa */}
+              {asignaciones.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {mesasDisponibles.map(mesa => {
+                    const camsEnMesa = asignacionesPorMesa[mesa.numero] ?? []
+                    const abierta = mesaExpandida === mesa.id
+                    const confirmados = camsEnMesa.filter(a => a.confirmado_por_lider).length
+                    return (
+                      <div key={mesa.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, overflow: 'hidden', borderLeft: '3px solid #0f1787' }}>
+                        {/* Header mesa */}
+                        <button onClick={() => setMesaExpandida(abierta ? null : mesa.id)}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                          <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0 }}>{mesa.numero}</div>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Mesa {mesa.numero}</span>
+                            <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 8 }}>{mesa.lider}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: camsEnMesa.length >= 5 ? '#16a34a' : '#d97706' }}>{camsEnMesa.length}/5</span>
+                            {confirmados > 0 && confirmados === camsEnMesa.length && (
+                              <span style={{ fontSize: 10, background: '#f0fdf4', color: '#16a34a', padding: '2px 6px', borderRadius: 20, fontWeight: 600 }}>✓</span>
+                            )}
+                            <span style={{ fontSize: 12, color: '#9ca3af' }}>{abierta ? '▲' : '▼'}</span>
+                          </div>
+                        </button>
+
+                        {/* Caminantes de la mesa */}
+                        {abierta && (
+                          <div style={{ borderTop: '1px solid #f3f4f6', padding: '10px 14px' }}>
+                            {camsEnMesa.length === 0 ? (
+                              <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 8px', fontStyle: 'italic' }}>Sin caminantes asignados</p>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                                {camsEnMesa.map(asig => (
+                                  <div key={asig.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: asig.confirmado_por_lider ? '#f0fdf4' : '#fffbeb', borderRadius: 8 }}>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{asig.caminante?.nombre}</div>
+                                      <div style={{ fontSize: 11, color: '#6b7280' }}>
+                                        {asig.caminante?.celular && `${asig.caminante.celular}`}
+                                        {asig.caminante?.edad && ` · ${asig.caminante.edad} años`}
+                                      </div>
+                                    </div>
+                                    {editandoCamId === asig.id ? (
+                                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                        <select value={nuevaMesaId} onChange={e => setNuevaMesaId(e.target.value)}
+                                          style={{ fontSize: 12, border: '1.5px solid #e8eaf0', borderRadius: 6, padding: '4px 6px', outline: 'none' }}>
+                                          <option value="">Mesa...</option>
+                                          {mesasDisponibles.map(m => <option key={m.id} value={m.id}>Mesa {m.numero}</option>)}
+                                        </select>
+                                        <button onClick={() => { if (nuevaMesaId) { const m = mesasDisponibles.find(x => x.id === nuevaMesaId); if (m) cambiarMesaCaminante(asig.id, m) } }}
+                                          style={{ padding: '4px 8px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>OK</button>
+                                        <button onClick={() => setEditandoCamId(null)}
+                                          style={{ padding: '4px 8px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>✕</button>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', gap: 4 }}>
+                                        <button onClick={() => { setEditandoCamId(asig.id); setNuevaMesaId('') }}
+                                          style={{ padding: '4px 8px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Mover</button>
+                                        <button onClick={() => quitarCaminante(asig.id)}
+                                          style={{ padding: '4px 8px', background: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✕</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Agregar caminante sin mesa */}
+                            {caminantesSinMesa.length > 0 && (
+                              agregandoACaminante === mesa.id ? (
+                                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                  <select value={camSeleccionado} onChange={e => setCamSeleccionado(e.target.value)}
+                                    style={{ flex: 1, fontSize: 12, border: '1.5px solid #e8eaf0', borderRadius: 8, padding: '6px 8px', outline: 'none' }}>
+                                    <option value="">Seleccionar caminante...</option>
+                                    {caminantesSinMesa.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.edad ? ` · ${c.edad} años` : ''}</option>)}
+                                  </select>
+                                  <button onClick={() => agregarCaminanteAMesa(mesa.id, mesa.numero, camSeleccionado)}
+                                    style={{ padding: '6px 12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Agregar</button>
+                                  <button onClick={() => { setAgregandoACaminante(null); setCamSeleccionado('') }}
+                                    style={{ padding: '6px 10px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>✕</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => setAgregandoACaminante(mesa.id)}
+                                  style={{ width: '100%', padding: '7px', background: '#f0f2ff', color: '#0f1787', border: '1.5px dashed #c7d0ff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                                  + Agregar caminante
+                                </button>
+                              )
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -669,10 +950,8 @@ export default function RetiroDashboard() {
                 <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Documento oficial con todas las instrucciones, actividades, guiones y protocolos.</p>
               </div>
             </div>
-            <button
-              onClick={() => window.open('https://docs.google.com/document/d/1lB2M0-FyRe6Eu-2HjcLcnI96jfEqgikC71TWzuhNUR4/edit', '_blank')}
-              style={{ width: '100%', padding: '12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-            >
+            <button onClick={() => window.open('https://docs.google.com/document/d/1lB2M0-FyRe6Eu-2HjcLcnI96jfEqgikC71TWzuhNUR4/edit', '_blank')}
+              style={{ width: '100%', padding: '12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
               Abrir Manual
             </button>
           </div>
