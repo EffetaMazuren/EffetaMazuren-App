@@ -42,6 +42,53 @@ interface Asignacion {
   caminante: Caminante
 }
 
+interface Seguimiento {
+  id?: string
+  asignacion_mesa_id: string
+  llamado: boolean
+  contesto: boolean
+}
+
+function SeguimientoBadges({ asignacionId, seguimientos, onToggle }: {
+  asignacionId: string
+  seguimientos: Record<string, Seguimiento>
+  onToggle: (asignacionId: string, campo: 'llamado' | 'contesto') => void
+}) {
+  const seg = seguimientos[asignacionId] ?? { llamado: false, contesto: false }
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggle(asignacionId, 'llamado') }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '3px 8px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600,
+          background: seg.llamado ? '#dcfce7' : '#f3f4f6',
+          color: seg.llamado ? '#16a34a' : '#6b7280',
+        }}
+      >
+        <div style={{ width: 10, height: 10, borderRadius: 3, border: \`1.5px solid \${seg.llamado ? '#16a34a' : '#9ca3af'}\`, background: seg.llamado ? '#16a34a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {seg.llamado && <svg width="7" height="7" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
+        </div>
+        Llamado
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggle(asignacionId, 'contesto') }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '3px 8px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600,
+          background: seg.contesto ? '#eff6ff' : '#f3f4f6',
+          color: seg.contesto ? '#0f1787' : '#6b7280',
+        }}
+      >
+        <div style={{ width: 10, height: 10, borderRadius: 3, border: \`1.5px solid \${seg.contesto ? '#0f1787' : '#9ca3af'}\`, background: seg.contesto ? '#0f1787' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {seg.contesto && <svg width="7" height="7" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
+        </div>
+        Contestó
+      </button>
+    </div>
+  )
+}
+
 interface Actividad {
   hora: string
   actividad: string
@@ -270,6 +317,7 @@ export default function RetiroDashboard() {
   const [caminantesSinMesa, setCaminantesSinMesa] = useState<Caminante[]>([])
   const [agregandoACaminante, setAgregandoACaminante] = useState<string | null>(null) // mesa_id
   const [camSeleccionado, setCamSeleccionado] = useState('')
+  const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
 
   useEffect(() => {
     if (tab === 'roles') cargarRoles()
@@ -315,6 +363,18 @@ export default function RetiroDashboard() {
     })).filter((a: Asignacion) => a.caminante)
 
     setAsignaciones(asigs)
+
+    // Cargar seguimientos
+    if (asigs.length > 0) {
+      const ids = asigs.map(a => a.id)
+      const { data: segData } = await supabase
+        .from('seguimiento_caminantes')
+        .select('id, asignacion_mesa_id, llamado, contesto')
+        .in('asignacion_mesa_id', ids)
+      const segMap: Record<string, Seguimiento> = {}
+      ;(segData ?? []).forEach((s: any) => { segMap[s.asignacion_mesa_id] = s })
+      setSeguimientos(segMap)
+    }
 
     // Caminantes con pago confirmado sin asignar
     const { data: pagados } = await supabase
@@ -425,6 +485,24 @@ export default function RetiroDashboard() {
     await supabase.from('asignaciones_mesa').delete().eq('id', asignacionId)
     await cargarCaminantes()
     await sincronizarSheets()
+  }
+
+  const toggleSeguimiento = async (asignacionId: string, campo: 'llamado' | 'contesto') => {
+    const actual = seguimientos[asignacionId] ?? { llamado: false, contesto: false }
+    const nuevo = { ...actual, [campo]: !actual[campo] }
+    // Optimistic update
+    setSeguimientos(prev => ({ ...prev, [asignacionId]: { ...nuevo, asignacion_mesa_id: asignacionId } }))
+    // Upsert en Supabase
+    const { data: existing } = await supabase
+      .from('seguimiento_caminantes')
+      .select('id')
+      .eq('asignacion_mesa_id', asignacionId)
+      .single()
+    if (existing?.id) {
+      await supabase.from('seguimiento_caminantes').update({ [campo]: nuevo[campo], updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      await supabase.from('seguimiento_caminantes').insert({ asignacion_mesa_id: asignacionId, llamado: nuevo.llamado, contesto: nuevo.contesto })
+    }
   }
 
   const agregarCaminanteAMesa = async (mesaId: string, mesaNumero: number, caminanteId: string) => {
@@ -883,13 +961,14 @@ export default function RetiroDashboard() {
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
                                 {camsEnMesa.map(asig => (
-                                  <div key={asig.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: asig.confirmado_por_lider ? '#f0fdf4' : '#fffbeb', borderRadius: 8 }}>
+                                  <div key={asig.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px', background: asig.confirmado_por_lider ? '#f0fdf4' : '#fffbeb', borderRadius: 8 }}>
                                     <div style={{ flex: 1 }}>
-                                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{asig.caminante?.nombre}</div>
-                                      <div style={{ fontSize: 11, color: '#6b7280' }}>
+                                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2 }}>{asig.caminante?.nombre}</div>
+                                      <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>
                                         {asig.caminante?.celular && `${asig.caminante.celular}`}
                                         {asig.caminante?.edad && ` · ${asig.caminante.edad} años`}
                                       </div>
+                                      <SeguimientoBadges asignacionId={asig.id} seguimientos={seguimientos} onToggle={toggleSeguimiento} />
                                     </div>
                                     {editandoCamId === asig.id ? (
                                       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
