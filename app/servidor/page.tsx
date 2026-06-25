@@ -68,6 +68,10 @@ function getVersiculoPreview() {
   return VERSICULOS_PREVIEW[periodos % VERSICULOS_PREVIEW.length];
 }
 
+function norm(s: string) {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
 export default function ServidorPage() {
   const router = useRouter();
   const [servidor, setServidor] = useState<Servidor | null>(null);
@@ -75,10 +79,10 @@ export default function ServidorPage() {
   const [proximaReunion, setProximaReunion] = useState<Reunion | null>(null);
   const [asistencias, setAsistencias] = useState<Asistencia[]>([]);
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
+  const [esAngelito, setEsAngelito] = useState(false);
   const [cargando, setCargando] = useState(true);
 
   const inscripcionIdRef = useRef<string | null>(null);
-
   const versiculoPreview = getVersiculoPreview();
 
   useEffect(() => {
@@ -98,17 +102,17 @@ export default function ServidorPage() {
     if (!usuarioData) { router.push('/servidor/registro'); return; }
     setServidor(usuarioData);
 
-    // Buscar inscripción
+    // Buscar inscripción con es_interno
     const { data: inscripcion } = await supabase
       .from('servidores_inscripcion')
-      .select('id')
+      .select('id, es_interno, nombre')
       .eq('usuario_id', user.id)
       .eq('retiro_id', RETIRO_ID)
       .single();
 
     if (inscripcion) {
       inscripcionIdRef.current = inscripcion.id;
-      // CRÍTICO: persona_id en pagos de servidores = inscripcion.id (no user.id)
+
       const { data: pagosData } = await supabase
         .from('pagos')
         .select('valor')
@@ -121,6 +125,29 @@ export default function ServidorPage() {
         .select('reunion_id')
         .eq('servidor_inscripcion_id', inscripcion.id);
       if (asistenciasData) setAsistencias(asistenciasData);
+
+      // Verificar si es externo sin roles asignados → angelito
+      if (inscripcion.es_interno === false) {
+        const { data: rolesData } = await supabase
+          .from('roles_retiro')
+          .select('encargados')
+          .eq('retiro_id', RETIRO_ID);
+
+        const nombreNorm = norm(inscripcion.nombre ?? '');
+        const tokens = nombreNorm.split(' ').filter((t: string) => t.length > 2);
+
+        const tieneRol = (rolesData ?? []).some((r: any) => {
+          return (r.encargados ?? []).some((enc: string) => {
+            const encNorm = norm(enc);
+            if (encNorm === nombreNorm) return true;
+            const tokensEnc = encNorm.split(' ').filter((t: string) => t.length > 2);
+            const coincidencias = tokens.filter((t: string) => tokensEnc.includes(t)).length;
+            return coincidencias >= 3;
+          });
+        });
+
+        if (!tieneRol) setEsAngelito(true);
+      }
     }
 
     const hoy = new Date().toISOString().split('T')[0];
@@ -134,7 +161,6 @@ export default function ServidorPage() {
       .limit(1);
     if (reunionesData && reunionesData.length > 0) setProximaReunion(reunionesData[0]);
 
-    // Cargar mensajes de líderes: generales (sin destinatario) + los específicos para este servidor
     const inscripcionIdParaMensajes = inscripcion?.id ?? null;
     const { data: msgsGenerales } = await supabase
       .from('mensajes_retiro')
@@ -160,36 +186,21 @@ export default function ServidorPage() {
     setCargando(false);
   }
 
-  // Suscripción realtime a mensajes
   useEffect(() => {
     const channel = supabase
       .channel('mensajes-servidor')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'mensajes_retiro',
-        filter: `retiro_id=eq.${RETIRO_ID}`
-      }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensajes_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, (payload) => {
         const nuevo = payload.new as Mensaje;
-        // Mostrar solo si es general o va dirigido a este servidor
         const inscId = inscripcionIdRef.current;
         if (!nuevo.destinatario_id || nuevo.destinatario_id === inscId) {
           setMensajes(prev => [nuevo, ...prev]);
         }
       })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'mensajes_retiro'
-      }, (payload) => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mensajes_retiro' }, (payload) => {
         const updated = payload.new as Mensaje;
         setMensajes(prev => prev.map(m => m.id === updated.id ? { ...m, texto: updated.texto, editado: updated.editado, updated_at: updated.updated_at } : m));
       })
-      .on('postgres_changes', {
-        event: 'DELETE',
-        schema: 'public',
-        table: 'mensajes_retiro'
-      }, (payload) => {
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'mensajes_retiro' }, (payload) => {
         setMensajes(prev => prev.filter(m => m.id !== payload.old.id));
       })
       .subscribe();
@@ -250,6 +261,28 @@ export default function ServidorPage() {
 
       <div style={{ maxWidth: '500px', margin: '-20px auto 0', padding: '0 16px 100px', position: 'relative', zIndex: 2 }}>
 
+        {/* ── BANNER ANGELITO ── */}
+        {esAngelito && (
+          <div style={{
+            background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+            borderRadius: '16px', padding: '20px', marginBottom: '12px', color: 'white',
+            position: 'relative', overflow: 'hidden',
+          }}>
+            <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '100px', height: '100px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', position: 'relative', zIndex: 1 }}>
+              <div style={{ fontSize: '32px', flexShrink: 0, lineHeight: 1 }}>👼</div>
+              <div>
+                <p style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: 700, color: 'white' }}>
+                  Eres angelito
+                </p>
+                <p style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 }}>
+                  Nos puedes acompañar a cuidar el Santísimo, la parte más importante de todo el retiro.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Card versículo */}
         <button
           onClick={() => router.push('/servidor/versiculo')}
@@ -276,9 +309,7 @@ export default function ServidorPage() {
         {/* ── MENSAJES DE LÍDERES ── */}
         <div style={{ background: mensajes.length > 0 ? '#0f1787' : 'white', border: mensajes.length > 0 ? 'none' : '1px solid #e8eaf0', borderRadius: '16px', padding: '18px', marginBottom: '12px', overflow: 'hidden', position: 'relative' }}>
           {mensajes.length > 0 && (
-            <>
-              <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '100px', height: '100px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
-            </>
+            <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '100px', height: '100px', borderRadius: '50%', background: 'rgba(255,255,255,0.04)' }} />
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: mensajes.length > 0 ? '14px' : '0' }}>
             <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: mensajes.length > 0 ? 'rgba(255,255,255,0.15)' : '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -296,7 +327,6 @@ export default function ServidorPage() {
               </span>
             )}
           </div>
-
           {mensajes.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {mensajes.map((msg, idx) => (
@@ -357,7 +387,6 @@ export default function ServidorPage() {
         <p style={{ color: '#9ca3af', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase', margin: '4px 0 12px' }}>Accesos rápidos</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          {/* Registrar asistencia */}
           <button onClick={() => router.push('/servidor/asistencias')} style={{ background: 'white', border: '1px solid #e8eaf0', borderRadius: '14px', padding: '18px 14px', cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" fill="none" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -370,7 +399,6 @@ export default function ServidorPage() {
             </div>
           </button>
 
-          {/* Subir factura */}
           <button onClick={() => router.push('/servidor/reembolso')} style={{ background: 'white', border: '1px solid #e8eaf0', borderRadius: '14px', padding: '18px 14px', cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" fill="none" stroke="#d97706" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -383,7 +411,6 @@ export default function ServidorPage() {
             </div>
           </button>
 
-          {/* Mi pago */}
           <button onClick={() => router.push('/servidor/pago')} style={{ background: 'white', border: '1px solid #e8eaf0', borderRadius: '14px', padding: '18px 14px', cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#eef0ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" fill="none" stroke="#0f1787" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -396,7 +423,6 @@ export default function ServidorPage() {
             </div>
           </button>
 
-          {/* Mi retiro — corregido a /servidor/retiro */}
           <button onClick={() => router.push('/servidor/retiro')} style={{ background: 'white', border: '1px solid #e8eaf0', borderRadius: '14px', padding: '18px 14px', cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#fdf2f8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" fill="none" stroke="#7c3aed" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
@@ -410,7 +436,6 @@ export default function ServidorPage() {
           </button>
         </div>
 
-        {/* Cerrar sesión */}
         <button
           onClick={async () => { await supabase.auth.signOut(); router.push('/'); }}
           style={{ width: '100%', background: 'none', border: '1px solid #e8eaf0', borderRadius: '12px', padding: '14px', marginTop: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
