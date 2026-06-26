@@ -80,30 +80,29 @@ function getColor(rol: string) {
   return COLOR_ROL[rol] ?? { bg: '#f3f4f6', dot: '#9ca3af', text: '#374151' }
 }
 
-function norm(s: string) {
+function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
 }
 
-function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
-  const normServidor = norm(nombreServidor)
-  const tokensServidor = normServidor.split(' ').filter(t => t.length > 2)
-  for (const enc of encargados) {
-    const normEnc = norm(enc)
-    // Match exacto
-    if (normEnc === normServidor) return true
-    const tokensEnc = normEnc.split(' ').filter(t => t.length > 2)
-    // Exigir al menos 3 tokens coincidentes para evitar falsos positivos con nombres comunes
-    const coincidencias = tokensServidor.filter(t => tokensEnc.includes(t)).length
-    if (coincidencias >= 3) return true
-    // O: primer nombre + ambos apellidos (cuando el encargado tiene nombre completo)
-    if (tokensServidor.length >= 3 && tokensEnc.length >= 3) {
-      const primerNombre = tokensServidor[0]
-      const apellidos = tokensServidor.slice(1)
-      const apellidosMatch = apellidos.filter(a => tokensEnc.includes(a)).length
-      if (tokensEnc.includes(primerNombre) && apellidosMatch >= 2) return true
-    }
+function tokensOf(s: string): string[] {
+  return norm(s).split(' ').filter(t => t.length > 2)
+}
+
+function nombreMatch(a: string, b: string): boolean {
+  const nA = norm(a), nB = norm(b)
+  if (nA === nB) return true
+  const tA = tokensOf(a), tB = tokensOf(b)
+  const coincidencias = tA.filter(t => tB.includes(t)).length
+  if (coincidencias >= 3) return true
+  if (tA.length >= 3 && tB.length >= 3) {
+    const apellidosMatch = tA.slice(1).filter(ap => tB.includes(ap)).length
+    if (tB.includes(tA[0]) && apellidosMatch >= 2) return true
   }
   return false
+}
+
+function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
+  return encargados.some(enc => nombreMatch(nombreServidor, enc))
 }
 
 function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB; esLider: boolean } | null {
