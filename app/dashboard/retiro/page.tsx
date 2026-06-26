@@ -293,6 +293,13 @@ export default function RetiroDashboard() {
   const [editRol, setEditRol] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [exito, setExito] = useState('')
+  const [creandoRol, setCreandoRol] = useState(false)
+  const [filtroRolesNum, setFiltroRolesNum] = useState<number | null>(null)
+  const [filtroRolesModo, setFiltroRolesModo] = useState<'exacto' | 'mas' | 'menos'>('exacto')
+  const [nuevoRolNombre, setNuevoRolNombre] = useState('')
+  const [nuevoRolCategoria, setNuevoRolCategoria] = useState('General')
+  const [nuevoRolEncargados, setNuevoRolEncargados] = useState('')
+  const [guardandoNuevo, setGuardandoNuevo] = useState(false)
 
   // Mesas
   const [mesas, setMesas] = useState<Mesa[]>([])
@@ -574,6 +581,30 @@ export default function RetiroDashboard() {
     setGuardando(false)
   }
 
+  const crearRol = async () => {
+    if (!nuevoRolNombre.trim()) return
+    setGuardandoNuevo(true)
+    const encargados = nuevoRolEncargados.split(',').map(e => e.trim()).filter(e => e.length > 0)
+    const maxOrden = roles.length > 0 ? Math.max(...roles.map(r => r.orden)) : 0
+    const { error } = await supabase.from('roles_retiro').insert({
+      retiro_id: RETIRO_ID,
+      categoria: nuevoRolCategoria,
+      rol: nuevoRolNombre.trim(),
+      encargados,
+      orden: maxOrden + 1,
+    })
+    if (!error) {
+      await cargarRoles()
+      setCreandoRol(false)
+      setNuevoRolNombre('')
+      setNuevoRolEncargados('')
+      setNuevoRolCategoria('General')
+      setExito('Rol creado')
+      setTimeout(() => setExito(''), 2000)
+    }
+    setGuardandoNuevo(false)
+  }
+
   // ── Mesas helpers ──
   const iniciarEdicionMesa = (mesa: Mesa) => {
     setEditandoMesaId(mesa.id)
@@ -592,6 +623,24 @@ export default function RetiroDashboard() {
   const categorias = [...new Set(roles.map(r => r.categoria))]
 
   // Filtrar caminantes por búsqueda
+  // Mapa: nombre -> cantidad de roles
+  const rolesPorPersona: Record<string, number> = {}
+  roles.forEach(r => {
+    r.encargados.forEach(e => {
+      rolesPorPersona[e] = (rolesPorPersona[e] ?? 0) + 1
+    })
+  })
+
+  // Personas filtradas por cantidad de roles
+  const personasFiltradas = filtroRolesNum !== null
+    ? Object.entries(rolesPorPersona).filter(([, count]) => {
+        if (filtroRolesModo === 'exacto') return count === filtroRolesNum
+        if (filtroRolesModo === 'mas') return count >= filtroRolesNum!
+        if (filtroRolesModo === 'menos') return count <= filtroRolesNum!
+        return true
+      }).sort((a, b) => b[1] - a[1])
+    : []
+
   const busquedaCamLower = busquedaCam.toLowerCase()
   const asignacionesFiltradas = busquedaCam.length > 1
     ? asignaciones.filter(a => a.caminante?.nombre?.toLowerCase().includes(busquedaCamLower))
@@ -695,7 +744,111 @@ export default function RetiroDashboard() {
       {/* ── ROLES ── */}
       {tab === 'roles' && (
         <div>
-          {exito && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>Guardado correctamente</div>}
+          {exito && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ {exito}</div>}
+
+          {/* Botón nuevo rol */}
+          {!creandoRol && (
+            <button onClick={() => setCreandoRol(true)} style={{ width: '100%', padding: '10px', background: '#f0f2ff', color: '#0f1787', border: '1.5px dashed #c7d0ff', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 16 }}>
+              + Nuevo rol
+            </button>
+          )}
+
+          {/* Formulario nuevo rol */}
+          {creandoRol && (
+            <div style={{ background: 'white', border: '1.5px solid #c7d0ff', borderRadius: 12, padding: '16px', marginBottom: 16 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: '0 0 14px' }}>Nuevo rol</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>CATEGORÍA</label>
+                  <select value={nuevoRolCategoria} onChange={e => setNuevoRolCategoria(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' }}>
+                    <option value="General">General</option>
+                    <option value="Actividades Generales">Actividades Generales</option>
+                    <option value="Muro y Nudo">Muro y Nudo</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>NOMBRE DEL ROL</label>
+                  <input value={nuevoRolNombre} onChange={e => setNuevoRolNombre(e.target.value)} placeholder="Ej: Campanero"
+                    style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>ENCARGADOS (separados por coma)</label>
+                  <textarea value={nuevoRolEncargados} onChange={e => setNuevoRolEncargados(e.target.value)} rows={3} placeholder="Ej: Juan Pérez, María García"
+                    style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={crearRol} disabled={guardandoNuevo || !nuevoRolNombre.trim()}
+                  style={{ flex: 1, padding: '9px', background: guardandoNuevo || !nuevoRolNombre.trim() ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  {guardandoNuevo ? 'Guardando...' : 'Crear rol'}
+                </button>
+                <button onClick={() => { setCreandoRol(false); setNuevoRolNombre(''); setNuevoRolEncargados('') }}
+                  style={{ padding: '9px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Filtro por cantidad de roles */}
+          <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, padding: '14px', marginBottom: 16 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Filtrar por cantidad de roles</p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {(['exacto', 'mas', 'menos'] as const).map(modo => (
+                <button key={modo} onClick={() => setFiltroRolesModo(modo)}
+                  style={{ padding: '4px 10px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                    background: filtroRolesModo === modo ? '#0f1787' : '#f3f4f6',
+                    color: filtroRolesModo === modo ? 'white' : '#6b7280' }}>
+                  {modo === 'exacto' ? 'Exactamente' : modo === 'mas' ? 'Al menos' : 'Máximo'}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="number" min={1} max={20} value={filtroRolesNum ?? ''} placeholder="# roles"
+                onChange={e => setFiltroRolesNum(e.target.value ? parseInt(e.target.value) : null)}
+                style={{ width: 80, padding: '7px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', fontFamily: 'inherit' }} />
+              <span style={{ fontSize: 13, color: '#6b7280' }}>roles</span>
+              {filtroRolesNum !== null && (
+                <button onClick={() => setFiltroRolesNum(null)}
+                  style={{ marginLeft: 'auto', padding: '4px 10px', background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer' }}>
+                  Limpiar
+                </button>
+              )}
+            </div>
+
+            {/* Resultados del filtro */}
+            {filtroRolesNum !== null && (
+              <div style={{ marginTop: 12 }}>
+                {personasFiltradas.length === 0 ? (
+                  <p style={{ fontSize: 13, color: '#9ca3af', margin: 0, fontStyle: 'italic' }}>Nadie tiene ese número de roles</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 8px', fontWeight: 600 }}>{personasFiltradas.length} persona{personasFiltradas.length !== 1 ? 's' : ''}</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {personasFiltradas.map(([nombre, count]) => {
+                        const susRoles = roles.filter(r => r.encargados.includes(nombre))
+                        return (
+                          <div key={nombre} style={{ background: '#f7f8fc', borderRadius: 8, padding: '8px 12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{nombre}</span>
+                              <span style={{ fontSize: 11, background: '#0f1787', color: 'white', padding: '2px 8px', borderRadius: 20, fontWeight: 700 }}>{count} roles</span>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {susRoles.map((r, i) => (
+                                <span key={i} style={{ fontSize: 10, background: '#e8eaf0', color: '#374151', padding: '1px 7px', borderRadius: 20 }}>{r.rol}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           <div style={{ position: 'relative', marginBottom: 20 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
