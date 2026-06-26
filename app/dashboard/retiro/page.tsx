@@ -231,25 +231,28 @@ export default function RetiroDashboard() {
 
     const idsConCuarto = new Set((asigs ?? []).map((a: AsignacionHabitacion) => a.persona_id))
 
-    // TODOS los caminantes registrados
+    // TODOS los caminantes registrados en el retiro
     const { data: camData } = await supabase
       .from('caminantes')
       .select('id, nombre')
       .eq('retiro_id', RETIRO_ID)
       .order('nombre')
     const listaCaminantes = (camData ?? []).map((c: any) => ({
-      id: c.id, nombre: c.nombre, tipo: 'caminante' as const,
+      id: c.id,
+      nombre: c.nombre,
+      tipo: 'caminante' as const,
     }))
 
-    // Solo servidores internos
+    // TODOS los servidores registrados en el retiro
     const { data: servidoresData } = await supabase
       .from('servidores_inscripcion')
       .select('id, nombre')
       .eq('retiro_id', RETIRO_ID)
-      .eq('es_interno', true)
       .order('nombre')
     const listaServidores = (servidoresData ?? []).map((s: any) => ({
-      id: s.id, nombre: s.nombre, tipo: 'servidor' as const,
+      id: s.id,
+      nombre: s.nombre,
+      tipo: 'servidor' as const,
     }))
 
     const todasPersonas = [...listaServidores, ...listaCaminantes]
@@ -276,12 +279,11 @@ export default function RetiroDashboard() {
         .eq('retiro_id', RETIRO_ID)
       const caminantesLista: { id: string; nombre: string }[] = camData ?? []
 
-      // Solo servidores internos
+      // TODOS los servidores
       const { data: servidoresData } = await supabase
         .from('servidores_inscripcion')
         .select('id, nombre')
         .eq('retiro_id', RETIRO_ID)
-        .eq('es_interno', true)
       const servidoresLista: { id: string; nombre: string }[] = servidoresData ?? []
 
       const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5)
@@ -295,6 +297,7 @@ export default function RetiroDashboard() {
       const cuentaHab: Record<string, number> = {}
       todasHabs.forEach(h => { cuentaHab[h.id] = 0 })
 
+      // Servidores: primero piso 1, luego piso 2+
       const habsParaServidores = [...todasHabs.filter(h => h.piso === 1), ...todasHabs.filter(h => h.piso > 1)]
       for (const servidor of servidoresShuffled) {
         const hab = habsParaServidores.find(h => cuentaHab[h.id] < h.capacidad)
@@ -303,6 +306,7 @@ export default function RetiroDashboard() {
         cuentaHab[hab.id]++
       }
 
+      // Caminantes: solo piso 2+
       const habsParaCaminantes = todasHabs.filter(h => h.piso > 1)
       for (const caminante of caminantesShuffled) {
         const hab = habsParaCaminantes.find(h => cuentaHab[h.id] < h.capacidad)
