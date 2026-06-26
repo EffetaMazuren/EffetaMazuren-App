@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+const CAMINANTES_POR_MESA = 6
 
-// ── Normalización centralizada ──
 function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
 }
@@ -15,7 +15,6 @@ function tokensOf(s: string): string[] {
   return norm(s).split(' ').filter(t => t.length > 2)
 }
 
-// Match robusto: exacto normalizado OR 3+ tokens coincidentes OR nombre+2 apellidos
 function nombreMatch(nombreServidor: string, encargado: string): boolean {
   const nS = norm(nombreServidor)
   const nE = norm(encargado)
@@ -35,6 +34,7 @@ function nombreMatch(nombreServidor: string, encargado: string): boolean {
 function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
   return encargados.some(enc => nombreMatch(nombreServidor, enc))
 }
+
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
 
 type Tab = 'minutominuto' | 'roles' | 'mesas' | 'caminantes' | 'manual'
@@ -259,9 +259,7 @@ const CATEGORIAS_COLOR: Record<string, { border: string; badge: string; text: st
   'Muro y Nudo':          { border: '#dc2626', badge: '#fef2f2', text: '#dc2626' },
 }
 
-// ── Sugerencia automática por edad ──
 function sugerirAsignacion(caminantes: Caminante[], mesas: Mesa[]): { caminante_id: string; mesa_id: string; mesa_numero: number }[] {
-  // Calcular edad promedio de líderes por mesa
   const mesasConEdad = mesas.map(m => {
     const edades: number[] = []
     const extraerEdad = (texto: string) => {
@@ -276,30 +274,26 @@ function sugerirAsignacion(caminantes: Caminante[], mesas: Mesa[]): { caminante_
     return { ...m, edadPromedio: promedio }
   })
 
-  // Ordenar mesas por edad promedio
   mesasConEdad.sort((a, b) => a.edadPromedio - b.edadPromedio)
 
-  // Ordenar caminantes por edad
   const caminantesOrdenados = [...caminantes].sort((a, b) => (a.edad ?? 20) - (b.edad ?? 20))
 
-  // Asignar 5 por mesa en orden de edad (snake draft para balancear)
   const asignaciones: { caminante_id: string; mesa_id: string; mesa_numero: number }[] = []
   const cuentaPorMesa: Record<string, number> = {}
   mesas.forEach(m => { cuentaPorMesa[m.id] = 0 })
 
   for (const cam of caminantesOrdenados) {
-    // Buscar la mesa con menos caminantes que tenga edad más cercana
     let mejorMesa = mesasConEdad[0]
     let menorDiff = Infinity
     for (const m of mesasConEdad) {
-      if (cuentaPorMesa[m.id] >= 5) continue
+      if (cuentaPorMesa[m.id] >= CAMINANTES_POR_MESA) continue
       const diff = Math.abs((cam.edad ?? 20) - m.edadPromedio)
       if (diff < menorDiff) {
         menorDiff = diff
         mejorMesa = m
       }
     }
-    if (cuentaPorMesa[mejorMesa.id] < 5) {
+    if (cuentaPorMesa[mejorMesa.id] < CAMINANTES_POR_MESA) {
       asignaciones.push({ caminante_id: cam.id, mesa_id: mejorMesa.id, mesa_numero: mejorMesa.numero })
       cuentaPorMesa[mejorMesa.id]++
     }
@@ -314,7 +308,6 @@ export default function RetiroDashboard() {
   const [diaActivo, setDiaActivo] = useState<Dia>('viernes')
   const [expandido, setExpandido] = useState<string | null>(null)
 
-  // Roles
   const [roles, setRoles] = useState<RolRetiro[]>([])
   const [loadingRoles, setLoadingRoles] = useState(false)
   const [busqueda, setBusqueda] = useState('')
@@ -331,7 +324,6 @@ export default function RetiroDashboard() {
   const [nuevoRolEncargados, setNuevoRolEncargados] = useState('')
   const [guardandoNuevo, setGuardandoNuevo] = useState(false)
 
-  // Mesas
   const [mesas, setMesas] = useState<Mesa[]>([])
   const [loadingMesas, setLoadingMesas] = useState(false)
   const [editandoMesaId, setEditandoMesaId] = useState<string | null>(null)
@@ -339,7 +331,6 @@ export default function RetiroDashboard() {
   const [guardandoMesa, setGuardandoMesa] = useState(false)
   const [exitoMesa, setExitoMesa] = useState('')
 
-  // Caminantes
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>([])
   const [loadingCam, setLoadingCam] = useState(false)
   const [generando, setGenerando] = useState(false)
@@ -347,12 +338,12 @@ export default function RetiroDashboard() {
   const [exitoCam, setExitoCam] = useState('')
   const [busquedaCam, setBusquedaCam] = useState('')
   const [mesaExpandida, setMesaExpandida] = useState<string | null>(null)
-  const [editandoCamId, setEditandoCamId] = useState<string | null>(null) // asignacion.id
+  const [editandoCamId, setEditandoCamId] = useState<string | null>(null)
   const [mesasDisponibles, setMesasDisponibles] = useState<Mesa[]>([])
   const [nuevaMesaId, setNuevaMesaId] = useState('')
   const [sinAsignar, setSinAsignar] = useState<Caminante[]>([])
   const [caminantesSinMesa, setCaminantesSinMesa] = useState<Caminante[]>([])
-  const [agregandoACaminante, setAgregandoACaminante] = useState<string | null>(null) // mesa_id
+  const [agregandoACaminante, setAgregandoACaminante] = useState<string | null>(null)
   const [camSeleccionado, setCamSeleccionado] = useState('')
   const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
 
@@ -379,12 +370,10 @@ export default function RetiroDashboard() {
   const cargarCaminantes = useCallback(async () => {
     setLoadingCam(true)
 
-    // Cargar mesas
     const { data: mesasData } = await supabase.from('mesas').select('id, numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero')
     const todasMesas: Mesa[] = mesasData ?? []
     setMesasDisponibles(todasMesas)
 
-    // Cargar asignaciones existentes con datos del caminante
     const { data: asigData } = await supabase
       .from('asignaciones_mesa')
       .select('id, caminante_id, mesa_id, mesa_numero, confirmado_por_lider, caminantes(id, nombre, celular, edad)')
@@ -401,7 +390,6 @@ export default function RetiroDashboard() {
 
     setAsignaciones(asigs)
 
-    // Cargar seguimientos
     if (asigs.length > 0) {
       const ids = asigs.map(a => a.id)
       const { data: segData } = await supabase
@@ -413,7 +401,6 @@ export default function RetiroDashboard() {
       setSeguimientos(segMap)
     }
 
-    // Caminantes con pago confirmado sin asignar
     const { data: pagados } = await supabase
       .from('pagos')
       .select('persona_id')
@@ -446,7 +433,6 @@ export default function RetiroDashboard() {
   const generarSugerencia = async () => {
     setGenerando(true)
     try {
-      // Obtener caminantes pagados
       const { data: pagados } = await supabase
         .from('pagos')
         .select('persona_id')
@@ -466,7 +452,6 @@ export default function RetiroDashboard() {
       const caminantes: Caminante[] = camData ?? []
       const sugeridas = sugerirAsignacion(caminantes, mesasDisponibles)
 
-      // Borrar asignaciones anteriores e insertar nuevas
       await supabase.from('asignaciones_mesa').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
       if (sugeridas.length > 0) {
@@ -527,9 +512,7 @@ export default function RetiroDashboard() {
   const toggleSeguimiento = async (asignacionId: string, campo: 'llamado' | 'contesto') => {
     const actual = seguimientos[asignacionId] ?? { llamado: false, contesto: false }
     const nuevo = { ...actual, [campo]: !actual[campo] }
-    // Optimistic update
     setSeguimientos(prev => ({ ...prev, [asignacionId]: { ...nuevo, asignacion_mesa_id: asignacionId } }))
-    // Upsert en Supabase
     const { data: existing } = await supabase
       .from('seguimiento_caminantes')
       .select('id')
@@ -561,7 +544,6 @@ export default function RetiroDashboard() {
 
   const sincronizarSheets = async () => {
     try {
-      // Recargar datos frescos para el sheet
       const { data: asigData } = await supabase
         .from('asignaciones_mesa')
         .select('mesa_numero, mesa_id, caminantes(nombre, celular, edad)')
@@ -576,7 +558,6 @@ export default function RetiroDashboard() {
       const mesasMap: Record<string, Mesa> = {}
       ;(mesasData ?? []).forEach((m: Mesa) => { mesasMap[m.id] = m })
 
-      // Agrupar por mesa
       const porMesa: Record<number, { mesa: Mesa; caminantes: { nombre: string; celular: string; edad: number | null }[] }> = {}
       ;(asigData ?? []).forEach((a: any) => {
         if (!a.caminantes) return
@@ -596,7 +577,6 @@ export default function RetiroDashboard() {
     }
   }
 
-  // ── Roles helpers ──
   const iniciarEdicion = (rol: RolRetiro) => {
     setEditandoId(rol.id)
     setEditRol(rol.rol)
@@ -635,7 +615,6 @@ export default function RetiroDashboard() {
     setGuardandoNuevo(false)
   }
 
-  // ── Mesas helpers ──
   const iniciarEdicionMesa = (mesa: Mesa) => {
     setEditandoMesaId(mesa.id)
     setEditMesa({ adulto: mesa.adulto ?? '', lider: mesa.lider ?? '', colider: mesa.colider ?? '' })
@@ -652,9 +631,6 @@ export default function RetiroDashboard() {
   const resultadosBusqueda = busqueda.length > 1 ? roles.filter(r => r.encargados.some(e => e.toLowerCase().includes(busquedaLower))) : []
   const categorias = [...new Set(roles.map(r => r.categoria))]
 
-  // Filtrar caminantes por búsqueda
-  // Mapa: nombre normalizado -> { display, count }
-  // Agrupa María Paula Tenorio y Maria Paula Tenorio como la misma persona
   const rolesPorPersonaMap: Record<string, { display: string; count: number }> = {}
   roles.forEach(r => {
     r.encargados.forEach(e => {
@@ -667,7 +643,6 @@ export default function RetiroDashboard() {
     Object.entries(rolesPorPersonaMap).map(([k, v]) => [v.display, v.count])
   )
 
-  // Personas filtradas por cantidad de roles
   const personasFiltradas = filtroRolesNum !== null
     ? Object.entries(rolesPorPersona).filter(([, count]) => {
         if (filtroRolesModo === 'exacto') return count === filtroRolesNum
@@ -696,7 +671,6 @@ export default function RetiroDashboard() {
     { id: 'domingo', label: 'Domingo', fecha: '5 Jul' },
   ]
 
-  // Agrupar asignaciones por mesa
   const asignacionesPorMesa: Record<number, Asignacion[]> = {}
   asignacionesFiltradas.forEach(a => {
     if (!asignacionesPorMesa[a.mesa_numero]) asignacionesPorMesa[a.mesa_numero] = []
@@ -705,7 +679,6 @@ export default function RetiroDashboard() {
 
   return (
     <div style={{ padding: '24px 16px', maxWidth: 700, margin: '0 auto', paddingBottom: 40 }}>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>IX Retiro Effeta Mazuren</h1>
@@ -714,7 +687,6 @@ export default function RetiroDashboard() {
         <button onClick={() => router.push('/dashboard')} style={{ background: '#f3f4f6', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', color: '#374151' }}>← Dashboard</button>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f3f4f6', borderRadius: 10, padding: 4, overflowX: 'auto' }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -782,14 +754,12 @@ export default function RetiroDashboard() {
         <div>
           {exito && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ {exito}</div>}
 
-          {/* Botón nuevo rol */}
           {!creandoRol && (
             <button onClick={() => setCreandoRol(true)} style={{ width: '100%', padding: '10px', background: '#f0f2ff', color: '#0f1787', border: '1.5px dashed #c7d0ff', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 16 }}>
               + Nuevo rol
             </button>
           )}
 
-          {/* Formulario nuevo rol */}
           {creandoRol && (
             <div style={{ background: 'white', border: '1.5px solid #c7d0ff', borderRadius: 12, padding: '16px', marginBottom: 16 }}>
               <p style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: '0 0 14px' }}>Nuevo rol</p>
@@ -827,7 +797,6 @@ export default function RetiroDashboard() {
             </div>
           )}
 
-          {/* Filtro por cantidad de roles */}
           <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, padding: '14px', marginBottom: 16 }}>
             <p style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Filtrar por cantidad de roles</p>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -852,8 +821,6 @@ export default function RetiroDashboard() {
                 </button>
               )}
             </div>
-
-            {/* Resultados del filtro */}
             {filtroRolesNum !== null && (
               <div style={{ marginTop: 12 }}>
                 {personasFiltradas.length === 0 ? (
@@ -893,6 +860,7 @@ export default function RetiroDashboard() {
               style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }} />
             {busqueda && <button onClick={() => setBusqueda('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>✕</button>}
           </div>
+
           {busqueda.length > 1 && (
             <div style={{ marginBottom: 20 }}>
               {resultadosBusqueda.length === 0 ? (
@@ -917,6 +885,7 @@ export default function RetiroDashboard() {
               )}
             </div>
           )}
+
           {busqueda.length <= 1 && (
             loadingRoles ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
@@ -1036,7 +1005,6 @@ export default function RetiroDashboard() {
             </div>
           ) : (
             <>
-              {/* Acciones */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 <button onClick={generarSugerencia} disabled={generando || guardandoCam}
                   style={{ flex: 1, padding: '10px', background: generando ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -1056,7 +1024,6 @@ export default function RetiroDashboard() {
                 )}
               </div>
 
-              {/* Stats */}
               {asignaciones.length > 0 && (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                   <div style={{ flex: 1, background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
@@ -1074,7 +1041,6 @@ export default function RetiroDashboard() {
                 </div>
               )}
 
-              {/* Búsqueda */}
               {asignaciones.length > 0 && (
                 <div style={{ position: 'relative', marginBottom: 16 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
@@ -1086,7 +1052,6 @@ export default function RetiroDashboard() {
                 </div>
               )}
 
-              {/* Sin asignar */}
               {sinAsignar.length > 0 && (
                 <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: '#92400e', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -1102,7 +1067,6 @@ export default function RetiroDashboard() {
                 </div>
               )}
 
-              {/* Estado vacío */}
               {asignaciones.length === 0 && (
                 <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '40px 24px', textAlign: 'center' }}>
                   <div style={{ width: 48, height: 48, background: '#f0f2ff', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -1116,7 +1080,6 @@ export default function RetiroDashboard() {
                 </div>
               )}
 
-              {/* Lista por mesa */}
               {asignaciones.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {mesasDisponibles.map(mesa => {
@@ -1125,7 +1088,6 @@ export default function RetiroDashboard() {
                     const confirmados = camsEnMesa.filter(a => a.confirmado_por_lider).length
                     return (
                       <div key={mesa.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, overflow: 'hidden', borderLeft: '3px solid #0f1787' }}>
-                        {/* Header mesa */}
                         <button onClick={() => setMesaExpandida(abierta ? null : mesa.id)}
                           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                           <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0 }}>{mesa.numero}</div>
@@ -1134,7 +1096,9 @@ export default function RetiroDashboard() {
                             <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 8 }}>{mesa.lider}</span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: camsEnMesa.length >= 5 ? '#16a34a' : '#d97706' }}>{camsEnMesa.length}/5</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: camsEnMesa.length >= CAMINANTES_POR_MESA ? '#16a34a' : '#d97706' }}>
+                              {camsEnMesa.length}/{CAMINANTES_POR_MESA}
+                            </span>
                             {confirmados > 0 && confirmados === camsEnMesa.length && (
                               <span style={{ fontSize: 10, background: '#f0fdf4', color: '#16a34a', padding: '2px 6px', borderRadius: 20, fontWeight: 600 }}>✓</span>
                             )}
@@ -1142,7 +1106,6 @@ export default function RetiroDashboard() {
                           </div>
                         </button>
 
-                        {/* Caminantes de la mesa */}
                         {abierta && (
                           <div style={{ borderTop: '1px solid #f3f4f6', padding: '10px 14px' }}>
                             {camsEnMesa.length === 0 ? (
@@ -1184,7 +1147,6 @@ export default function RetiroDashboard() {
                               </div>
                             )}
 
-                            {/* Agregar caminante sin mesa */}
                             {caminantesSinMesa.length > 0 && (
                               agregandoACaminante === mesa.id ? (
                                 <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
