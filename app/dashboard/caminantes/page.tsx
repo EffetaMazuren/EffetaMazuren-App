@@ -152,7 +152,7 @@ function CaminantesContent() {
   const saludFiltrados = caminantesSalud.filter(c => c.nombre.toLowerCase().includes(busqueda.toLowerCase()))
   const notasFiltrados = caminantesNotas.filter(c => c.nombre.toLowerCase().includes(busqueda.toLowerCase()))
 
-  const pctCupo = cupos ? Math.round((cupos.caminantes_con_abono / 50) * 100) : 0
+  const pctCupo = cupos ? Math.round((cupos.caminantes_con_abono / 60) * 100) : 0
   const colorAvatar = (estado: string) =>
     estado === 'completo' ? { bg: '#dcfce7', color: '#166534' }
     : estado === 'parcial' ? { bg: '#fef3c7', color: '#92400e' }
@@ -223,13 +223,13 @@ function CaminantesContent() {
         <div style={{ margin: '0 20px 16px', background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>Cupos</div>
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Bloqueo al llegar a 50</div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Bloqueo al llegar a 60</div>
             <div style={{ height: 4, background: '#f3f4f6', borderRadius: 2, marginTop: 8 }}>
               <div style={{ height: 4, borderRadius: 2, background: cupos.cupo_lleno ? '#dc2626' : '#d97706', width: `${Math.min(pctCupo, 100)}%` }} />
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 22, fontWeight: 500, color: '#0d0d14' }}>{cupos.caminantes_con_abono}<span style={{ fontSize: 13, color: '#9ca3af', fontWeight: 400 }}>/50</span></div>
+            <div style={{ fontSize: 22, fontWeight: 500, color: '#0d0d14' }}>{cupos.caminantes_con_abono}<span style={{ fontSize: 13, color: '#9ca3af', fontWeight: 400 }}>/60</span></div>
             <div style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: cupos.cupo_lleno ? '#fee2e2' : '#fef3c7', color: cupos.cupo_lleno ? '#991b1b' : '#92400e', marginTop: 4 }}>
               {cupos.cupo_lleno ? '🔒 Cupo lleno' : `${cupos.cupos_disponibles} disponibles`}
             </div>
