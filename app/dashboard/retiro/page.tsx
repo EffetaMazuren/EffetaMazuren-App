@@ -37,15 +37,8 @@ interface Mesa { id: string; numero: number; adulto: string; lider: string; coli
 interface Caminante { id: string; nombre: string; celular: string; edad: number | null }
 interface Asignacion { id: string; caminante_id: string; mesa_id: string; mesa_numero: number; confirmado_por_lider: boolean; caminante: Caminante }
 interface Seguimiento { id?: string; asignacion_mesa_id: string; llamado: boolean; contesto: boolean }
-
-interface Habitacion {
-  id: string; numero: string; piso: number; bloque: string
-  tipo_cama: string; capacidad: number; solo_servidores: boolean
-}
-interface AsignacionHabitacion {
-  id: string; habitacion_id: string; persona_id: string
-  tipo_persona: 'caminante' | 'servidor'; nombre: string
-}
+interface Habitacion { id: string; numero: string; piso: number; bloque: string; tipo_cama: string; capacidad: number; solo_servidores: boolean }
+interface AsignacionHabitacion { id: string; habitacion_id: string; persona_id: string; tipo_persona: 'caminante' | 'servidor'; nombre: string }
 
 function SeguimientoBadges({ asignacionId, seguimientos, onToggle }: {
   asignacionId: string; seguimientos: Record<string, Seguimiento>
@@ -122,7 +115,6 @@ export default function RetiroDashboard() {
   const [diaActivo, setDiaActivo] = useState<Dia>('viernes')
   const [expandido, setExpandido] = useState<string | null>(null)
 
-  // Roles
   const [roles, setRoles] = useState<RolRetiro[]>([])
   const [loadingRoles, setLoadingRoles] = useState(false)
   const [busqueda, setBusqueda] = useState('')
@@ -139,7 +131,6 @@ export default function RetiroDashboard() {
   const [nuevoRolEncargados, setNuevoRolEncargados] = useState('')
   const [guardandoNuevo, setGuardandoNuevo] = useState(false)
 
-  // Mesas
   const [mesas, setMesas] = useState<Mesa[]>([])
   const [loadingMesas, setLoadingMesas] = useState(false)
   const [editandoMesaId, setEditandoMesaId] = useState<string | null>(null)
@@ -147,7 +138,6 @@ export default function RetiroDashboard() {
   const [guardandoMesa, setGuardandoMesa] = useState(false)
   const [exitoMesa, setExitoMesa] = useState('')
 
-  // Caminantes/asignaciones mesa
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>([])
   const [loadingCam, setLoadingCam] = useState(false)
   const [generando, setGenerando] = useState(false)
@@ -164,7 +154,6 @@ export default function RetiroDashboard() {
   const [camSeleccionado, setCamSeleccionado] = useState('')
   const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
 
-  // Cuartos
   const [habitaciones, setHabitaciones] = useState<Habitacion[]>([])
   const [asignacionesHab, setAsignacionesHab] = useState<AsignacionHabitacion[]>([])
   const [loadingCuartos, setLoadingCuartos] = useState(false)
@@ -174,7 +163,6 @@ export default function RetiroDashboard() {
   const [filtroPisoCuartos, setFiltroPisoCuartos] = useState<number | null>(null)
   const [filtroTipoCuartos, setFiltroTipoCuartos] = useState<'todos' | 'caminante' | 'servidor'>('todos')
   const [habExpandida, setHabExpandida] = useState<string | null>(null)
-  const [editandoHabId, setEditandoHabId] = useState<string | null>(null)
   const [personasSinCuarto, setPersonasSinCuarto] = useState<{ id: string; nombre: string; tipo: 'caminante' | 'servidor' }[]>([])
   const [agregandoAHab, setAgregandoAHab] = useState<string | null>(null)
   const [personaSeleccionada, setPersonaSeleccionada] = useState('')
@@ -186,7 +174,6 @@ export default function RetiroDashboard() {
     if (tab === 'cuartos') cargarCuartos()
   }, [tab])
 
-  // ── Roles ──
   const cargarRoles = async () => {
     setLoadingRoles(true)
     const { data } = await supabase.from('roles_retiro').select('*').eq('retiro_id', RETIRO_ID).order('orden')
@@ -194,7 +181,6 @@ export default function RetiroDashboard() {
     setLoadingRoles(false)
   }
 
-  // ── Mesas ──
   const cargarMesas = async () => {
     setLoadingMesas(true)
     const { data } = await supabase.from('mesas').select('id, numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero')
@@ -202,18 +188,15 @@ export default function RetiroDashboard() {
     setLoadingMesas(false)
   }
 
-  // ── Caminantes ──
   const cargarCaminantes = useCallback(async () => {
     setLoadingCam(true)
     const { data: mesasData } = await supabase.from('mesas').select('id, numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero')
-    const todasMesas: Mesa[] = mesasData ?? []
-    setMesasDisponibles(todasMesas)
+    setMesasDisponibles(mesasData ?? [])
     const { data: asigData } = await supabase.from('asignaciones_mesa').select('id, caminante_id, mesa_id, mesa_numero, confirmado_por_lider, caminantes(id, nombre, celular, edad)').order('mesa_numero')
     const asigs: Asignacion[] = (asigData ?? []).map((a: any) => ({ id: a.id, caminante_id: a.caminante_id, mesa_id: a.mesa_id, mesa_numero: a.mesa_numero, confirmado_por_lider: a.confirmado_por_lider, caminante: a.caminantes })).filter((a: Asignacion) => a.caminante)
     setAsignaciones(asigs)
     if (asigs.length > 0) {
-      const ids = asigs.map(a => a.id)
-      const { data: segData } = await supabase.from('seguimiento_caminantes').select('id, asignacion_mesa_id, llamado, contesto').in('asignacion_mesa_id', ids)
+      const { data: segData } = await supabase.from('seguimiento_caminantes').select('id, asignacion_mesa_id, llamado, contesto').in('asignacion_mesa_id', asigs.map(a => a.id))
       const segMap: Record<string, Seguimiento> = {}
       ;(segData ?? []).forEach((s: any) => { segMap[s.asignacion_mesa_id] = s })
       setSeguimientos(segMap)
@@ -230,27 +213,47 @@ export default function RetiroDashboard() {
     setLoadingCam(false)
   }, [])
 
-  // ── Cuartos ──
   const cargarCuartos = useCallback(async () => {
     setLoadingCuartos(true)
-    const { data: habs } = await supabase.from('habitaciones').select('*').eq('retiro_id', RETIRO_ID).order('numero')
+
+    const { data: habs } = await supabase
+      .from('habitaciones')
+      .select('*')
+      .eq('retiro_id', RETIRO_ID)
+      .order('numero')
     setHabitaciones(habs ?? [])
-    const { data: asigs } = await supabase.from('asignaciones_habitacion').select('*').eq('retiro_id', RETIRO_ID)
+
+    const { data: asigs } = await supabase
+      .from('asignaciones_habitacion')
+      .select('*')
+      .eq('retiro_id', RETIRO_ID)
     setAsignacionesHab(asigs ?? [])
 
-    // Calcular personas sin cuarto
     const idsConCuarto = new Set((asigs ?? []).map((a: AsignacionHabitacion) => a.persona_id))
 
-    const { data: pagados } = await supabase.from('pagos').select('persona_id').eq('retiro_id', RETIRO_ID).eq('tipo_persona', 'caminante').eq('estado', 'confirmado')
-    const idsCaminantes = [...new Set((pagados ?? []).map((p: any) => p.persona_id))]
-    let listaCaminantes: { id: string; nombre: string; tipo: 'caminante' }[] = []
-    if (idsCaminantes.length > 0) {
-      const { data: camData } = await supabase.from('caminantes').select('id, nombre').in('id', idsCaminantes).eq('retiro_id', RETIRO_ID).order('nombre')
-      listaCaminantes = (camData ?? []).map((c: any) => ({ id: c.id, nombre: c.nombre, tipo: 'caminante' as const }))
-    }
+    // TODOS los caminantes registrados en el retiro
+    const { data: camData } = await supabase
+      .from('caminantes')
+      .select('id, nombre')
+      .eq('retiro_id', RETIRO_ID)
+      .order('nombre')
+    const listaCaminantes = (camData ?? []).map((c: any) => ({
+      id: c.id,
+      nombre: c.nombre,
+      tipo: 'caminante' as const,
+    }))
 
-    const { data: servidoresData } = await supabase.from('servidores_inscripcion').select('id, nombre').eq('retiro_id', RETIRO_ID).eq('es_interno', true).order('nombre')
-    const listaServidores = (servidoresData ?? []).map((s: any) => ({ id: s.id, nombre: s.nombre, tipo: 'servidor' as const }))
+    // TODOS los servidores registrados en el retiro
+    const { data: servidoresData } = await supabase
+      .from('servidores_inscripcion')
+      .select('id, nombre')
+      .eq('retiro_id', RETIRO_ID)
+      .order('nombre')
+    const listaServidores = (servidoresData ?? []).map((s: any) => ({
+      id: s.id,
+      nombre: s.nombre,
+      tipo: 'servidor' as const,
+    }))
 
     const todasPersonas = [...listaServidores, ...listaCaminantes]
     setPersonasSinCuarto(todasPersonas.filter(p => !idsConCuarto.has(p.id)))
@@ -259,36 +262,30 @@ export default function RetiroDashboard() {
 
   const sincronizarHabitacionesSheets = async (habs: Habitacion[], asigs: AsignacionHabitacion[]) => {
     try {
-      const habsConAsigs = habs.map(h => ({
-        ...h,
-        asignaciones: asigs.filter(a => a.habitacion_id === h.id)
-      }))
-      await fetch(APPS_SCRIPT_HABITACIONES, {
-        method: 'POST',
-        body: JSON.stringify({ tipo: 'actualizar_habitaciones', habitaciones: habsConAsigs }),
-      })
+      const habsConAsigs = habs.map(h => ({ ...h, asignaciones: asigs.filter(a => a.habitacion_id === h.id) }))
+      await fetch(APPS_SCRIPT_HABITACIONES, { method: 'POST', body: JSON.stringify({ tipo: 'actualizar_habitaciones', habitaciones: habsConAsigs }) })
     } catch (e) { console.error('Error sync habitaciones:', e) }
   }
 
   const generarCuartosAleatorio = async () => {
     setGenerandoCuartos(true)
     try {
-      // Borrar asignaciones anteriores
       await supabase.from('asignaciones_habitacion').delete().eq('retiro_id', RETIRO_ID)
 
-      // Cargar personas
-      const { data: pagados } = await supabase.from('pagos').select('persona_id').eq('retiro_id', RETIRO_ID).eq('tipo_persona', 'caminante').eq('estado', 'confirmado')
-      const idsCaminantes = [...new Set((pagados ?? []).map((p: any) => p.persona_id))]
-      let caminantesLista: { id: string; nombre: string }[] = []
-      if (idsCaminantes.length > 0) {
-        const { data: camData } = await supabase.from('caminantes').select('id, nombre').in('id', idsCaminantes).eq('retiro_id', RETIRO_ID)
-        caminantesLista = camData ?? []
-      }
+      // TODOS los caminantes
+      const { data: camData } = await supabase
+        .from('caminantes')
+        .select('id, nombre')
+        .eq('retiro_id', RETIRO_ID)
+      const caminantesLista: { id: string; nombre: string }[] = camData ?? []
 
-      const { data: servidoresData } = await supabase.from('servidores_inscripcion').select('id, nombre').eq('retiro_id', RETIRO_ID).eq('es_interno', true)
+      // TODOS los servidores
+      const { data: servidoresData } = await supabase
+        .from('servidores_inscripcion')
+        .select('id, nombre')
+        .eq('retiro_id', RETIRO_ID)
       const servidoresLista: { id: string; nombre: string }[] = servidoresData ?? []
 
-      // Shuffle
       const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5)
       const caminantesShuffled = shuffle(caminantesLista)
       const servidoresShuffled = shuffle(servidoresLista)
@@ -296,18 +293,12 @@ export default function RetiroDashboard() {
       const { data: habs } = await supabase.from('habitaciones').select('*').eq('retiro_id', RETIRO_ID).order('numero')
       const todasHabs: Habitacion[] = habs ?? []
 
-      // Piso 1: solo servidores
-      const habsPiso1 = todasHabs.filter(h => h.piso === 1)
-      // Piso 2+: mixto pero distinguiendo
-      const habsServidoresPiso2 = todasHabs.filter(h => h.piso > 1)
-      const habsCaminantes = todasHabs.filter(h => h.piso > 1)
-
       const nuevasAsignaciones: { habitacion_id: string; persona_id: string; tipo_persona: string; nombre: string; retiro_id: string }[] = []
       const cuentaHab: Record<string, number> = {}
       todasHabs.forEach(h => { cuentaHab[h.id] = 0 })
 
-      // Asignar servidores: primero piso 1, luego piso 2
-      const habsParaServidores = [...habsPiso1, ...habsServidoresPiso2]
+      // Servidores: primero piso 1, luego piso 2+
+      const habsParaServidores = [...todasHabs.filter(h => h.piso === 1), ...todasHabs.filter(h => h.piso > 1)]
       for (const servidor of servidoresShuffled) {
         const hab = habsParaServidores.find(h => cuentaHab[h.id] < h.capacidad)
         if (!hab) break
@@ -315,9 +306,10 @@ export default function RetiroDashboard() {
         cuentaHab[hab.id]++
       }
 
-      // Asignar caminantes: solo piso 2+
+      // Caminantes: solo piso 2+
+      const habsParaCaminantes = todasHabs.filter(h => h.piso > 1)
       for (const caminante of caminantesShuffled) {
-        const hab = habsCaminantes.find(h => cuentaHab[h.id] < h.capacidad)
+        const hab = habsParaCaminantes.find(h => cuentaHab[h.id] < h.capacidad)
         if (!hab) break
         nuevasAsignaciones.push({ habitacion_id: hab.id, persona_id: caminante.id, tipo_persona: 'caminante', nombre: caminante.nombre, retiro_id: RETIRO_ID })
         cuentaHab[hab.id]++
@@ -328,16 +320,13 @@ export default function RetiroDashboard() {
       }
 
       await cargarCuartos()
-      // Sincronizar sheets con datos frescos
       const { data: habsFrescas } = await supabase.from('habitaciones').select('*').eq('retiro_id', RETIRO_ID).order('numero')
       const { data: asigsFrescas } = await supabase.from('asignaciones_habitacion').select('*').eq('retiro_id', RETIRO_ID)
       await sincronizarHabitacionesSheets(habsFrescas ?? [], asigsFrescas ?? [])
 
       setExitoCuartos('Cuartos asignados aleatoriamente')
       setTimeout(() => setExitoCuartos(''), 3000)
-    } finally {
-      setGenerandoCuartos(false)
-    }
+    } finally { setGenerandoCuartos(false) }
   }
 
   const quitarPersonaDeHab = async (asignacionId: string) => {
@@ -353,15 +342,13 @@ export default function RetiroDashboard() {
     const persona = personasSinCuarto.find(p => p.id === personaSeleccionada)
     if (!persona) return
     await supabase.from('asignaciones_habitacion').insert({ habitacion_id: habId, persona_id: persona.id, tipo_persona: persona.tipo, nombre: persona.nombre, retiro_id: RETIRO_ID })
-    setAgregandoAHab(null)
-    setPersonaSeleccionada('')
+    setAgregandoAHab(null); setPersonaSeleccionada('')
     await cargarCuartos()
     const { data: habs } = await supabase.from('habitaciones').select('*').eq('retiro_id', RETIRO_ID).order('numero')
     const { data: asigs } = await supabase.from('asignaciones_habitacion').select('*').eq('retiro_id', RETIRO_ID)
     await sincronizarHabitacionesSheets(habs ?? [], asigs ?? [])
   }
 
-  // ── Mesas helpers ──
   const generarSugerencia = async () => {
     setGenerando(true)
     try {
@@ -369,14 +356,10 @@ export default function RetiroDashboard() {
       const idsPagados = [...new Set((pagados ?? []).map((p: any) => p.persona_id))]
       if (idsPagados.length === 0) { setGenerando(false); return }
       const { data: camData } = await supabase.from('caminantes').select('id, nombre, celular, edad').in('id', idsPagados).eq('retiro_id', RETIRO_ID)
-      const caminantes: Caminante[] = camData ?? []
-      const sugeridas = sugerirAsignacion(caminantes, mesasDisponibles)
+      const sugeridas = sugerirAsignacion(camData ?? [], mesasDisponibles)
       await supabase.from('asignaciones_mesa').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-      if (sugeridas.length > 0) {
-        await supabase.from('asignaciones_mesa').insert(sugeridas.map(s => ({ caminante_id: s.caminante_id, mesa_id: s.mesa_id, mesa_numero: s.mesa_numero, sugerido_por_sistema: true, confirmado_por_lider: false })))
-      }
-      await cargarCaminantes()
-      await sincronizarMesasSheets()
+      if (sugeridas.length > 0) await supabase.from('asignaciones_mesa').insert(sugeridas.map(s => ({ caminante_id: s.caminante_id, mesa_id: s.mesa_id, mesa_numero: s.mesa_numero, sugerido_por_sistema: true, confirmado_por_lider: false })))
+      await cargarCaminantes(); await sincronizarMesasSheets()
     } finally { setGenerando(false) }
   }
 
@@ -410,8 +393,8 @@ export default function RetiroDashboard() {
     const nuevo = { ...actual, [campo]: !actual[campo] }
     setSeguimientos(prev => ({ ...prev, [asignacionId]: { ...nuevo, asignacion_mesa_id: asignacionId } }))
     const { data: existing } = await supabase.from('seguimiento_caminantes').select('id').eq('asignacion_mesa_id', asignacionId).single()
-    if (existing?.id) { await supabase.from('seguimiento_caminantes').update({ [campo]: nuevo[campo], updated_at: new Date().toISOString() }).eq('id', existing.id) }
-    else { await supabase.from('seguimiento_caminantes').insert({ asignacion_mesa_id: asignacionId, llamado: nuevo.llamado, contesto: nuevo.contesto }) }
+    if (existing?.id) await supabase.from('seguimiento_caminantes').update({ [campo]: nuevo[campo], updated_at: new Date().toISOString() }).eq('id', existing.id)
+    else await supabase.from('seguimiento_caminantes').insert({ asignacion_mesa_id: asignacionId, llamado: nuevo.llamado, contesto: nuevo.contesto })
   }
 
   const agregarCaminanteAMesa = async (mesaId: string, mesaNumero: number, caminanteId: string) => {
@@ -438,7 +421,6 @@ export default function RetiroDashboard() {
     } catch (e) { console.error('Error sync mesas:', e) }
   }
 
-  // ── Roles helpers ──
   const iniciarEdicion = (rol: RolRetiro) => { setEditandoId(rol.id); setEditRol(rol.rol); setEditEncargados(rol.encargados.join(', ')) }
   const guardarEdicion = async (id: string) => {
     setGuardando(true)
@@ -456,7 +438,6 @@ export default function RetiroDashboard() {
     if (!error) { await cargarRoles(); setCreandoRol(false); setNuevoRolNombre(''); setNuevoRolEncargados(''); setNuevoRolCategoria('General'); setExito('Rol creado'); setTimeout(() => setExito(''), 2000) }
     setGuardandoNuevo(false)
   }
-
   const iniciarEdicionMesa = (mesa: Mesa) => { setEditandoMesaId(mesa.id); setEditMesa({ adulto: mesa.adulto ?? '', lider: mesa.lider ?? '', colider: mesa.colider ?? '' }) }
   const guardarMesa = async (id: string) => {
     setGuardandoMesa(true)
@@ -470,33 +451,26 @@ export default function RetiroDashboard() {
   const categorias = [...new Set(roles.map(r => r.categoria))]
   const rolesPorPersonaMap: Record<string, { display: string; count: number }> = {}
   roles.forEach(r => { r.encargados.forEach(e => { const key = norm(e); if (!rolesPorPersonaMap[key]) rolesPorPersonaMap[key] = { display: e, count: 0 }; rolesPorPersonaMap[key].count += 1 }) })
-  const rolesPorPersona: Record<string, number> = Object.fromEntries(Object.entries(rolesPorPersonaMap).map(([k, v]) => [v.display, v.count]))
-  const personasFiltradas = filtroRolesNum !== null ? Object.entries(rolesPorPersona).filter(([, count]) => { if (filtroRolesModo === 'exacto') return count === filtroRolesNum; if (filtroRolesModo === 'mas') return count >= filtroRolesNum!; if (filtroRolesModo === 'menos') return count <= filtroRolesNum!; return true }).sort((a, b) => b[1] - a[1]) : []
+  const rolesPorPersona: Record<string, number> = Object.fromEntries(Object.entries(rolesPorPersonaMap).map(([, v]) => [v.display, v.count]))
+  const personasFiltradas = filtroRolesNum !== null ? Object.entries(rolesPorPersona).filter(([, count]) => { if (filtroRolesModo === 'exacto') return count === filtroRolesNum; if (filtroRolesModo === 'mas') return count >= filtroRolesNum!; return count <= filtroRolesNum! }).sort((a, b) => b[1] - a[1]) : []
   const busquedaCamLower = busquedaCam.toLowerCase()
   const asignacionesFiltradas = busquedaCam.length > 1 ? asignaciones.filter(a => a.caminante?.nombre?.toLowerCase().includes(busquedaCamLower)) : asignaciones
   const asignacionesPorMesa: Record<number, Asignacion[]> = {}
   asignacionesFiltradas.forEach(a => { if (!asignacionesPorMesa[a.mesa_numero]) asignacionesPorMesa[a.mesa_numero] = []; asignacionesPorMesa[a.mesa_numero].push(a) })
 
-  // Cuartos — filtrado
   const busquedaCuartosLower = busquedaCuartos.toLowerCase()
   const habitacionesFiltradas = habitaciones.filter(h => {
     if (filtroPisoCuartos !== null && h.piso !== filtroPisoCuartos) return false
     const asigs = asignacionesHab.filter(a => a.habitacion_id === h.id)
     if (filtroTipoCuartos === 'caminante' && !asigs.some(a => a.tipo_persona === 'caminante')) return false
     if (filtroTipoCuartos === 'servidor' && !asigs.some(a => a.tipo_persona === 'servidor')) return false
-    if (busquedaCuartos.length > 1) {
-      const matchHab = h.numero.includes(busquedaCuartos) || h.bloque.toLowerCase().includes(busquedaCuartosLower)
-      const matchPersona = asigs.some(a => a.nombre.toLowerCase().includes(busquedaCuartosLower))
-      return matchHab || matchPersona
-    }
+    if (busquedaCuartos.length > 1) return h.numero.includes(busquedaCuartos) || h.bloque.toLowerCase().includes(busquedaCuartosLower) || asigs.some(a => a.nombre.toLowerCase().includes(busquedaCuartosLower))
     return true
   })
-
   const bloquesCuartos = [...new Set(habitacionesFiltradas.map(h => h.bloque))]
   const totalAsignados = asignacionesHab.length
   const totalCaminantesAsig = asignacionesHab.filter(a => a.tipo_persona === 'caminante').length
   const totalServidoresAsig = asignacionesHab.filter(a => a.tipo_persona === 'servidor').length
-  const totalCapacidad = habitaciones.reduce((acc, h) => acc + h.capacidad, 0)
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'minutominuto', label: 'Minuto a Minuto' },
@@ -506,7 +480,6 @@ export default function RetiroDashboard() {
     { id: 'cuartos', label: 'Cuartos' },
     { id: 'manual', label: 'Manual' },
   ]
-
   const dias: { id: Dia; label: string; fecha: string }[] = [
     { id: 'viernes', label: 'Viernes', fecha: '3 Jul' },
     { id: 'sabado', label: 'Sábado', fecha: '4 Jul' },
@@ -525,7 +498,7 @@ export default function RetiroDashboard() {
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#f3f4f6', borderRadius: 10, padding: 4, overflowX: 'auto' }}>
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, minWidth: 60, padding: '8px 4px', border: 'none', borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer', background: tab === t.id ? '#0f1787' : 'transparent', color: tab === t.id ? 'white' : '#6b7280', whiteSpace: 'nowrap' }}>{t.label}</button>
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, minWidth: 56, padding: '8px 4px', border: 'none', borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: 'pointer', background: tab === t.id ? '#0f1787' : 'transparent', color: tab === t.id ? 'white' : '#6b7280', whiteSpace: 'nowrap' }}>{t.label}</button>
         ))}
       </div>
 
@@ -625,9 +598,7 @@ export default function RetiroDashboard() {
                               <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{nombre}</span>
                               <span style={{ fontSize: 11, background: '#0f1787', color: 'white', padding: '2px 8px', borderRadius: 20, fontWeight: 700 }}>{count} roles</span>
                             </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                              {susRoles.map((r, i) => <span key={i} style={{ fontSize: 10, background: '#e8eaf0', color: '#374151', padding: '1px 7px', borderRadius: 20 }}>{r.rol}</span>)}
-                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{susRoles.map((r, i) => <span key={i} style={{ fontSize: 10, background: '#e8eaf0', color: '#374151', padding: '1px 7px', borderRadius: 20 }}>{r.rol}</span>)}</div>
                           </div>
                         )
                       })}
@@ -652,9 +623,7 @@ export default function RetiroDashboard() {
                       <div key={r.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10, padding: '12px 14px', borderLeft: `3px solid ${c.border}` }}>
                         <span style={{ fontSize: 10, background: c.badge, color: c.text, padding: '2px 7px', borderRadius: 20, fontWeight: 600 }}>{r.categoria}</span>
                         <p style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: '4px 0 6px' }}>{r.rol}</p>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                          {r.encargados.filter(e => e.toLowerCase().includes(busquedaLower)).map((e, i) => <span key={i} style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>{e}</span>)}
-                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{r.encargados.filter(e => e.toLowerCase().includes(busquedaLower)).map((e, i) => <span key={i} style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>{e}</span>)}</div>
                       </div>
                     )
                   })}
@@ -778,9 +747,7 @@ export default function RetiroDashboard() {
               {sinAsignar.length > 0 && (
                 <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: '#92400e', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 0.5 }}>{sinAsignar.length} caminante{sinAsignar.length !== 1 ? 's' : ''} sin mesa</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {sinAsignar.map(c => <div key={c.id} style={{ fontSize: 12, color: '#78350f' }}><span>{c.nombre} {c.edad ? `· ${c.edad} años` : ''}</span></div>)}
-                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{sinAsignar.map(c => <div key={c.id} style={{ fontSize: 12, color: '#78350f' }}>{c.nombre}{c.edad ? ` · ${c.edad} años` : ''}</div>)}</div>
                 </div>
               )}
               {asignaciones.length === 0 && (
@@ -866,7 +833,6 @@ export default function RetiroDashboard() {
       {tab === 'cuartos' && (
         <div>
           {exitoCuartos && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ {exitoCuartos}</div>}
-
           {loadingCuartos ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
               <div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -874,19 +840,12 @@ export default function RetiroDashboard() {
             </div>
           ) : (
             <>
-              {/* Botón asignar + stats */}
               <button onClick={generarCuartosAleatorio} disabled={generandoCuartos} style={{ width: '100%', padding: '12px', background: generandoCuartos ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
-                {generandoCuartos ? 'Asignando...' : habitaciones.length > 0 && totalAsignados > 0 ? 'Reasignar cuartos al azar' : 'Asignar cuartos al azar'}
+                {generandoCuartos ? 'Asignando...' : totalAsignados > 0 ? 'Reasignar cuartos al azar' : 'Asignar cuartos al azar'}
               </button>
 
-              {/* Stats */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                {[
-                  { label: 'Asignados', val: totalAsignados, color: '#0f1787' },
-                  { label: 'Servidores', val: totalServidoresAsig, color: '#d97706' },
-                  { label: 'Caminantes', val: totalCaminantesAsig, color: '#16a34a' },
-                  { label: 'Sin asignar', val: personasSinCuarto.length, color: '#dc2626' },
-                ].map(s => (
+                {[{ label: 'Asignados', val: totalAsignados, color: '#0f1787' }, { label: 'Servidores', val: totalServidoresAsig, color: '#d97706' }, { label: 'Caminantes', val: totalCaminantesAsig, color: '#16a34a' }, { label: 'Sin cuarto', val: personasSinCuarto.length, color: '#dc2626' }].map(s => (
                   <div key={s.label} style={{ flex: 1, background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
                     <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.val}</div>
                     <div style={{ fontSize: 10, color: '#6b7280' }}>{s.label}</div>
@@ -894,30 +853,27 @@ export default function RetiroDashboard() {
                 ))}
               </div>
 
-              {/* Sin cuarto */}
               {personasSinCuarto.length > 0 && (
                 <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>{personasSinCuarto.length} sin cuarto asignado</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {personasSinCuarto.slice(0, 5).map(p => (
+                    {personasSinCuarto.slice(0, 8).map(p => (
                       <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#7f1d1d' }}>
-                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: p.tipo === 'servidor' ? '#cfe2ff' : '#f3f4f6', color: p.tipo === 'servidor' ? '#1e40af' : '#374151' }}>{p.tipo === 'servidor' ? 'SRV' : 'CAM'}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: p.tipo === 'servidor' ? '#cfe2ff' : '#f0fdf4', color: p.tipo === 'servidor' ? '#1e40af' : '#166534', flexShrink: 0 }}>{p.tipo === 'servidor' ? 'SRV' : 'CAM'}</span>
                         {p.nombre}
                       </div>
                     ))}
-                    {personasSinCuarto.length > 5 && <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>...y {personasSinCuarto.length - 5} más</span>}
+                    {personasSinCuarto.length > 8 && <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>...y {personasSinCuarto.length - 8} más</span>}
                   </div>
                 </div>
               )}
 
-              {/* Búsqueda y filtros */}
               <div style={{ position: 'relative', marginBottom: 10 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                 <input type="text" placeholder="Buscar por habitación o nombre..." value={busquedaCuartos} onChange={e => setBusquedaCuartos(e.target.value)} style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }} />
                 {busquedaCuartos && <button onClick={() => setBusquedaCuartos('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>✕</button>}
               </div>
 
-              {/* Filtros piso y tipo */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
                 {[{ label: 'Todos los pisos', val: null }, { label: 'Piso 1', val: 1 }, { label: 'Piso 2', val: 2 }, { label: 'Piso 3', val: 3 }].map(f => (
                   <button key={String(f.val)} onClick={() => setFiltroPisoCuartos(f.val)} style={{ padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, background: filtroPisoCuartos === f.val ? '#0f1787' : '#f3f4f6', color: filtroPisoCuartos === f.val ? 'white' : '#6b7280' }}>{f.label}</button>
@@ -928,7 +884,6 @@ export default function RetiroDashboard() {
                 ))}
               </div>
 
-              {/* Lista por bloque */}
               {habitaciones.length === 0 ? (
                 <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '40px 24px', textAlign: 'center' }}>
                   <p style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: '0 0 6px' }}>No hay habitaciones cargadas</p>
@@ -958,7 +913,7 @@ export default function RetiroDashboard() {
                             const tieneCaminantes = asigs.some(a => a.tipo_persona === 'caminante')
                             const borderColor = tieneServidores && tieneCaminantes ? '#d97706' : tieneServidores ? '#1e40af' : tieneCaminantes ? '#16a34a' : '#e8eaf0'
                             return (
-                              <div key={hab.id} style={{ background: 'white', border: `1.5px solid #e8eaf0`, borderRadius: 12, overflow: 'hidden', borderLeft: `3px solid ${borderColor}` }}>
+                              <div key={hab.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, overflow: 'hidden', borderLeft: `3px solid ${borderColor}` }}>
                                 <button onClick={() => setHabExpandida(abierta ? null : hab.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                                   <div style={{ width: 36, height: 36, borderRadius: 10, background: llena ? '#f0fdf4' : '#f7f8fc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1.5px solid ${llena ? '#bbf7d0' : '#e8eaf0'}` }}>
                                     <span style={{ fontSize: 12, fontWeight: 700, color: llena ? '#16a34a' : '#0f1787' }}>{hab.numero}</span>
@@ -976,12 +931,9 @@ export default function RetiroDashboard() {
                                     <span style={{ fontSize: 12, color: '#9ca3af' }}>{abierta ? '▲' : '▼'}</span>
                                   </div>
                                 </button>
-
                                 {abierta && (
                                   <div style={{ borderTop: '1px solid #f3f4f6', padding: '10px 14px' }}>
-                                    {asigs.length === 0 ? (
-                                      <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 8px', fontStyle: 'italic' }}>Habitación vacía</p>
-                                    ) : (
+                                    {asigs.length === 0 ? <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 8px', fontStyle: 'italic' }}>Habitación vacía</p> : (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
                                         {asigs.map(asig => (
                                           <div key={asig.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: asig.tipo_persona === 'servidor' ? '#eff6ff' : '#f0fdf4', borderRadius: 8 }}>
@@ -994,24 +946,20 @@ export default function RetiroDashboard() {
                                         ))}
                                       </div>
                                     )}
-
-                                    {/* Agregar persona */}
                                     {asigs.length < hab.capacidad && personasSinCuarto.length > 0 && (
                                       agregandoAHab === hab.id ? (
                                         <div style={{ display: 'flex', gap: 6 }}>
                                           <select value={personaSeleccionada} onChange={e => setPersonaSeleccionada(e.target.value)} style={{ flex: 1, fontSize: 12, border: '1.5px solid #e8eaf0', borderRadius: 8, padding: '6px 8px', outline: 'none' }}>
                                             <option value="">Seleccionar...</option>
-                                            {personasSinCuarto
-                                              .filter(p => hab.solo_servidores ? p.tipo === 'servidor' : true)
-                                              .map(p => <option key={p.id} value={p.id}>{p.nombre} ({p.tipo === 'servidor' ? 'Servidor' : 'Caminante'})</option>)}
+                                            {personasSinCuarto.filter(p => hab.solo_servidores ? p.tipo === 'servidor' : true).map(p => (
+                                              <option key={p.id} value={p.id}>{p.nombre} ({p.tipo === 'servidor' ? 'Servidor' : 'Caminante'})</option>
+                                            ))}
                                           </select>
                                           <button onClick={() => agregarPersonaAHab(hab.id)} style={{ padding: '6px 12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>OK</button>
                                           <button onClick={() => { setAgregandoAHab(null); setPersonaSeleccionada('') }} style={{ padding: '6px 10px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>✕</button>
                                         </div>
                                       ) : (
-                                        <button onClick={() => setAgregandoAHab(hab.id)} style={{ width: '100%', padding: '7px', background: '#f0f2ff', color: '#0f1787', border: '1.5px dashed #c7d0ff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                                          + Agregar persona
-                                        </button>
+                                        <button onClick={() => setAgregandoAHab(hab.id)} style={{ width: '100%', padding: '7px', background: '#f0f2ff', color: '#0f1787', border: '1.5px dashed #c7d0ff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Agregar persona</button>
                                       )
                                     )}
                                   </div>
