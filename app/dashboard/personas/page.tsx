@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import { ChevronRight } from 'lucide-react'
 
+const CUPO_MAXIMO = 60
+
 export default function PersonasPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -100,8 +102,8 @@ export default function PersonasPage() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <StatBox label="Inscritos" value={totalCaminantes} color="#0f1787" bg="#f0f1ff" />
-            <StatBox label="Confirmados" value={confirmadosCaminantes} max={50} color="#0f1787" bg="#f0f1ff" />
-            <StatBox label="Pago completo" value={pagadosCaminantes} max={50} color="#16a34a" bg="#f0fdf4" />
+            <StatBox label="Confirmados" value={confirmadosCaminantes} max={CUPO_MAXIMO} color="#0f1787" bg="#f0f1ff" />
+            <StatBox label="Pago completo" value={pagadosCaminantes} max={CUPO_MAXIMO} color="#16a34a" bg="#f0fdf4" />
           </div>
         </div>
 
@@ -120,8 +122,8 @@ export default function PersonasPage() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <StatBox label="Inscritos" value={totalServidores} color="#065f46" bg="#ecfdf5" />
-            <StatBox label="Internos" value={internosServidores} max={50} color="#065f46" bg="#ecfdf5" />
-            <StatBox label="Pago completo" value={pagadosServidores} max={50} color="#16a34a" bg="#f0fdf4" />
+            <StatBox label="Internos" value={internosServidores} max={CUPO_MAXIMO} color="#065f46" bg="#ecfdf5" />
+            <StatBox label="Pago completo" value={pagadosServidores} max={CUPO_MAXIMO} color="#16a34a" bg="#f0fdf4" />
           </div>
         </div>
 
