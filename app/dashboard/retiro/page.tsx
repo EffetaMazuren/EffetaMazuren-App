@@ -5,6 +5,36 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+
+// ── Normalización centralizada ──
+function norm(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+}
+
+function tokensOf(s: string): string[] {
+  return norm(s).split(' ').filter(t => t.length > 2)
+}
+
+// Match robusto: exacto normalizado OR 3+ tokens coincidentes OR nombre+2 apellidos
+function nombreMatch(nombreServidor: string, encargado: string): boolean {
+  const nS = norm(nombreServidor)
+  const nE = norm(encargado)
+  if (nS === nE) return true
+  const tS = tokensOf(nombreServidor)
+  const tE = tokensOf(encargado)
+  const coincidencias = tS.filter(t => tE.includes(t)).length
+  if (coincidencias >= 3) return true
+  if (tS.length >= 3 && tE.length >= 3) {
+    const primerNombre = tS[0]
+    const apellidosMatch = tS.slice(1).filter(a => tE.includes(a)).length
+    if (tE.includes(primerNombre) && apellidosMatch >= 2) return true
+  }
+  return false
+}
+
+function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
+  return encargados.some(enc => nombreMatch(nombreServidor, enc))
+}
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
 
 type Tab = 'minutominuto' | 'roles' | 'mesas' | 'caminantes' | 'manual'
@@ -623,13 +653,19 @@ export default function RetiroDashboard() {
   const categorias = [...new Set(roles.map(r => r.categoria))]
 
   // Filtrar caminantes por búsqueda
-  // Mapa: nombre -> cantidad de roles
-  const rolesPorPersona: Record<string, number> = {}
+  // Mapa: nombre normalizado -> { display, count }
+  // Agrupa María Paula Tenorio y Maria Paula Tenorio como la misma persona
+  const rolesPorPersonaMap: Record<string, { display: string; count: number }> = {}
   roles.forEach(r => {
     r.encargados.forEach(e => {
-      rolesPorPersona[e] = (rolesPorPersona[e] ?? 0) + 1
+      const key = norm(e)
+      if (!rolesPorPersonaMap[key]) rolesPorPersonaMap[key] = { display: e, count: 0 }
+      rolesPorPersonaMap[key].count += 1
     })
   })
+  const rolesPorPersona: Record<string, number> = Object.fromEntries(
+    Object.entries(rolesPorPersonaMap).map(([k, v]) => [v.display, v.count])
+  )
 
   // Personas filtradas por cantidad de roles
   const personasFiltradas = filtroRolesNum !== null
@@ -827,7 +863,7 @@ export default function RetiroDashboard() {
                     <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 8px', fontWeight: 600 }}>{personasFiltradas.length} persona{personasFiltradas.length !== 1 ? 's' : ''}</p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {personasFiltradas.map(([nombre, count]) => {
-                        const susRoles = roles.filter(r => r.encargados.includes(nombre))
+                        const susRoles = roles.filter(r => r.encargados.some(enc => nombreMatch(nombre, enc)))
                         return (
                           <div key={nombre} style={{ background: '#f7f8fc', borderRadius: 8, padding: '8px 12px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -1207,4 +1243,3 @@ export default function RetiroDashboard() {
     </div>
   )
 }
- 
