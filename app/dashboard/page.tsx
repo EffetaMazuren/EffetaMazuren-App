@@ -11,6 +11,7 @@ const supabase = createClient(
 
 const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 const META_RECAUDO = 50_000_000
+const CUPO_MAXIMO = 60
 
 interface DashboardData {
   totalCaminantes: number
@@ -80,7 +81,7 @@ export default function DashboardPage() {
       const caminantesPagoCompleto = caminantes?.filter(c => c.estado_pago === 'completo').length ?? 0
       const caminantesCorreoEnviado = caminantes?.filter(c => c.estado_correo === 'enviado').length ?? 0
       const caminantesConAbono = caminantes?.filter(c => c.total_pagado > 0).length ?? 0
-      const cuposDisponibles = Math.max(0, 50 - caminantesConAbono)
+      const cuposDisponibles = Math.max(0, CUPO_MAXIMO - caminantesConAbono)
       const totalPagadoCaminantes = caminantes?.reduce((acc, c) => acc + (c.total_pagado ?? 0), 0) ?? 0
 
       const { data: servidores } = await supabase
@@ -186,8 +187,8 @@ export default function DashboardPage() {
   }, [])
 
   const porcentajeMeta = data ? Math.min(100, (data.totalRecaudado / META_RECAUDO) * 100) : 0
-  const porcentajeCupos = data ? Math.min(100, (data.caminantesConAbono / 50) * 100) : 0
-  const metaServidores = data ? Math.min(100, ((data.servidoresPagoCompleto * 380_000) / (50 * 380_000)) * 100) : 0
+  const porcentajeCupos = data ? Math.min(100, (data.caminantesConAbono / CUPO_MAXIMO) * 100) : 0
+  const metaServidores = data ? Math.min(100, ((data.servidoresPagoCompleto * 380_000) / (CUPO_MAXIMO * 380_000)) * 100) : 0
 
   const getHora = () => {
     const h = new Date().getHours()
@@ -335,7 +336,7 @@ export default function DashboardPage() {
                 <div className="h-full bg-emerald-400 rounded-full transition-all duration-700" style={{ width: `${porcentajeCupos}%` }} />
               </div>
               <div className="flex justify-between mt-1">
-                <span className="text-[10px] text-gray-400">{data?.caminantesConAbono ?? 0} / 50 con abono</span>
+                <span className="text-[10px] text-gray-400">{data?.caminantesConAbono ?? 0} / {CUPO_MAXIMO} con abono</span>
                 <span className="text-[10px] text-gray-400">{porcentajeCupos.toFixed(0)}%</span>
               </div>
             </div>
@@ -344,7 +345,7 @@ export default function DashboardPage() {
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
                 <StatMini label="Inscritos totales" value={data?.totalCaminantes ?? 0} sub="en la plataforma" color="text-gray-900" onClick={() => router.push('/dashboard/caminantes')} />
-                <StatMini label="Pago completo" value={data?.caminantesPagoCompleto ?? 0} sub="de 50 cupos" color="text-emerald-700" badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / 50 * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }} />
+                <StatMini label="Pago completo" value={data?.caminantesPagoCompleto ?? 0} sub={`de ${CUPO_MAXIMO} cupos`} color="text-emerald-700" badge={{ text: `${((data?.caminantesPagoCompleto ?? 0) / CUPO_MAXIMO * 100).toFixed(0)}%`, color: 'bg-emerald-50 text-emerald-700' }} />
                 <StatMini label="Correos enviados" value={data?.caminantesCorreoEnviado ?? 0} sub={`de ${data?.totalCaminantes ?? 0} inscritos`} color="text-blue-700" />
                 <StatMini label="Con abono" value={data?.caminantesConAbono ?? 0} sub="bloquean cupo" color="text-amber-700" />
                 <div className="col-span-2 bg-emerald-50/60 rounded-xl p-3 flex items-center justify-between">
@@ -360,7 +361,7 @@ export default function DashboardPage() {
                 <div className="col-span-2 bg-gray-50 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => router.push('/dashboard/caminantes')}>
                   <div>
                     <p className="text-xs font-semibold text-gray-700">Cupos disponibles</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Se bloquea al llegar a 50 con abono</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Se bloquea al llegar a {CUPO_MAXIMO} con abono</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-2xl font-bold text-gray-900">{data?.cuposDisponibles ?? 0}</span>
@@ -398,7 +399,7 @@ export default function DashboardPage() {
                 <div className="h-full bg-violet-400 rounded-full transition-all duration-700" style={{ width: `${metaServidores}%` }} />
               </div>
               <div className="flex justify-between mt-1">
-                <span className="text-[10px] text-gray-400">Meta: {data?.servidoresPagoCompleto ?? 0} / 50 pagos completos</span>
+                <span className="text-[10px] text-gray-400">Meta: {data?.servidoresPagoCompleto ?? 0} / {CUPO_MAXIMO} pagos completos</span>
                 <span className="text-[10px] text-gray-400">{metaServidores.toFixed(0)}%</span>
               </div>
             </div>
@@ -406,13 +407,13 @@ export default function DashboardPage() {
           {expandedCard === 'servidores' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <StatMini label="Pago completo" value={data?.servidoresPagoCompleto ?? 0} sub="de 50 × $380K" color="text-violet-700" badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }} onClick={() => router.push('/dashboard/servidores')} />
+                <StatMini label="Pago completo" value={data?.servidoresPagoCompleto ?? 0} sub={`de ${CUPO_MAXIMO} × $380K`} color="text-violet-700" badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }} onClick={() => router.push('/dashboard/servidores')} />
                 <StatMini label="Con abono" value={data?.servidoresConAbono ?? 0} sub="han pagado algo" color="text-amber-700" onClick={() => router.push('/dashboard/servidores')} />
                 <div className="col-span-2 bg-violet-50/60 rounded-xl p-3 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold text-violet-800">Meta de recolección servidores</p>
                     <p className="text-[11px] text-violet-500 mt-0.5">
-                      {formatCOPFull((data?.servidoresPagoCompleto ?? 0) * 380_000)} de {formatCOPFull(50 * 380_000)}
+                      {formatCOPFull((data?.servidoresPagoCompleto ?? 0) * 380_000)} de {formatCOPFull(CUPO_MAXIMO * 380_000)}
                     </p>
                   </div>
                   <div className="text-right">
@@ -478,7 +479,6 @@ export default function DashboardPage() {
             )}
           </button>
 
-          {/* Palancas — acceso rápido */}
           <button onClick={() => router.push('/dashboard/palancas')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 mb-2">
