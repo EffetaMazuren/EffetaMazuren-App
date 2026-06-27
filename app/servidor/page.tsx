@@ -93,14 +93,53 @@ export default function ServidorPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/'); return; }
 
+    // 1. Intentar obtener datos de la tabla usuarios
+    let servidorData: Servidor | null = null;
     const { data: usuarioData } = await supabase
       .from('usuarios')
       .select('id, nombre, rol, correo')
       .eq('id', user.id)
       .single();
 
-    if (!usuarioData) { router.push('/servidor/registro'); return; }
-    setServidor(usuarioData);
+    if (usuarioData) {
+      servidorData = usuarioData;
+    } else {
+      // 2. FALLBACK: buscar directamente en servidores_inscripcion
+      //    (ocurre cuando usuario_id quedó NULL y no se creó fila en usuarios)
+      const { data: inscFallback } = await supabase
+        .from('servidores_inscripcion')
+        .select('id, nombre, es_interno')
+        .eq('usuario_id', user.id)
+        .eq('retiro_id', RETIRO_ID)
+        .single();
+
+      if (inscFallback) {
+        // Construir objeto servidor desde la inscripción
+        servidorData = {
+          id: user.id,
+          nombre: inscFallback.nombre ?? '',
+          rol: null,
+          correo: user.email ?? null,
+        };
+
+        // Intentar crear la fila faltante en usuarios para que la próxima vez funcione normal
+        await supabase.from('usuarios').upsert({
+          id: user.id,
+          nombre: inscFallback.nombre ?? '',
+          correo: user.email ?? null,
+          rol: null,
+        }, { onConflict: 'id' });
+
+        // También linkear el usuario_id en servidores_inscripcion si faltaba
+        // (doble seguro, aunque ya debería estar linkeado si llegamos aquí por usuario_id)
+      } else {
+        // No hay inscripción — sí mandar a registro
+        router.push('/servidor/registro');
+        return;
+      }
+    }
+
+    setServidor(servidorData);
 
     // Buscar inscripción con es_interno
     const { data: inscripcion } = await supabase
