@@ -85,19 +85,36 @@ function norm(s: string): string {
 }
 
 function tokensOf(s: string): string[] {
-  return norm(s).split(' ').filter(t => t.length > 2)
+  return norm(s).split(/\s+/).filter(t => t.length > 1)
 }
 
+// Comparación flexible: funciona con nombres cortos (2 tokens) y largos (3+)
 function nombreMatch(a: string, b: string): boolean {
   const nA = norm(a), nB = norm(b)
   if (nA === nB) return true
-  const tA = tokensOf(a), tB = tokensOf(b)
+
+  // Si uno contiene al otro exactamente
+  if (nA.includes(nB) || nB.includes(nA)) return true
+
+  const tA = tokensOf(a)
+  const tB = tokensOf(b)
   const coincidencias = tA.filter(t => tB.includes(t)).length
-  if (coincidencias >= 3) return true
-  if (tA.length >= 3 && tB.length >= 3) {
-    const apellidosMatch = tA.slice(1).filter(ap => tB.includes(ap)).length
-    if (tB.includes(tA[0]) && apellidosMatch >= 2) return true
+
+  // Nombres cortos (2 tokens): basta con que coincidan ambos tokens
+  const minTokens = Math.min(tA.length, tB.length)
+  if (minTokens <= 2 && coincidencias >= 2) return true
+
+  // Nombres medios (3 tokens): basta con 2 coincidencias
+  if (minTokens === 3 && coincidencias >= 2) return true
+
+  // Nombres largos (4+ tokens): mínimo 3 coincidencias
+  if (minTokens >= 4 && coincidencias >= 3) return true
+
+  // Caso especial: primer nombre + al menos 1 apellido coinciden
+  if (tA.length >= 2 && tB.length >= 2) {
+    if (tA[0] === tB[0] && tA.slice(1).some(ap => tB.includes(ap))) return true
   }
+
   return false
 }
 
@@ -414,7 +431,6 @@ export default function RetiroPage() {
 
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {/* ── CAMBIO 1: siempre nombre real ── */}
                         <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
                           {cam.nombre}
                         </span>
@@ -473,8 +489,6 @@ export default function RetiroPage() {
                   {/* ── DETALLE SORPRESA ── */}
                   {cam.es_sorpresa && expandido && (
                     <div style={{ padding: '0 14px 14px', borderTop: '1px solid #fca5a5' }}>
-
-                      {/* ── CAMBIO 2: bloque del caminante con nombre + celular ── */}
                       <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '10px 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                         Caminante
                       </p>
@@ -496,7 +510,6 @@ export default function RetiroPage() {
                         )}
                       </div>
 
-                      {/* Contacto de la mamá / emergencia */}
                       <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                         Contacto para coordinar llegada
                       </p>
