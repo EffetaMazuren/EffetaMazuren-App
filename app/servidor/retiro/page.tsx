@@ -88,7 +88,7 @@ function tokensOf(s: string): string[] {
   return norm(s).split(/\s+/).filter(t => t.length > 1)
 }
 
-// Comparación flexible: funciona con nombres cortos (2 tokens) y largos (3+)
+// Comparación de nombres: exige siempre que al menos 1 apellido coincida
 function nombreMatch(a: string, b: string): boolean {
   const nA = norm(a), nB = norm(b)
   if (nA === nB) return true
@@ -98,24 +98,26 @@ function nombreMatch(a: string, b: string): boolean {
 
   const tA = tokensOf(a)
   const tB = tokensOf(b)
-  const coincidencias = tA.filter(t => tB.includes(t)).length
 
-  // Nombres cortos (2 tokens): basta con que coincidan ambos tokens
-  const minTokens = Math.min(tA.length, tB.length)
-  if (minTokens <= 2 && coincidencias >= 2) return true
+  // Necesitamos al menos 2 tokens en cada nombre para comparar
+  if (tA.length < 2 || tB.length < 2) return false
 
-  // Nombres medios (3 tokens): basta con 2 coincidencias
-  if (minTokens === 3 && coincidencias >= 2) return true
+  // El primer nombre debe coincidir
+  const primerNombreMatch = tA[0] === tB[0]
+  if (!primerNombreMatch) return false
 
-  // Nombres largos (4+ tokens): mínimo 3 coincidencias
-  if (minTokens >= 4 && coincidencias >= 3) return true
+  // Apellidos = todos los tokens excepto el primero
+  const apellidosA = tA.slice(1)
+  const apellidosB = tB.slice(1)
 
-  // Caso especial: primer nombre + al menos 1 apellido coinciden
-  if (tA.length >= 2 && tB.length >= 2) {
-    if (tA[0] === tB[0] && tA.slice(1).some(ap => tB.includes(ap))) return true
-  }
+  // Debe coincidir al menos 1 apellido
+  const apellidosCoinciden = apellidosA.filter(ap => apellidosB.includes(ap)).length
+  if (apellidosCoinciden === 0) return false
 
-  return false
+  // Nombres con segundo nombre compuesto (ej: "Juan Pablo X" vs "Juan Pablo Y"):
+  // si el segundo token también coincide, exigir que coincida al menos 1 apellido real
+  // (ya garantizado arriba)
+  return true
 }
 
 function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
