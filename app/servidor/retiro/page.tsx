@@ -150,12 +150,10 @@ export default function RetiroPage() {
     const todasMesas: MesaDB[] = mesasRes.data ?? []
     const mesaEncontrada = buscarMesaParaServidor(nombre, todasMesas)
 
-    // Cargar caminantes de su mesa si es líder
     let caminantes: CaminanteMesa[] = []
     if (mesaEncontrada) {
       const mesaNum = mesaEncontrada.mesa.numero
 
-      // Buscar el id de la mesa
       const { data: mesaRow } = await supabase
         .from('mesas')
         .select('id')
@@ -182,7 +180,6 @@ export default function RetiroPage() {
 
           const camList = (camData ?? []) as (Omit<CaminanteMesa, 'asignacion_id' | 'contacto_emergencia'> & { asignacion_id?: string; contacto_emergencia?: ContactoEmergencia | null })[]
 
-          // Para los sorpresa, cargar contacto de emergencia
           const sorpresas = camList.filter(c => c.es_sorpresa)
           const contactosMap: Record<string, ContactoEmergencia> = {}
 
@@ -206,7 +203,6 @@ export default function RetiroPage() {
             contacto_emergencia: c.es_sorpresa ? (contactosMap[c.id] ?? null) : null,
           }))
 
-          // Cargar seguimientos para esta mesa
           const { data: asigIds } = await supabase
             .from('asignaciones_mesa')
             .select('id')
@@ -268,7 +264,6 @@ export default function RetiroPage() {
     init()
   }, [cargarDatos])
 
-  // Realtime
   useEffect(() => {
     if (!nombreServidor) return
 
@@ -332,7 +327,6 @@ export default function RetiroPage() {
         <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Retiro IX — Effetá Mazuren</p>
       </div>
 
-      {/* Banner actualización */}
       {actualizado && (
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
@@ -414,17 +408,16 @@ export default function RetiroPage() {
                     onClick={() => setCamExpandido(expandido ? null : cam.id)}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
                   >
-                    {/* Número */}
                     <div style={{ width: 26, height: 26, borderRadius: 8, background: cam.es_sorpresa ? '#dc2626' : '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>
                       {i + 1}
                     </div>
 
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {/* ── CAMBIO 1: siempre nombre real ── */}
                         <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
-                          {cam.es_sorpresa ? '— Sorpresa —' : cam.nombre}
+                          {cam.nombre}
                         </span>
-
                         {cam.es_sorpresa && (
                           <span style={{ fontSize: 10, background: '#dc2626', color: 'white', padding: '1px 7px', borderRadius: 20, fontWeight: 700, letterSpacing: 0.5 }}>
                             SORPRESA
@@ -439,11 +432,9 @@ export default function RetiroPage() {
                             <a href={`tel:${cam.celular}`} style={{ color: '#0f1787', fontWeight: 600, textDecoration: 'none', fontSize: 11 }}>
                               {cam.celular}
                             </a>
-
                           </>
                         )}
                       </div>
-                      {/* Checkboxes seguimiento */}
                       {!cam.es_sorpresa && cam.asignacion_id && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                           {(['llamado', 'contesto'] as const).map(campo => {
@@ -474,16 +465,39 @@ export default function RetiroPage() {
                       )}
                     </div>
 
-                    {/* Expandir si es sorpresa */}
                     {cam.es_sorpresa && (
                       <span style={{ fontSize: 11, color: '#dc2626', flexShrink: 0 }}>{expandido ? '▲' : '▼'}</span>
                     )}
                   </button>
 
-                  {/* Detalle sorpresa */}
+                  {/* ── DETALLE SORPRESA ── */}
                   {cam.es_sorpresa && expandido && (
                     <div style={{ padding: '0 14px 14px', borderTop: '1px solid #fca5a5' }}>
+
+                      {/* ── CAMBIO 2: bloque del caminante con nombre + celular ── */}
                       <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '10px 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        Caminante
+                      </p>
+                      <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px', border: '1px solid #fca5a5', marginBottom: 10 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 6 }}>
+                          {cam.nombre}
+                          {cam.edad ? <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 400, marginLeft: 6 }}>{cam.edad} años</span> : null}
+                        </div>
+                        {cam.celular && (
+                          <a
+                            href={`tel:${cam.celular}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#0f1787', fontWeight: 600, textDecoration: 'none' }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.01 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92v2z"/>
+                            </svg>
+                            {cam.celular}
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Contacto de la mamá / emergencia */}
+                      <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                         Contacto para coordinar llegada
                       </p>
                       {cam.contacto_emergencia ? (
@@ -509,6 +523,7 @@ export default function RetiroPage() {
                       ) : (
                         <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Sin contacto registrado</p>
                       )}
+
                       <p style={{ fontSize: 11, color: '#dc2626', margin: '10px 0 0', lineHeight: 1.5 }}>
                         Este caminante no sabe que viene al retiro. Coordina la llegada con su contacto sin revelar el destino.
                       </p>
@@ -521,7 +536,6 @@ export default function RetiroPage() {
         </div>
       )}
 
-      {/* Mensaje si es líder pero sin caminantes confirmados */}
       {info?.mesa && info.esLiderDeMesa && info.caminantes.length === 0 && (
         <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '20px 22px', marginBottom: 14, textAlign: 'center' }}>
           <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>
@@ -565,7 +579,6 @@ export default function RetiroPage() {
         </div>
       )}
 
-      {/* Sin roles ni mesa */}
       {(!info || (info.roles.length === 0 && !info.mesa)) && (
         <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '32px 24px', textAlign: 'center', marginBottom: 14 }}>
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 14px', display: 'block' }}>
@@ -577,7 +590,6 @@ export default function RetiroPage() {
         </div>
       )}
 
-      {/* Info general */}
       <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '18px 22px' }}>
         <p style={{ margin: '0 0 12px', fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 600 }}>Información del retiro</p>
         {[
