@@ -34,6 +34,7 @@ interface CaminanteMesa {
   alergias: string | null
   restricciones_alimentarias: string | null
   medicamentos: string | null
+  conocido_en_retiro: string | null
   contacto_emergencia?: ContactoEmergencia | null
 }
 
@@ -127,14 +128,81 @@ interface Seguimiento {
   contesto: boolean
 }
 
-// Pill de info médica individual
-function PillMedica({ label, valor, color, bg, border }: { label: string; valor: string; color: string; bg: string; border: string }) {
+// Campo editable inline
+function CampoEditable({
+  label, valor, colorLabel, bg, border, placeholder, onGuardar,
+}: {
+  label: string
+  valor: string | null
+  colorLabel: string
+  bg: string
+  border: string
+  placeholder: string
+  onGuardar: (v: string) => Promise<void>
+}) {
+  const [editando, setEditando] = useState(false)
+  const [draft, setDraft] = useState(valor ?? '')
+  const [guardando, setGuardando] = useState(false)
+
+  const guardar = async () => {
+    setGuardando(true)
+    await onGuardar(draft.trim())
+    setGuardando(false)
+    setEditando(false)
+  }
+
+  if (!editando) {
+    return (
+      <button
+        onClick={() => { setDraft(valor ?? ''); setEditando(true) }}
+        style={{
+          display: 'flex', gap: 6, alignItems: 'flex-start', width: '100%',
+          background: bg, border: `1px solid ${border}`, borderRadius: 8,
+          padding: '6px 9px', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: 9, fontWeight: 700, color: colorLabel, letterSpacing: 0.5, textTransform: 'uppercase', paddingTop: 2, flexShrink: 0, minWidth: 80 }}>
+          {label}
+        </span>
+        <span style={{ fontSize: 12, color: valor ? '#374151' : '#9ca3af', lineHeight: 1.4, flex: 1 }}>
+          {valor || placeholder}
+        </span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={colorLabel} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2, opacity: 0.7 }}>
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </button>
+    )
+  }
+
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '5px 9px' }}>
-      <span style={{ fontSize: 9, fontWeight: 700, color, letterSpacing: 0.5, textTransform: 'uppercase', paddingTop: 1, flexShrink: 0, minWidth: 68 }}>
+    <div style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 8, padding: '6px 9px' }}>
+      <span style={{ fontSize: 9, fontWeight: 700, color: colorLabel, letterSpacing: 0.5, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
         {label}
       </span>
-      <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.4 }}>{valor}</span>
+      <textarea
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        placeholder={placeholder}
+        rows={2}
+        autoFocus
+        style={{ width: '100%', fontSize: 12, color: '#374151', border: 'none', background: 'transparent', resize: 'none', outline: 'none', lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box' }}
+      />
+      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+        <button
+          onClick={guardar}
+          disabled={guardando}
+          style={{ flex: 1, background: colorLabel, color: 'white', border: 'none', borderRadius: 6, padding: '5px 0', fontSize: 11, fontWeight: 700, cursor: 'pointer', opacity: guardando ? 0.6 : 1 }}
+        >
+          {guardando ? 'Guardando…' : 'Guardar'}
+        </button>
+        <button
+          onClick={() => setEditando(false)}
+          style={{ flex: 1, background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: 6, padding: '5px 0', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+        >
+          Cancelar
+        </button>
+      </div>
     </div>
   )
 }
@@ -144,7 +212,6 @@ export default function RetiroPage() {
   const [loading, setLoading] = useState(true)
   const [nombreServidor, setNombreServidor] = useState('')
   const [actualizado, setActualizado] = useState(false)
-  // Un solo estado para qué panel está abierto: 'info-{id}' o 'sorpresa-{id}'
   const [panelAbierto, setPanelAbierto] = useState<string | null>(null)
   const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
 
@@ -175,7 +242,7 @@ export default function RetiroPage() {
         if (ids.length > 0) {
           const { data: camData } = await supabase
             .from('caminantes')
-            .select('id, nombre, celular, edad, es_sorpresa, alergias, restricciones_alimentarias, medicamentos')
+            .select('id, nombre, celular, edad, es_sorpresa, alergias, restricciones_alimentarias, medicamentos, conocido_en_retiro')
             .in('id', ids)
 
           const camList = (camData ?? []) as any[]
@@ -257,6 +324,19 @@ export default function RetiroPage() {
     } else {
       await supabase.from('seguimiento_caminantes').insert({ asignacion_mesa_id: asignacionMesaId, llamado: nuevo.llamado, contesto: nuevo.contesto })
     }
+  }
+
+  // Actualiza campo en caminantes y refleja en estado local
+  const actualizarCampo = async (camId: string, campo: keyof CaminanteMesa, valor: string) => {
+    const val = valor.trim() === '' ? null : valor.trim()
+    await supabase.from('caminantes').update({ [campo]: val }).eq('id', camId)
+    setInfo(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        caminantes: prev.caminantes.map(c => c.id === camId ? { ...c, [campo]: val } : c),
+      }
+    })
   }
 
   if (loading) {
@@ -361,7 +441,7 @@ export default function RetiroPage() {
                   background: cam.es_sorpresa ? '#fff5f5' : 'white',
                 }}>
 
-                  {/* ── FILA PRINCIPAL: número + nombre (clickeable) + checkboxes + flecha sorpresa ── */}
+                  {/* ── FILA PRINCIPAL ── */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px' }}>
 
                     {/* Número */}
@@ -369,7 +449,7 @@ export default function RetiroPage() {
                       {i + 1}
                     </div>
 
-                    {/* Nombre — abre/cierra el panel de info personal */}
+                    {/* Nombre — abre panel de info personal */}
                     <button
                       onClick={() => setPanelAbierto(infoAbierta ? null : infoKey)}
                       style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
@@ -382,17 +462,15 @@ export default function RetiroPage() {
                           SORPRESA
                         </span>
                       )}
-                      {/* Indicador de que tiene info médica */}
                       {tieneMedica && (
-                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#d97706', flexShrink: 0, display: 'inline-block' }} title="Tiene info médica" />
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#d97706', flexShrink: 0, display: 'inline-block' }} />
                       )}
-                      {/* Chevron */}
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: infoAbierta ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
                         <polyline points="6 9 12 15 18 9"/>
                       </svg>
                     </button>
 
-                    {/* Checkboxes llamado/contestó (solo caminantes normales) */}
+                    {/* Checkboxes (solo no-sorpresa) */}
                     {!cam.es_sorpresa && cam.asignacion_id && (
                       <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
                         {(['llamado', 'contesto'] as const).map(campo => {
@@ -400,7 +478,7 @@ export default function RetiroPage() {
                           const label = campo === 'llamado' ? 'Llamado' : 'Contestó'
                           return (
                             <button key={campo}
-                              onClick={(ev) => { ev.stopPropagation(); toggleSeguimiento(cam.asignacion_id, campo) }}
+                              onClick={ev => { ev.stopPropagation(); toggleSeguimiento(cam.asignacion_id, campo) }}
                               style={{
                                 display: 'flex', alignItems: 'center', gap: 4,
                                 padding: '3px 7px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600,
@@ -422,7 +500,7 @@ export default function RetiroPage() {
                       </div>
                     )}
 
-                    {/* Flecha sorpresa (abre panel sorpresa) */}
+                    {/* Flecha sorpresa — abre panel de contacto emergencia */}
                     {cam.es_sorpresa && (
                       <button
                         onClick={() => setPanelAbierto(sorpresaAbierta ? null : sorpresaKey)}
@@ -433,7 +511,7 @@ export default function RetiroPage() {
                     )}
                   </div>
 
-                  {/* ── PANEL INFO PERSONAL (se abre al tocar el nombre) ── */}
+                  {/* ── PANEL INFO PERSONAL (nombre clickeable) ── */}
                   {infoAbierta && (
                     <div style={{ borderTop: `1px solid ${cam.es_sorpresa ? '#fca5a5' : '#f0f0f3'}`, padding: '12px 14px', background: cam.es_sorpresa ? '#fff0f0' : '#f9f9fc', display: 'flex', flexDirection: 'column', gap: 8 }}>
 
@@ -454,22 +532,47 @@ export default function RetiroPage() {
                         </a>
                       )}
 
-                      {/* Info médica */}
-                      {tieneMedica && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 2 }}>
-                          {cam.alergias && <PillMedica label="Alergia" valor={cam.alergias} color="#dc2626" bg="#fef2f2" border="#fca5a5" />}
-                          {cam.restricciones_alimentarias && <PillMedica label="Restricción" valor={cam.restricciones_alimentarias} color="#d97706" bg="#fffbeb" border="#fcd34d" />}
-                          {cam.medicamentos && <PillMedica label="Medicamento" valor={cam.medicamentos} color="#7c3aed" bg="#faf5ff" border="#c4b5fd" />}
-                        </div>
-                      )}
-
-                      {!cam.celular && !tieneMedica && !cam.edad && (
-                        <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Sin información adicional registrada.</p>
-                      )}
+                      {/* Campos editables */}
+                      <CampoEditable
+                        label="Alergia"
+                        valor={cam.alergias}
+                        colorLabel="#dc2626"
+                        bg="#fef2f2"
+                        border="#fca5a5"
+                        placeholder="Sin alergias registradas — toca para agregar"
+                        onGuardar={v => actualizarCampo(cam.id, 'alergias', v)}
+                      />
+                      <CampoEditable
+                        label="Restricción"
+                        valor={cam.restricciones_alimentarias}
+                        colorLabel="#d97706"
+                        bg="#fffbeb"
+                        border="#fcd34d"
+                        placeholder="Sin restricciones — toca para agregar"
+                        onGuardar={v => actualizarCampo(cam.id, 'restricciones_alimentarias', v)}
+                      />
+                      <CampoEditable
+                        label="Medicamento"
+                        valor={cam.medicamentos}
+                        colorLabel="#7c3aed"
+                        bg="#faf5ff"
+                        border="#c4b5fd"
+                        placeholder="Sin medicamentos — toca para agregar"
+                        onGuardar={v => actualizarCampo(cam.id, 'medicamentos', v)}
+                      />
+                      <CampoEditable
+                        label="Conoce a"
+                        valor={cam.conocido_en_retiro}
+                        colorLabel="#0f1787"
+                        bg="#eef0fb"
+                        border="#c7cdf5"
+                        placeholder="¿Conoce a alguien en el retiro? — toca para agregar"
+                        onGuardar={v => actualizarCampo(cam.id, 'conocido_en_retiro', v)}
+                      />
                     </div>
                   )}
 
-                  {/* ── PANEL SORPRESA (se abre con la flecha roja) ── */}
+                  {/* ── PANEL SORPRESA (flecha roja) ── */}
                   {cam.es_sorpresa && sorpresaAbierta && (
                     <div style={{ padding: '0 14px 14px', borderTop: '1px solid #fca5a5' }}>
                       <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '10px 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
