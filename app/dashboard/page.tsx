@@ -2,7 +2,7 @@
 
 import { useEffect, useState, ReactElement } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,6 +52,7 @@ function formatCOPFull(value: number): string {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState('Líder')
@@ -207,6 +208,14 @@ export default function DashboardPage() {
       </div>
     )
   }
+
+  const navTabs = [
+    { label: 'Inicio', icon: 'home', href: '/dashboard' },
+    { label: 'Personas', icon: 'users', href: '/dashboard/personas' },
+    { label: 'Finanzas', icon: 'bar-chart', href: '/dashboard/finanzas' },
+    { label: 'Retiro', icon: 'cross', href: '/dashboard/retiro' },
+    { label: 'Config', icon: 'settings', href: '/dashboard/config' },
+  ]
 
   return (
     <div className="min-h-screen bg-[#f7f8fc] pb-24">
@@ -505,14 +514,6 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Enviar comunicados a servidores en tiempo real</p>
           </button>
 
-          <button onClick={() => router.push('/dashboard/retiro')} className="col-span-2 bg-[#0f1787] rounded-2xl p-4 text-left hover:opacity-90 transition-opacity">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xl">✝️</span>
-              <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">IX Retiro</span>
-            </div>
-            <p className="text-sm text-blue-100 leading-tight">Minuto a minuto, roles y manual del retiro</p>
-          </button>
-
         </div>
 
         {/* Indicador en tiempo real */}
@@ -526,14 +527,8 @@ export default function DashboardPage() {
       {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-20">
         <div className="flex items-center max-w-2xl mx-auto px-2">
-          {[
-            { label: 'Inicio', icon: 'home', href: '/dashboard' },
-            { label: 'Personas', icon: 'users', href: '/dashboard/personas' },
-            { label: 'Finanzas', icon: 'bar-chart', href: '/dashboard/finanzas' },
-            { label: 'Reuniones', icon: 'calendar', href: '/dashboard/reuniones' },
-            { label: 'Config', icon: 'settings', href: '/dashboard/config' },
-          ].map(item => {
-            const active = item.href === '/dashboard'
+          {navTabs.map(item => {
+            const active = pathname === item.href
             return (
               <button key={item.href} onClick={() => router.push(item.href)} className="flex-1 flex flex-col items-center gap-1 py-3 transition-colors">
                 <NavIcon name={item.icon} active={active} />
@@ -587,9 +582,9 @@ function NavIcon({ name, active }: { name: string; active: boolean }) {
         <line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" />
       </svg>
     ),
-    calendar: (
+    cross: (
       <svg width={w} height={w} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        <path d="M12 2v20M2 12h20" />
       </svg>
     ),
     settings: (
