@@ -31,6 +31,9 @@ interface CaminanteMesa {
   celular: string
   edad: number | null
   es_sorpresa: boolean
+  alergias: string | null
+  restricciones_alimentarias: string | null
+  medicamentos: string | null
   contacto_emergencia?: ContactoEmergencia | null
 }
 
@@ -88,30 +91,19 @@ function tokensOf(s: string): string[] {
   return norm(s).split(/\s+/).filter(t => t.length > 1)
 }
 
-// Comparación de nombres: detecta segundo nombre compuesto compartido
 function nombreMatch(a: string, b: string): boolean {
   const nA = norm(a), nB = norm(b)
   if (nA === nB) return true
-
-  // Si uno contiene al otro exactamente
   if (nA.includes(nB) || nB.includes(nA)) return true
-
   const tA = tokensOf(a)
   const tB = tokensOf(b)
-
   if (tA.length < 2 || tB.length < 2) return false
-
-  // Primer nombre debe coincidir
   if (tA[0] !== tB[0]) return false
-
-  // Si el segundo token es igual en ambos (ej: "Pablo"), es nombre compuesto — no es apellido
   const segundoCompartido = tA.length > 2 && tB.length > 2 && tA[1] === tB[1]
   const desdeA = segundoCompartido ? 2 : 1
   const desdeB = segundoCompartido ? 2 : 1
   const apellidosA = tA.slice(desdeA)
   const apellidosB = tB.slice(desdeB)
-
-  // Debe coincidir al menos 1 apellido real
   return apellidosA.filter(ap => apellidosB.includes(ap)).length >= 1
 }
 
@@ -126,6 +118,40 @@ function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB
     if (nombreEnLista(nombre, [mesa.adulto])) return { mesa, esLider: false }
   }
   return null
+}
+
+// Chips de info médica: alergia=rojo, restricción=ámbar, medicamento=morado
+const INFO_MEDICA = [
+  { key: 'alergias' as const,                   label: 'Alergia',      bg: '#fef2f2', color: '#dc2626', border: '#fca5a5' },
+  { key: 'restricciones_alimentarias' as const,  label: 'Restricción',  bg: '#fffbeb', color: '#d97706', border: '#fcd34d' },
+  { key: 'medicamentos' as const,                label: 'Medicamento',  bg: '#faf5ff', color: '#7c3aed', border: '#c4b5fd' },
+]
+
+function InfoMedicaChips({ cam }: { cam: CaminanteMesa }) {
+  const items = INFO_MEDICA.filter(m => cam[m.key] && cam[m.key]!.trim() !== '')
+  if (items.length === 0) return null
+  return (
+    <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      {items.map(({ key, label, bg, color, border }) => (
+        <div key={key} style={{
+          display: 'flex', gap: 6, alignItems: 'flex-start',
+          background: bg, border: `1px solid ${border}`,
+          borderRadius: 8, padding: '5px 9px',
+        }}>
+          <span style={{
+            fontSize: 9, fontWeight: 700, color, letterSpacing: 0.5,
+            textTransform: 'uppercase', paddingTop: 1, flexShrink: 0,
+            minWidth: 68,
+          }}>
+            {label}
+          </span>
+          <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.4 }}>
+            {cam[key]}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 interface Seguimiento {
@@ -187,9 +213,10 @@ export default function RetiroPage() {
         const ids = (asigData ?? []).map((a: any) => a.caminante_id)
 
         if (ids.length > 0) {
+          // ── CAMBIO: se agregan alergias, restricciones_alimentarias, medicamentos ──
           const { data: camData } = await supabase
             .from('caminantes')
-            .select('id, nombre, celular, edad, es_sorpresa')
+            .select('id, nombre, celular, edad, es_sorpresa, alergias, restricciones_alimentarias, medicamentos')
             .in('id', ids)
 
           const camList = (camData ?? []) as (Omit<CaminanteMesa, 'asignacion_id' | 'contacto_emergencia'> & { asignacion_id?: string; contacto_emergencia?: ContactoEmergencia | null })[]
@@ -411,6 +438,7 @@ export default function RetiroPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {info.caminantes.map((cam, i) => {
               const expandido = camExpandido === cam.id
+              const tieneMedica = !!(cam.alergias || cam.restricciones_alimentarias || cam.medicamentos)
               return (
                 <div key={cam.id} style={{
                   border: cam.es_sorpresa ? '1.5px solid #fca5a5' : '1px solid #f3f4f6',
@@ -420,9 +448,9 @@ export default function RetiroPage() {
                 }}>
                   <button
                     onClick={() => setCamExpandido(expandido ? null : cam.id)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: cam.es_sorpresa ? 'pointer' : 'default', textAlign: 'left' }}
                   >
-                    <div style={{ width: 26, height: 26, borderRadius: 8, background: cam.es_sorpresa ? '#dc2626' : '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: cam.es_sorpresa ? '#dc2626' : '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0, marginTop: 1 }}>
                       {i + 1}
                     </div>
 
@@ -437,6 +465,8 @@ export default function RetiroPage() {
                           </span>
                         )}
                       </div>
+
+                      {/* Edad + celular */}
                       <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                         {cam.edad ? `${cam.edad} años` : ''}
                         {!cam.es_sorpresa && cam.celular && (
@@ -448,8 +478,15 @@ export default function RetiroPage() {
                           </>
                         )}
                       </div>
+
+                      {/* Info médica — siempre visible si hay datos */}
+                      {!cam.es_sorpresa && tieneMedica && (
+                        <InfoMedicaChips cam={cam} />
+                      )}
+
+                      {/* Checkboxes llamado / contestó */}
                       {!cam.es_sorpresa && cam.asignacion_id && (
-                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                           {(['llamado', 'contesto'] as const).map(campo => {
                             const seg = seguimientos[cam.asignacion_id] ?? { llamado: false, contesto: false }
                             const activo = seg[campo]
@@ -479,7 +516,7 @@ export default function RetiroPage() {
                     </div>
 
                     {cam.es_sorpresa && (
-                      <span style={{ fontSize: 11, color: '#dc2626', flexShrink: 0 }}>{expandido ? '▲' : '▼'}</span>
+                      <span style={{ fontSize: 11, color: '#dc2626', flexShrink: 0, paddingTop: 4 }}>{expandido ? '▲' : '▼'}</span>
                     )}
                   </button>
 
@@ -505,6 +542,8 @@ export default function RetiroPage() {
                             {cam.celular}
                           </a>
                         )}
+                        {/* Info médica dentro del panel sorpresa */}
+                        {tieneMedica && <InfoMedicaChips cam={cam} />}
                       </div>
 
                       <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
