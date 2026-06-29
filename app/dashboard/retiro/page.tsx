@@ -41,6 +41,139 @@ interface Habitacion { id: string; numero: string; piso: number; bloque: string;
 interface AsignacionHabitacion { id: string; habitacion_id: string; persona_id: string; tipo_persona: 'caminante' | 'servidor'; nombre: string }
 interface ServidorPalancas { id: string; nombre: string; palancas_lider: boolean }
 
+// ── TIPOS MINUTO A MINUTO ──
+interface ItemMM {
+  id?: string
+  hora: string
+  actividad: string
+  encargado: string
+  detalle?: string
+  tipo?: 'charla' | 'actividad' | 'comida' | 'logistica' | 'espiritual'
+  orden_item: number
+}
+interface BloqueMM {
+  titulo: string
+  camiseta?: string
+  orden_bloque: number
+  items: ItemMM[]
+}
+
+const colorTipoMM: Record<string, { bg: string; color: string; label: string }> = {
+  charla:    { bg: '#dc2626', color: 'white', label: 'Charla' },
+  actividad: { bg: '#7c3aed', color: 'white', label: 'Actividad' },
+  comida:    { bg: '#16a34a', color: 'white', label: 'Comida' },
+  logistica: { bg: '#6b7280', color: 'white', label: 'Logística' },
+  espiritual:{ bg: '#d97706', color: 'white', label: 'Espiritual' },
+}
+
+// ── PARSER de texto libre ──
+// Soporta:
+//   VIERNES NOCHE  /  BLOQUE: Mañana  /  CAMISETA: texto
+//   * 6;15pm tocar campana | encargado | tipo | detalle
+//   * 6;15pm tocar campana
+function parsearTextoMM(texto: string): BloqueMM[] {
+  const lineas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+  const bloques: BloqueMM[] = []
+  let bloqueActual: BloqueMM | null = null
+  let ordenBloque = 0
+  let ordenItem = 0
+
+  const parseHora = (raw: string): string => {
+    // convierte "6;15pm" → "6:15 PM", "9;00am" → "9:00 AM", "14;30" → "2:30 PM"
+    const m = raw.replace(/[;,.]/g, ':').match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i)
+    if (!m) return raw.toUpperCase()
+    let h = parseInt(m[1])
+    const min = m[2]
+    const periodo = m[3]?.toLowerCase()
+    if (periodo === 'pm' && h < 12) h += 12
+    if (periodo === 'am' && h === 12) h = 0
+    const suffix = h >= 12 ? 'PM' : 'AM'
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    return `${h12}:${min} ${suffix}`
+  }
+
+  const TIPOS_VALIDOS = ['charla', 'actividad', 'comida', 'logistica', 'espiritual']
+
+  const detectarTipo = (texto: string): 'charla' | 'actividad' | 'comida' | 'logistica' | 'espiritual' | undefined => {
+    const t = texto.toLowerCase()
+    if (t.includes('charla') || t.includes('testimonio')) return 'charla'
+    if (t.includes('almuerzo') || t.includes('cena') || t.includes('desayuno') || t.includes('comida') || t.includes('snack') || t.includes('picadita')) return 'comida'
+    if (t.includes('oración') || t.includes('oracion') || t.includes('rosario') || t.includes('misa') || t.includes('santísimo') || t.includes('santisimo') || t.includes('espiritual') || t.includes('lectio') || t.includes('confesion') || t.includes('confesión')) return 'espiritual'
+    if (t.includes('ejercicio') || t.includes('actividad') || t.includes('dinámica') || t.includes('dinamica') || t.includes('máscaras') || t.includes('mascaras') || t.includes('palanquitas') || t.includes('fogata') || t.includes('camino')) return 'actividad'
+    return 'logistica'
+  }
+
+  for (const linea of lineas) {
+    const lineaUpper = linea.toUpperCase()
+
+    // Detectar encabezado de bloque: línea en mayúsculas sin * y sin hora
+    // Ej: "VIERNES NOCHE", "BLOQUE: Pre-retiro", "SÁBADO MAÑANA"
+    const esEncabezadoBloque =
+      linea.startsWith('BLOQUE:') ||
+      (lineaUpper === linea && !linea.startsWith('*') && !/^\d/.test(linea) && linea.length > 2 && !linea.includes('|'))
+
+    if (esEncabezadoBloque) {
+      const titulo = linea.replace(/^BLOQUE:\s*/i, '').trim()
+      bloqueActual = { titulo, camiseta: undefined, orden_bloque: ordenBloque++, items: [] }
+      bloques.push(bloqueActual)
+      ordenItem = 0
+      continue
+    }
+
+    // Detectar CAMISETA
+    if (linea.toUpperCase().startsWith('CAMISETA:')) {
+      if (bloqueActual) bloqueActual.camiseta = linea.replace(/^CAMISETA:\s*/i, '').trim()
+      continue
+    }
+
+    // Detectar item de actividad: empieza con * o con dígito
+    const esItem = linea.startsWith('*') || /^\d/.test(linea)
+    if (!esItem) continue
+
+    // Limpiar prefijo *
+    const contenido = linea.replace(/^\*\s*/, '').trim()
+
+    // Separar por | si existe
+    const partes = contenido.split('|').map(p => p.trim())
+
+    // La primera parte tiene "hora actividad" o solo están separados por espacio
+    // Detectar hora al inicio: patrón \d{1,2}[;:,.]\d{2}\s*(am|pm)?
+    const horaMatch = partes[0].match(/^(\d{1,2}[;:,.]\d{2}\s*(?:am|pm)?)\s+(.+)/i)
+    if (!horaMatch) continue
+
+    const horaRaw = horaMatch[1].trim()
+    const actividadRaw = horaMatch[2].trim()
+    const hora = parseHora(horaRaw)
+
+    let actividad = actividadRaw
+    let encargado = partes[1] ?? ''
+    let tipoRaw = partes[2] ?? ''
+    let detalle = partes[3] ?? ''
+
+    // Si solo hay hora+actividad sin pipes, intentar detectar tipo automáticamente
+    const tipo = TIPOS_VALIDOS.includes(tipoRaw.toLowerCase())
+      ? tipoRaw.toLowerCase() as ItemMM['tipo']
+      : detectarTipo(actividad)
+
+    // Si no hay bloque aún, crear uno genérico
+    if (!bloqueActual) {
+      bloqueActual = { titulo: 'General', orden_bloque: ordenBloque++, items: [] }
+      bloques.push(bloqueActual)
+    }
+
+    bloqueActual.items.push({
+      hora,
+      actividad,
+      encargado,
+      detalle: detalle || undefined,
+      tipo,
+      orden_item: ordenItem++,
+    })
+  }
+
+  return bloques.filter(b => b.items.length > 0)
+}
+
 function SeguimientoBadges({ asignacionId, seguimientos, onToggle }: {
   asignacionId: string; seguimientos: Record<string, Seguimiento>
   onToggle: (asignacionId: string, campo: 'llamado' | 'contesto') => void
@@ -61,22 +194,6 @@ function SeguimientoBadges({ asignacionId, seguimientos, onToggle }: {
       ))}
     </div>
   )
-}
-
-interface Actividad { hora: string; actividad: string; encargado: string; detalle?: string; tipo?: 'charla' | 'actividad' | 'comida' | 'logistica' | 'espiritual' }
-
-const MINUTO_MINUTO: Record<Dia, { bloques: { titulo: string; camiseta?: string; items: Actividad[] }[] }> = {
-  viernes: { bloques: [{ titulo: 'Pre-retiro', items: [{ hora: '9:30 AM', actividad: 'Llegada a la casa de retiros', encargado: 'Equipo de servidores', tipo: 'logistica' },{ hora: '10:00 AM', actividad: 'Primera reunión de coordinación', encargado: 'Líder joven y adulto de logística', detalle: 'Colgar cuadro de equipos y minuto a minuto. Colgar pendones en salón de conferencias. Organizar salón de logística con materiales separados por día y cuarto de palancas.', tipo: 'logistica' },{ hora: '11:00 AM', actividad: 'Equipos se dividen para organizar la casa', encargado: 'Cada equipo asignado', detalle: 'Llevar parlantes pequeños para sonido permanente en el Santísimo.', tipo: 'logistica' },{ hora: '12:00 PM', actividad: 'Almuerzo', encargado: 'Todos los servidores', tipo: 'comida' },{ hora: '1:00 PM', actividad: 'Revisión actividad Camino de la Vida', encargado: 'Equipo camino de la vida', detalle: 'Revisar terreno y dónde se enredarán las cuerdas.', tipo: 'actividad' },{ hora: '1:00 PM', actividad: 'Alistar mesas de llegada', encargado: 'Equipo de recepción', detalle: 'Dos mesas: hombres y mujeres. Escarapelas listas, bolsas ziploc con etiquetas para celulares y relojes. Lista de caminantes lista.', tipo: 'logistica' },{ hora: '1:15 PM', actividad: 'Llamar a caminantes', encargado: 'Servidores de mesa', detalle: 'Última bienvenida, resolver dudas y recordarles invitar familia el domingo a la misa.', tipo: 'logistica' },{ hora: '2:30 PM', actividad: 'Confesiones del sacerdote', encargado: 'Sacerdote', tipo: 'espiritual' },{ hora: '3:30 PM', actividad: 'Exposición del Santísimo', encargado: 'Sacerdote / Ministro', detalle: 'Nunca solo. Música sacra. Entregar invitaciones al Santísimo a cada servidor.', tipo: 'espiritual' },{ hora: '3:50 PM', actividad: 'Preparación para recibir caminantes', encargado: 'Equipo de maleteros', detalle: 'Identificar maletas con sticker: nombre + habitación.', tipo: 'logistica' },{ hora: '5:30 PM', actividad: 'Recepción de caminantes', encargado: 'Equipo de recepción', tipo: 'logistica' },{ hora: '5:30 PM', actividad: 'Picadita de recepción', encargado: 'Equipo de snacks', tipo: 'comida' }] },{ titulo: 'Noche', camiseta: 'Saco de Effetá — todo el equipo', items: [{ hora: '6:15 PM', actividad: 'Tocar la campana', encargado: 'Campanero', tipo: 'logistica' },{ hora: '6:20 PM', actividad: 'Bienvenida y explicación del retiro', encargado: 'Joven y adulto', tipo: 'espiritual' },{ hora: '6:30 PM', actividad: 'Explicación de la campana', encargado: 'Campanero', tipo: 'logistica' },{ hora: '7:37 PM', actividad: 'Reglas del retiro', encargado: 'Coordinador Joven', tipo: 'logistica' },{ hora: '7:40 PM', actividad: 'Explicación de la confidencialidad', encargado: 'Adulto', tipo: 'espiritual' },{ hora: '7:43 PM', actividad: 'Lectura completa del pasaje de Effetá', encargado: 'Adulto encargado', detalle: 'Marcos 7, 31-37.', tipo: 'espiritual' },{ hora: '7:50 PM', actividad: 'Asignación de mesas', encargado: 'Coordinador Logístico', tipo: 'logistica' },{ hora: '8:10 PM', actividad: 'Ejercicio de la luz — Enciende una luz', encargado: 'Encargado + líderes de mesa', detalle: 'Apagar luces. Velas. Canción: "Enciende una luz". Reflexión breve.', tipo: 'actividad' },{ hora: '8:15 PM', actividad: 'Cena — Bendición de alimentos', encargado: 'Servidor Joven', tipo: 'comida' },{ hora: '8:50 PM', actividad: 'Presentaciones individuales por mesas', encargado: 'Líderes y co-líderes de mesa', tipo: 'espiritual' },{ hora: '9:40 PM', actividad: 'Break', encargado: 'Adulto', tipo: 'logistica' },{ hora: '9:50 PM', actividad: 'Explicación de palanquitas', encargado: 'Servidor Joven', tipo: 'espiritual' },{ hora: '9:55 PM', actividad: 'CHARLA 1: Autosuficiencia', encargado: 'Encargado del testimonio', tipo: 'charla' },{ hora: '10:35 PM', actividad: 'Lectura 1 del pasaje de Effetá', encargado: 'Adulto encargado', tipo: 'espiritual' },{ hora: '10:50 PM', actividad: 'Ejercicio: Camino de la Vida', encargado: 'Equipo camino de la vida', detalle: '10 ponen blinds / 2 sacan del salón / 10 en la ruta / resto reciben en fogata.', tipo: 'actividad' },{ hora: '11:15 PM', actividad: 'Compartir en fogata', encargado: 'Servidor Joven', tipo: 'espiritual' },{ hora: '11:35 PM', actividad: 'Reglas de la noche e invitación al silencio', encargado: 'Servidor Joven', tipo: 'logistica' },{ hora: '12:00 AM', actividad: 'Reunión de servidores', encargado: 'Coordinador joven y logística', tipo: 'logistica' },{ hora: '12:30 AM', actividad: 'Práctica actividad de máscaras', encargado: '4H + 4M + adulto + 2 lectores', tipo: 'actividad' }] }] },
-  sabado: { bloques: [{ titulo: 'Mañana', camiseta: 'Camiseta roja — Esperanza y amor', items: [{ hora: '6:30 AM', actividad: 'Santo Rosario', encargado: 'Servidor adulto/joven', tipo: 'espiritual' },{ hora: '7:30 AM', actividad: 'Música para despertar caminantes', encargado: 'Equipo música', detalle: 'Canción: "No tengo miedo".', tipo: 'logistica' },{ hora: '8:10 AM', actividad: 'Oración para comenzar el día', encargado: 'Servidor Joven', tipo: 'espiritual' },{ hora: '8:15 AM', actividad: 'Explicación del Santísimo', encargado: 'Servidor Adulto', tipo: 'espiritual' },{ hora: '8:30 AM', actividad: 'Desayuno', encargado: '', tipo: 'comida' },{ hora: '9:15 AM', actividad: 'Foto grupal', encargado: 'Fotógrafo / Coordinador logística', tipo: 'logistica' },{ hora: '9:55 AM', actividad: 'Ejercicio de máscaras', encargado: 'Equipo máscaras', tipo: 'actividad' },{ hora: '10:15 AM', actividad: 'CHARLA 2: Descubriéndome', encargado: 'Encargado del testimonio', tipo: 'charla' },{ hora: '11:10 AM', actividad: 'Actividad: Quitarse las máscaras', encargado: 'Servidores de mesa', tipo: 'actividad' },{ hora: '12:15 PM', actividad: 'CHARLA 3: Mi primer llamado', encargado: 'Encargado del testimonio', tipo: 'charla' },{ hora: '1:20 PM', actividad: 'Almuerzo', encargado: 'Servidor Joven', tipo: 'comida' }] },{ titulo: 'Tarde y Noche', items: [{ hora: '2:10 PM', actividad: 'CHARLA 4: El templo del alma', encargado: 'Encargado del testimonio', tipo: 'charla' },{ hora: '2:55 PM', actividad: 'Ejercicio: El perdón pasivo', encargado: 'Equipo del perdón', detalle: 'Orden: amigo(a), novio(a), hermano, hermana, papá, mamá. Canción: Tilma de Guadalupe.', tipo: 'actividad' },{ hora: '3:15 PM', actividad: 'Ejercicio: El perdón activo', encargado: 'Equipo del perdón', tipo: 'actividad' },{ hora: '3:30 PM', actividad: 'Oración de sanación', encargado: 'Sacerdote', tipo: 'espiritual' },{ hora: '3:55 PM', actividad: 'Actividad: Sanando mi alma', encargado: '2 servidores jóvenes', detalle: 'Preguntas de examen de conciencia. Respuestas en papel confidencial que se guarda.', tipo: 'actividad' },{ hora: '4:25 PM', actividad: 'CHARLA 5: Significado de los Sacramentos', encargado: 'Sacerdote', tipo: 'charla' },{ hora: '5:20 PM', actividad: 'Lectio Divina — Hijo Pródigo', encargado: 'Coordinador logística', tipo: 'espiritual' },{ hora: '6:05 PM', actividad: 'Cena', encargado: 'Campanero', tipo: 'comida' },{ hora: '6:50 PM', actividad: 'CHARLA 6: En Ti confío', encargado: 'Encargado del testimonio', tipo: 'charla' },{ hora: '7:30 PM', actividad: 'Actividad: El muro y el nudo', encargado: 'Equipo muro y nudo', detalle: '8 ponen blinds. 1 adulto dice a quién sacar. 1 muestra dónde parar. Llevan a confesiones → palancas → fogata.', tipo: 'actividad' },{ hora: '8:30 PM', actividad: 'Palancas — lectura de cartas', encargado: 'Equipo de palancas', tipo: 'espiritual' },{ hora: '9:30 PM', actividad: 'Fogata', encargado: 'Equipo música + servidores', detalle: 'Quemar papeles de pecados. Oración de agradecimiento.', tipo: 'espiritual' },{ hora: '11:00 PM', actividad: 'Selección de mantelitos', encargado: 'Servidores', tipo: 'logistica' }] }] },
-  domingo: { bloques: [{ titulo: 'Mañana', camiseta: 'Camiseta blanca', items: [{ hora: '6:30 AM', actividad: 'Rosario', encargado: 'Servidor adulto y joven', tipo: 'espiritual' },{ hora: '7:30 AM', actividad: 'Despertar caminantes', encargado: 'Equipo música', detalle: 'Canción: "Ángeles".', tipo: 'logistica' },{ hora: '8:40 AM', actividad: 'Desayuno', encargado: '', tipo: 'comida' },{ hora: '9:10 AM', actividad: 'Actividad: Mantelitos', encargado: 'Servidor Joven', detalle: 'Servidor comparte primero. "Dios tiene un mensaje personal para nosotros."', tipo: 'actividad' },{ hora: '10:20 AM', actividad: 'CHARLA 7: Sed de Dios', encargado: 'Encargado del testimonio', tipo: 'charla' },{ hora: '11:10 AM', actividad: 'CHARLA 8: Mi Effetá y el servicio', encargado: 'Encargado del testimonio', tipo: 'charla' },{ hora: '11:50 AM', actividad: 'Ejercicio: Carta de Jesús', encargado: 'Equipo palanquitas', detalle: 'Oración primero. Sobre con nombre y dirección. Se envía meses después.', tipo: 'actividad' },{ hora: '1:35 PM', actividad: 'Almuerzo', encargado: 'Sacerdote', tipo: 'comida' }] },{ titulo: 'Tarde — Cierre', items: [{ hora: '2:15 PM', actividad: 'Lectura 4 del pasaje de Effetá', encargado: 'Adulto encargado', tipo: 'espiritual' },{ hora: '2:30 PM', actividad: 'Oración de intercesión por mesas', encargado: 'Coordinadores de mesa', tipo: 'espiritual' },{ hora: '3:45 PM', actividad: 'Se guarda el Santísimo', encargado: 'Sacerdote', tipo: 'espiritual' },{ hora: '3:50 PM', actividad: 'Dinámica del perdón de servidores', encargado: 'Todos los servidores', detalle: '7 representantes piden perdón por errores reales cometidos durante el retiro.', tipo: 'espiritual' },{ hora: '4:00 PM', actividad: 'Preparación de la misa', encargado: 'Ministro', detalle: 'Escoger 3 lectores. Practicar "No tengo miedo". 4 servidores para ofrendas.', tipo: 'logistica' },{ hora: '4:10 PM', actividad: 'Santa Misa de cierre', encargado: 'Sacerdote', tipo: 'espiritual' },{ hora: '5:00 PM', actividad: 'Despedida', encargado: 'Todos', tipo: 'comida' }] }] }
-}
-
-const colorTipo: Record<string, { bg: string; color: string; label: string }> = {
-  charla:    { bg: '#dc2626', color: 'white', label: 'Charla' },
-  actividad: { bg: '#7c3aed', color: 'white', label: 'Actividad' },
-  comida:    { bg: '#16a34a', color: 'white', label: 'Comida' },
-  logistica: { bg: '#6b7280', color: 'white', label: 'Logística' },
-  espiritual:{ bg: '#d97706', color: 'white', label: 'Espiritual' },
 }
 
 const CATEGORIAS_COLOR: Record<string, { border: string; badge: string; text: string }> = {
@@ -115,6 +232,16 @@ export default function RetiroDashboard() {
   const [tab, setTab] = useState<Tab>('minutominuto')
   const [diaActivo, setDiaActivo] = useState<Dia>('viernes')
   const [expandido, setExpandido] = useState<string | null>(null)
+
+  // ── MINUTO A MINUTO STATE ──
+  const [mmPorDia, setMmPorDia] = useState<Record<Dia, BloqueMM[]>>({ viernes: [], sabado: [], domingo: [] })
+  const [loadingMM, setLoadingMM] = useState(false)
+  const [modoEdicionMM, setModoEdicionMM] = useState(false)
+  const [textoDia, setTextoDia] = useState<Record<Dia, string>>({ viernes: '', sabado: '', domingo: '' })
+  const [parsePreview, setParsePreview] = useState<BloqueMM[]>([])
+  const [guardandoMM, setGuardandoMM] = useState(false)
+  const [exitoMM, setExitoMM] = useState('')
+  const [diaEdicion, setDiaEdicion] = useState<Dia>('viernes')
 
   // Roles
   const [roles, setRoles] = useState<RolRetiro[]>([])
@@ -178,11 +305,89 @@ export default function RetiroDashboard() {
   const [personaSeleccionada, setPersonaSeleccionada] = useState('')
 
   useEffect(() => {
+    if (tab === 'minutominuto') cargarMM()
     if (tab === 'roles') { cargarRoles(); cargarServidoresParaPalancas() }
     if (tab === 'mesas') cargarMesas()
     if (tab === 'caminantes') cargarCaminantes()
     if (tab === 'cuartos') cargarCuartos()
   }, [tab])
+
+  // ── CARGAR MINUTO A MINUTO DESDE SUPABASE ──
+  const cargarMM = async () => {
+    setLoadingMM(true)
+    const { data } = await supabase
+      .from('minuto_minuto')
+      .select('*')
+      .eq('retiro_id', RETIRO_ID)
+      .order('orden_bloque')
+      .order('orden_item')
+
+    const porDia: Record<Dia, BloqueMM[]> = { viernes: [], sabado: [], domingo: [] }
+    if (data && data.length > 0) {
+      for (const dia of ['viernes', 'sabado', 'domingo'] as Dia[]) {
+        const filasDia = data.filter((r: any) => r.dia === dia)
+        const bloquesMap: Record<number, BloqueMM> = {}
+        for (const fila of filasDia) {
+          if (!bloquesMap[fila.orden_bloque]) {
+            bloquesMap[fila.orden_bloque] = {
+              titulo: fila.bloque_titulo,
+              camiseta: fila.bloque_camiseta ?? undefined,
+              orden_bloque: fila.orden_bloque,
+              items: [],
+            }
+          }
+          bloquesMap[fila.orden_bloque].items.push({
+            id: fila.id,
+            hora: fila.hora,
+            actividad: fila.actividad,
+            encargado: fila.encargado ?? '',
+            detalle: fila.detalle ?? undefined,
+            tipo: fila.tipo ?? undefined,
+            orden_item: fila.orden_item,
+          })
+        }
+        porDia[dia] = Object.values(bloquesMap).sort((a, b) => a.orden_bloque - b.orden_bloque)
+      }
+    }
+    setMmPorDia(porDia)
+    setLoadingMM(false)
+  }
+
+  // ── GUARDAR DÍA EN SUPABASE ──
+  const guardarDiaMM = async (dia: Dia, bloques: BloqueMM[]) => {
+    setGuardandoMM(true)
+    // Borrar filas existentes para ese día
+    await supabase.from('minuto_minuto').delete().eq('retiro_id', RETIRO_ID).eq('dia', dia)
+
+    // Insertar nuevas
+    const filas: any[] = []
+    for (const bloque of bloques) {
+      for (const item of bloque.items) {
+        filas.push({
+          retiro_id: RETIRO_ID,
+          dia,
+          bloque_titulo: bloque.titulo,
+          bloque_camiseta: bloque.camiseta ?? null,
+          orden_bloque: bloque.orden_bloque,
+          hora: item.hora,
+          actividad: item.actividad,
+          encargado: item.encargado || null,
+          detalle: item.detalle ?? null,
+          tipo: item.tipo ?? null,
+          orden_item: item.orden_item,
+        })
+      }
+    }
+
+    if (filas.length > 0) await supabase.from('minuto_minuto').insert(filas)
+
+    await cargarMM()
+    setGuardandoMM(false)
+    setModoEdicionMM(false)
+    setParsePreview([])
+    setExitoMM(`${dia.charAt(0).toUpperCase() + dia.slice(1)} guardado`)
+    setTimeout(() => setExitoMM(''), 3000)
+  }
 
   const cargarRoles = async () => {
     setLoadingRoles(true)
@@ -193,11 +398,7 @@ export default function RetiroDashboard() {
 
   const cargarServidoresParaPalancas = async () => {
     setLoadingPalancasLider(true)
-    const { data } = await supabase
-      .from('servidores_inscripcion')
-      .select('id, nombre, palancas_lider')
-      .eq('retiro_id', RETIRO_ID)
-      .order('nombre')
+    const { data } = await supabase.from('servidores_inscripcion').select('id, nombre, palancas_lider').eq('retiro_id', RETIRO_ID).order('nombre')
     setServidoresList(data ?? [])
     setLoadingPalancasLider(false)
   }
@@ -277,40 +478,31 @@ export default function RetiroDashboard() {
       const { data: srvData } = await supabase.from('servidores_inscripcion').select('id, nombre').eq('retiro_id', RETIRO_ID).eq('es_interno', true)
       const listaSrv: { id: string; nombre: string }[] = srvData ?? []
       const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5)
-      const camShuffled = shuffle(listaCam)
-      const srvShuffled = shuffle(listaSrv)
+      const camShuffled = shuffle(listaCam); const srvShuffled = shuffle(listaSrv)
       const { data: habs } = await supabase.from('habitaciones').select('*').eq('retiro_id', RETIRO_ID).order('piso').order('numero')
       const todasHabs: Habitacion[] = habs ?? []
-      const habsPiso1 = todasHabs.filter(h => h.piso === 1)
-      const habsPiso2Plus = todasHabs.filter(h => h.piso > 1)
-      const nuevas: { habitacion_id: string; persona_id: string; tipo_persona: string; nombre: string; retiro_id: string }[] = []
-      const cuenta: Record<string, number> = {}
+      const habsPiso1 = todasHabs.filter(h => h.piso === 1); const habsPiso2Plus = todasHabs.filter(h => h.piso > 1)
+      const nuevas: any[] = []; const cuenta: Record<string, number> = {}
       todasHabs.forEach(h => { cuenta[h.id] = 0 })
       for (const srv of srvShuffled) {
-        const destinos = [...habsPiso1, ...habsPiso2Plus]
-        const hab = destinos.find(h => cuenta[h.id] < h.capacidad)
+        const hab = [...habsPiso1, ...habsPiso2Plus].find(h => cuenta[h.id] < h.capacidad)
         if (!hab) break
-        nuevas.push({ habitacion_id: hab.id, persona_id: srv.id, tipo_persona: 'servidor', nombre: srv.nombre, retiro_id: RETIRO_ID })
-        cuenta[hab.id]++
+        nuevas.push({ habitacion_id: hab.id, persona_id: srv.id, tipo_persona: 'servidor', nombre: srv.nombre, retiro_id: RETIRO_ID }); cuenta[hab.id]++
       }
       for (const cam of camShuffled) {
         const hab = habsPiso2Plus.find(h => cuenta[h.id] < h.capacidad)
         if (!hab) break
-        nuevas.push({ habitacion_id: hab.id, persona_id: cam.id, tipo_persona: 'caminante', nombre: cam.nombre, retiro_id: RETIRO_ID })
-        cuenta[hab.id]++
+        nuevas.push({ habitacion_id: hab.id, persona_id: cam.id, tipo_persona: 'caminante', nombre: cam.nombre, retiro_id: RETIRO_ID }); cuenta[hab.id]++
       }
       if (nuevas.length > 0) await supabase.from('asignaciones_habitacion').insert(nuevas)
-      await cargarCuartos()
-      await sincronizarHabitacionesSheets()
-      setExitoCuartos('Cuartos asignados al azar ✓')
-      setTimeout(() => setExitoCuartos(''), 3000)
+      await cargarCuartos(); await sincronizarHabitacionesSheets()
+      setExitoCuartos('Cuartos asignados al azar ✓'); setTimeout(() => setExitoCuartos(''), 3000)
     } finally { setGenerandoCuartos(false) }
   }
 
   const quitarPersonaDeHab = async (asignacionId: string) => {
     await supabase.from('asignaciones_habitacion').delete().eq('id', asignacionId)
-    await cargarCuartos()
-    await sincronizarHabitacionesSheets()
+    await cargarCuartos(); await sincronizarHabitacionesSheets()
   }
 
   const agregarPersonaAHab = async (habId: string) => {
@@ -319,8 +511,7 @@ export default function RetiroDashboard() {
     if (!persona) return
     await supabase.from('asignaciones_habitacion').insert({ habitacion_id: habId, persona_id: persona.id, tipo_persona: persona.tipo, nombre: persona.nombre, retiro_id: RETIRO_ID })
     setAgregandoAHab(null); setPersonaSeleccionada('')
-    await cargarCuartos()
-    await sincronizarHabitacionesSheets()
+    await cargarCuartos(); await sincronizarHabitacionesSheets()
   }
 
   const generarSugerencia = async () => {
@@ -431,7 +622,6 @@ export default function RetiroDashboard() {
   const asignacionesFiltradas = busquedaCam.length > 1 ? asignaciones.filter(a => a.caminante?.nombre?.toLowerCase().includes(busquedaCamLower)) : asignaciones
   const asignacionesPorMesa: Record<number, Asignacion[]> = {}
   asignacionesFiltradas.forEach(a => { if (!asignacionesPorMesa[a.mesa_numero]) asignacionesPorMesa[a.mesa_numero] = []; asignacionesPorMesa[a.mesa_numero].push(a) })
-
   const busquedaCuartosLower = busquedaCuartos.toLowerCase()
   const habitacionesFiltradas = habitaciones.filter(h => {
     if (filtroPiso !== null && h.piso !== filtroPiso) return false
@@ -439,11 +629,7 @@ export default function RetiroDashboard() {
     if (filtroTipo === 'libre' && asigs.length > 0) return false
     if (filtroTipo === 'caminante' && !asigs.some(a => a.tipo_persona === 'caminante')) return false
     if (filtroTipo === 'servidor' && !asigs.some(a => a.tipo_persona === 'servidor')) return false
-    if (busquedaCuartos.length > 1) {
-      const matchHab = h.numero.toLowerCase().includes(busquedaCuartosLower) || h.bloque.toLowerCase().includes(busquedaCuartosLower)
-      const matchPersona = asigs.some(a => a.nombre.toLowerCase().includes(busquedaCuartosLower))
-      return matchHab || matchPersona
-    }
+    if (busquedaCuartos.length > 1) { return h.numero.toLowerCase().includes(busquedaCuartosLower) || h.bloque.toLowerCase().includes(busquedaCuartosLower) || asigs.some(a => a.nombre.toLowerCase().includes(busquedaCuartosLower)) }
     return true
   })
   const bloques = [...new Set(habitacionesFiltradas.map(h => h.bloque))]
@@ -481,10 +667,13 @@ export default function RetiroDashboard() {
         ))}
       </div>
 
-      {/* ── MINUTO A MINUTO ── */}
+      {/* ══════════════════════════════════════
+          TAB: MINUTO A MINUTO
+      ══════════════════════════════════════ */}
       {tab === 'minutominuto' && (
         <div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          {/* Selector de día */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             {dias.map(d => (
               <button key={d.id} onClick={() => setDiaActivo(d.id)} style={{ flex: 1, padding: '10px 8px', border: 'none', borderRadius: 10, cursor: 'pointer', background: diaActivo === d.id ? '#0f1787' : 'white', color: diaActivo === d.id ? 'white' : '#374151', outline: diaActivo === d.id ? 'none' : '1.5px solid #e8eaf0', fontWeight: 600, fontSize: 12 }}>
                 <div>{d.label}</div>
@@ -492,37 +681,150 @@ export default function RetiroDashboard() {
               </button>
             ))}
           </div>
-          {MINUTO_MINUTO[diaActivo].bloques.map((bloque, bi) => (
-            <div key={bi} style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>{bloque.titulo}</h3>
-                {bloque.camiseta && <span style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20 }}>{bloque.camiseta}</span>}
+
+          {/* Botón editar / éxito */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>{exitoMM ? `✓ ${exitoMM}` : ''}</span>
+            {!modoEdicionMM ? (
+              <button
+                onClick={() => { setModoEdicionMM(true); setDiaEdicion(diaActivo); setParsePreview([]) }}
+                style={{ padding: '7px 14px', background: '#f0f2ff', color: '#0f1787', border: '1.5px solid #c7d0ff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Editar {diaActivo}
+              </button>
+            ) : (
+              <button onClick={() => { setModoEdicionMM(false); setParsePreview([]) }} style={{ padding: '7px 14px', background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+            )}
+          </div>
+
+          {/* ── MODO EDICIÓN ── */}
+          {modoEdicionMM && (
+            <div style={{ background: 'white', border: '1.5px solid #c7d0ff', borderRadius: 14, padding: '18px', marginBottom: 20 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: '0 0 6px' }}>
+                Editar horario — {diaEdicion.charAt(0).toUpperCase() + diaEdicion.slice(1)}
+              </p>
+              <p style={{ fontSize: 11, color: '#9ca3af', margin: '0 0 14px', lineHeight: 1.6 }}>
+                Pega el horario en texto. Cada actividad en su propia línea con formato:<br />
+                <code style={{ background: '#f3f4f6', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>* 6;15pm nombre de la actividad</code><br />
+                Escribe el nombre de un bloque en MAYÚSCULAS para separar secciones.<br />
+                Puedes agregar encargado y tipo separados por <code style={{ background: '#f3f4f6', padding: '1px 6px', borderRadius: 4 }}>|</code>
+              </p>
+
+              {/* Selector de día para editar */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                {dias.map(d => (
+                  <button key={d.id} onClick={() => { setDiaEdicion(d.id); setParsePreview([]) }} style={{ flex: 1, padding: '6px 4px', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 600, background: diaEdicion === d.id ? '#0f1787' : '#f3f4f6', color: diaEdicion === d.id ? 'white' : '#6b7280' }}>
+                    {d.label}
+                  </button>
+                ))}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {bloque.items.map((item, idx) => {
-                  const key = `${bi}-${idx}`; const abierto = expandido === key
-                  const colores = item.tipo ? colorTipo[item.tipo] : colorTipo.logistica
-                  const esCharla = item.tipo === 'charla'
-                  return (
-                    <div key={idx} style={{ background: 'white', border: esCharla ? '2px solid #dc2626' : '1.5px solid #e8eaf0', borderRadius: 10, overflow: 'hidden' }}>
-                      <button onClick={() => setExpandido(abierto ? null : key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#0f1787', minWidth: 64, flexShrink: 0 }}>{item.hora}</span>
-                        <span style={{ fontSize: 13, fontWeight: esCharla ? 700 : 500, color: '#111827', flex: 1 }}>{item.actividad}</span>
-                        {item.tipo && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0, background: colores.bg, color: colores.color }}>{colores.label}</span>}
-                        <span style={{ fontSize: 12, color: '#9ca3af', flexShrink: 0 }}>{abierto ? '▲' : '▼'}</span>
-                      </button>
-                      {abierto && (
-                        <div style={{ padding: '0 12px 12px', borderTop: '1px solid #f3f4f6' }}>
-                          {item.encargado && <p style={{ fontSize: 12, color: '#0f1787', fontWeight: 600, margin: '8px 0 4px' }}>Encargado: {item.encargado}</p>}
-                          {item.detalle && <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.6 }}>{item.detalle}</p>}
-                        </div>
-                      )}
+
+              <textarea
+                value={textoDia[diaEdicion]}
+                onChange={e => { setTextoDia(prev => ({ ...prev, [diaEdicion]: e.target.value })); setParsePreview([]) }}
+                placeholder={`VIERNES NOCHE\n\n* 6;15pm tocar campana\n* 6;20pm asignación mesas\n* 6;35pm ejercicio de la luz\n* 6;40pm cena | | comida\n\nVIERNES PRE-RETIRO\n\n* 9;30am llegada a la casa`}
+                rows={14}
+                style={{ width: '100%', border: '1.5px solid #e8eaf0', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: '#374151', outline: 'none', resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.7, boxSizing: 'border-box', background: '#fafafa' }}
+              />
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button
+                  onClick={() => {
+                    const parsed = parsearTextoMM(textoDia[diaEdicion])
+                    setParsePreview(parsed)
+                  }}
+                  disabled={!textoDia[diaEdicion].trim()}
+                  style={{ flex: 1, padding: '10px', background: textoDia[diaEdicion].trim() ? '#f0f2ff' : '#f3f4f6', color: textoDia[diaEdicion].trim() ? '#0f1787' : '#9ca3af', border: '1.5px solid #c7d0ff', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Vista previa
+                </button>
+                <button
+                  onClick={async () => {
+                    const parsed = parsePreview.length > 0 ? parsePreview : parsearTextoMM(textoDia[diaEdicion])
+                    await guardarDiaMM(diaEdicion, parsed)
+                  }}
+                  disabled={guardandoMM || !textoDia[diaEdicion].trim()}
+                  style={{ flex: 1, padding: '10px', background: guardandoMM || !textoDia[diaEdicion].trim() ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {guardandoMM ? 'Guardando…' : 'Guardar'}
+                </button>
+              </div>
+
+              {/* Vista previa del parse */}
+              {parsePreview.length > 0 && (
+                <div style={{ marginTop: 16, borderTop: '1px solid #e8eaf0', paddingTop: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Vista previa — {parsePreview.reduce((s, b) => s + b.items.length, 0)} actividades en {parsePreview.length} bloque{parsePreview.length !== 1 ? 's' : ''}
+                  </p>
+                  {parsePreview.map((bloque, bi) => (
+                    <div key={bi} style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0f1787', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+                        {bloque.titulo}
+                        {bloque.camiseta && <span style={{ fontSize: 10, fontWeight: 400, color: '#92400e', background: '#fef3c7', padding: '1px 7px', borderRadius: 20, marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>{bloque.camiseta}</span>}
+                      </div>
+                      {bloque.items.map((item, idx) => {
+                        const col = item.tipo ? colorTipoMM[item.tipo] : colorTipoMM.logistica
+                        return (
+                          <div key={idx} style={{ display: 'flex', gap: 8, padding: '6px 10px', background: '#f7f8fc', borderRadius: 8, marginBottom: 4, alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#0f1787', minWidth: 60, flexShrink: 0 }}>{item.hora}</span>
+                            <span style={{ fontSize: 12, color: '#111827', flex: 1 }}>{item.actividad}</span>
+                            {item.tipo && <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 20, fontWeight: 700, background: col.bg, color: col.color, flexShrink: 0 }}>{col.label}</span>}
+                          </div>
+                        )
+                      })}
                     </div>
-                  )
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
+          )}
+
+          {/* ── MODO VISTA ── */}
+          {loadingMM ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+              <div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          ) : mmPorDia[diaActivo].length === 0 ? (
+            <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '40px 24px', textAlign: 'center' }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: '0 0 6px' }}>Sin horario para este día</p>
+              <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Haz clic en "Editar {diaActivo}" y pega el horario en texto.</p>
+            </div>
+          ) : (
+            mmPorDia[diaActivo].map((bloque, bi) => (
+              <div key={bi} style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>{bloque.titulo}</h3>
+                  {bloque.camiseta && <span style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 20 }}>{bloque.camiseta}</span>}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {bloque.items.map((item, idx) => {
+                    const key = `${bi}-${idx}`; const abierto = expandido === key
+                    const colores = item.tipo ? colorTipoMM[item.tipo] : colorTipoMM.logistica
+                    const esCharla = item.tipo === 'charla'
+                    return (
+                      <div key={idx} style={{ background: 'white', border: esCharla ? '2px solid #dc2626' : '1.5px solid #e8eaf0', borderRadius: 10, overflow: 'hidden' }}>
+                        <button onClick={() => setExpandido(abierto ? null : key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#0f1787', minWidth: 64, flexShrink: 0 }}>{item.hora}</span>
+                          <span style={{ fontSize: 13, fontWeight: esCharla ? 700 : 500, color: '#111827', flex: 1 }}>{item.actividad}</span>
+                          {item.tipo && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0, background: colores.bg, color: colores.color }}>{colores.label}</span>}
+                          <span style={{ fontSize: 12, color: '#9ca3af', flexShrink: 0 }}>{abierto ? '▲' : '▼'}</span>
+                        </button>
+                        {abierto && (
+                          <div style={{ padding: '0 12px 12px', borderTop: '1px solid #f3f4f6' }}>
+                            {item.encargado && <p style={{ fontSize: 12, color: '#0f1787', fontWeight: 600, margin: '8px 0 4px' }}>Encargado: {item.encargado}</p>}
+                            {item.detalle && <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.6 }}>{item.detalle}</p>}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 
@@ -652,8 +954,6 @@ export default function RetiroDashboard() {
               </div>
             )
           )}
-
-          {/* ── ACCESO PALANCAS LÍDER ── */}
           <div style={{ marginTop: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <div>
@@ -662,12 +962,7 @@ export default function RetiroDashboard() {
               </div>
               {exitoPalancasLider && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ {exitoPalancasLider}</span>}
             </div>
-            {loadingPalancasLider ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
-                <div style={{ width: 24, height: 24, border: '3px solid #e2e4f0', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-              </div>
-            ) : (
+            {loadingPalancasLider ? <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><div style={{ width: 24, height: 24, border: '3px solid #e2e4f0', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {servidoresList.map(srv => (
                   <div key={srv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: srv.palancas_lider ? '#faf5ff' : 'white', border: `1.5px solid ${srv.palancas_lider ? '#d8b4fe' : '#e8eaf0'}`, borderRadius: 10 }}>
@@ -675,16 +970,13 @@ export default function RetiroDashboard() {
                       {srv.palancas_lider && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#7c3aed', flexShrink: 0 }} />}
                       <span style={{ fontSize: 13, fontWeight: srv.palancas_lider ? 600 : 400, color: srv.palancas_lider ? '#6d28d9' : '#374151' }}>{srv.nombre}</span>
                     </div>
-                    <button
-                      onClick={async () => {
-                        const nuevoValor = !srv.palancas_lider
-                        await supabase.from('servidores_inscripcion').update({ palancas_lider: nuevoValor }).eq('id', srv.id)
-                        setServidoresList(prev => prev.map(s => s.id === srv.id ? { ...s, palancas_lider: nuevoValor } : s))
-                        setExitoPalancasLider(nuevoValor ? `Acceso dado a ${srv.nombre.split(' ')[0]}` : `Acceso quitado a ${srv.nombre.split(' ')[0]}`)
-                        setTimeout(() => setExitoPalancasLider(''), 2500)
-                      }}
-                      style={{ padding: '5px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: srv.palancas_lider ? '#fef2f2' : '#f0fdf4', color: srv.palancas_lider ? '#dc2626' : '#16a34a' }}
-                    >
+                    <button onClick={async () => {
+                      const nuevoValor = !srv.palancas_lider
+                      await supabase.from('servidores_inscripcion').update({ palancas_lider: nuevoValor }).eq('id', srv.id)
+                      setServidoresList(prev => prev.map(s => s.id === srv.id ? { ...s, palancas_lider: nuevoValor } : s))
+                      setExitoPalancasLider(nuevoValor ? `Acceso dado a ${srv.nombre.split(' ')[0]}` : `Acceso quitado a ${srv.nombre.split(' ')[0]}`)
+                      setTimeout(() => setExitoPalancasLider(''), 2500)
+                    }} style={{ padding: '5px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: srv.palancas_lider ? '#fef2f2' : '#f0fdf4', color: srv.palancas_lider ? '#dc2626' : '#16a34a' }}>
                       {srv.palancas_lider ? 'Quitar acceso' : 'Dar acceso'}
                     </button>
                   </div>
@@ -699,336 +991,4 @@ export default function RetiroDashboard() {
       {tab === 'mesas' && (
         <div>
           {exitoMesa && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ Mesa actualizada correctamente</div>}
-          {loadingMesas ? <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div> : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {mesas.map(mesa => (
-                <div key={mesa.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, overflow: 'hidden', borderLeft: '3px solid #0f1787' }}>
-                  {editandoMesaId === mesa.id ? (
-                    <div style={{ padding: '14px' }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0f1787', margin: '0 0 14px' }}>Mesa {mesa.numero}</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
-                        {[{ key: 'adulto', label: 'LÍDER ADULTO' }, { key: 'lider', label: 'LÍDER JOVEN' }, { key: 'colider', label: 'CO-LÍDER' }].map(f => (
-                          <div key={f.key}><label style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: 4 }}>{f.label}</label><input value={editMesa[f.key as keyof typeof editMesa]} onChange={e => setEditMesa(p => ({ ...p, [f.key]: e.target.value }))} style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e8eaf0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} /></div>
-                        ))}
-                      </div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => guardarMesa(mesa.id)} disabled={guardandoMesa} style={{ flex: 1, padding: '9px', background: guardandoMesa ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{guardandoMesa ? 'Guardando...' : 'Guardar'}</button>
-                        <button onClick={() => setEditandoMesaId(null)} style={{ padding: '9px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                          <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0 }}>{mesa.numero}</div>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Mesa {mesa.numero}</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {mesa.adulto && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Adulto</span><span style={{ fontSize: 12, color: '#374151' }}>{mesa.adulto}</span></div>}
-                          {mesa.lider && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10, background: '#f0f2ff', color: '#0f1787', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Líder</span><span style={{ fontSize: 12, color: '#374151' }}>{mesa.lider}</span></div>}
-                          {mesa.colider && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10, background: '#faf5ff', color: '#7c3aed', padding: '1px 7px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>Co-líder</span><span style={{ fontSize: 12, color: '#374151' }}>{mesa.colider}</span></div>}
-                        </div>
-                      </div>
-                      <button onClick={() => iniciarEdicionMesa(mesa)} style={{ padding: '6px 10px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>Editar</button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── CAMINANTES ── */}
-      {tab === 'caminantes' && (
-        <div>
-          {exitoCam && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ {exitoCam}</div>}
-          {loadingCam ? <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div> : (
-            <>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                <button onClick={generarSugerencia} disabled={generando || guardandoCam} style={{ flex: 1, padding: '10px', background: generando ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{generando ? 'Generando...' : asignaciones.length > 0 ? 'Regenerar sugerencia' : 'Generar sugerencia automática'}</button>
-                {asignaciones.length > 0 && asignaciones.some(a => !a.confirmado_por_lider) && <button onClick={confirmarTodas} disabled={guardandoCam} style={{ padding: '10px 14px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Confirmar todas</button>}
-                {asignaciones.length > 0 && asignaciones.some(a => a.confirmado_por_lider) && <button onClick={desconfirmarTodas} disabled={guardandoCam} style={{ padding: '10px 14px', background: '#f3f4f6', color: '#6b7280', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Desconfirmar</button>}
-              </div>
-              {asignaciones.length > 0 && (
-                <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                  {[{ label: 'Asignados', val: asignaciones.length, color: '#0f1787' }, { label: 'Sin asignar', val: sinAsignar.length, color: '#d97706' }, { label: 'Confirmados', val: asignaciones.filter(a => a.confirmado_por_lider).length, color: '#16a34a' }].map(s => (
-                    <div key={s.label} style={{ flex: 1, background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.val}</div>
-                      <div style={{ fontSize: 11, color: '#6b7280' }}>{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {asignaciones.length > 0 && (
-                <div style={{ position: 'relative', marginBottom: 16 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                  <input type="text" placeholder="Buscar caminante por nombre..." value={busquedaCam} onChange={e => setBusquedaCam(e.target.value)} style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }} />
-                  {busquedaCam && <button onClick={() => setBusquedaCam('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>✕</button>}
-                </div>
-              )}
-              {sinAsignar.length > 0 && (
-                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: '#92400e', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 0.5 }}>{sinAsignar.length} caminante{sinAsignar.length !== 1 ? 's' : ''} sin mesa</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {sinAsignar.map(c => <div key={c.id} style={{ fontSize: 12, color: '#78350f' }}>{c.nombre}{c.edad ? ` · ${c.edad} años` : ''}</div>)}
-                  </div>
-                </div>
-              )}
-              {asignaciones.length === 0 && (
-                <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '40px 24px', textAlign: 'center' }}>
-                  <p style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: '0 0 6px' }}>No hay asignaciones aún</p>
-                  <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Haz clic en "Generar sugerencia automática" para asignar caminantes a las mesas según edad.</p>
-                </div>
-              )}
-              {asignaciones.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {mesasDisponibles.map(mesa => {
-                    const camsEnMesa = asignacionesPorMesa[mesa.numero] ?? []
-                    const abierta = mesaExpandida === mesa.id
-                    const confirmados = camsEnMesa.filter(a => a.confirmado_por_lider).length
-                    return (
-                      <div key={mesa.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, overflow: 'hidden', borderLeft: '3px solid #0f1787' }}>
-                        <button onClick={() => setMesaExpandida(abierta ? null : mesa.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                          <div style={{ width: 28, height: 28, borderRadius: 8, background: '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0 }}>{mesa.numero}</div>
-                          <div style={{ flex: 1 }}><span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Mesa {mesa.numero}</span><span style={{ fontSize: 11, color: '#6b7280', marginLeft: 8 }}>{mesa.lider}</span></div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: camsEnMesa.length >= CAMINANTES_POR_MESA ? '#16a34a' : '#d97706' }}>{camsEnMesa.length}/{CAMINANTES_POR_MESA}</span>
-                            {confirmados > 0 && confirmados === camsEnMesa.length && <span style={{ fontSize: 10, background: '#f0fdf4', color: '#16a34a', padding: '2px 6px', borderRadius: 20, fontWeight: 600 }}>✓</span>}
-                            <span style={{ fontSize: 12, color: '#9ca3af' }}>{abierta ? '▲' : '▼'}</span>
-                          </div>
-                        </button>
-                        {abierta && (
-                          <div style={{ borderTop: '1px solid #f3f4f6', padding: '10px 14px' }}>
-                            {camsEnMesa.length === 0 ? <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 8px', fontStyle: 'italic' }}>Sin caminantes asignados</p> : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                                {camsEnMesa.map(asig => (
-                                  <div key={asig.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px', background: asig.confirmado_por_lider ? '#f0fdf4' : '#fffbeb', borderRadius: 8 }}>
-                                    <div style={{ flex: 1 }}>
-                                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2 }}>{asig.caminante?.nombre}</div>
-                                      <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>{asig.caminante?.celular}{asig.caminante?.edad ? ` · ${asig.caminante.edad} años` : ''}</div>
-                                      <SeguimientoBadges asignacionId={asig.id} seguimientos={seguimientos} onToggle={toggleSeguimiento} />
-                                    </div>
-                                    {editandoCamId === asig.id ? (
-                                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                        <select value={nuevaMesaId} onChange={e => setNuevaMesaId(e.target.value)} style={{ fontSize: 12, border: '1.5px solid #e8eaf0', borderRadius: 6, padding: '4px 6px', outline: 'none' }}>
-                                          <option value="">Mesa...</option>
-                                          {mesasDisponibles.map(m => <option key={m.id} value={m.id}>Mesa {m.numero}</option>)}
-                                        </select>
-                                        <button onClick={() => { if (nuevaMesaId) { const m = mesasDisponibles.find(x => x.id === nuevaMesaId); if (m) cambiarMesaCaminante(asig.id, m) } }} style={{ padding: '4px 8px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>OK</button>
-                                        <button onClick={() => setEditandoCamId(null)} style={{ padding: '4px 8px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>✕</button>
-                                      </div>
-                                    ) : (
-                                      <div style={{ display: 'flex', gap: 4 }}>
-                                        <button onClick={() => { setEditandoCamId(asig.id); setNuevaMesaId('') }} style={{ padding: '4px 8px', background: '#f0f2ff', color: '#0f1787', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Mover</button>
-                                        <button onClick={() => quitarCaminante(asig.id)} style={{ padding: '4px 8px', background: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✕</button>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {caminantesSinMesa.length > 0 && (
-                              agregandoACaminante === mesa.id ? (
-                                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                                  <select value={camSeleccionado} onChange={e => setCamSeleccionado(e.target.value)} style={{ flex: 1, fontSize: 12, border: '1.5px solid #e8eaf0', borderRadius: 8, padding: '6px 8px', outline: 'none' }}>
-                                    <option value="">Seleccionar caminante...</option>
-                                    {caminantesSinMesa.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.edad ? ` · ${c.edad} años` : ''}</option>)}
-                                  </select>
-                                  <button onClick={() => agregarCaminanteAMesa(mesa.id, mesa.numero, camSeleccionado)} style={{ padding: '6px 12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Agregar</button>
-                                  <button onClick={() => { setAgregandoACaminante(null); setCamSeleccionado('') }} style={{ padding: '6px 10px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>✕</button>
-                                </div>
-                              ) : (
-                                <button onClick={() => setAgregandoACaminante(mesa.id)} style={{ width: '100%', padding: '7px', background: '#f0f2ff', color: '#0f1787', border: '1.5px dashed #c7d0ff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Agregar caminante</button>
-                              )
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── CUARTOS ── */}
-      {tab === 'cuartos' && (
-        <div>
-          {exitoCuartos && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 13, color: '#16a34a' }}>✓ {exitoCuartos}</div>}
-          {loadingCuartos ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-              <div style={{ width: 28, height: 28, border: '3px solid #e2e4f0', borderTopColor: '#0f1787', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-            </div>
-          ) : (
-            <>
-              <button onClick={generarCuartosAleatorio} disabled={generandoCuartos} style={{ width: '100%', padding: '12px', background: generandoCuartos ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
-                {generandoCuartos ? 'Asignando...' : totalAsig > 0 ? '🔀 Reasignar cuartos al azar' : '🔀 Asignar cuartos al azar'}
-              </button>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                {[{ label: 'Total asig.', val: totalAsig, color: '#0f1787' }, { label: 'Servidores', val: totalSrv, color: '#1e40af' }, { label: 'Caminantes', val: totalCam, color: '#16a34a' }, { label: 'Sin cuarto', val: personasSinCuarto.length, color: '#dc2626' }].map(s => (
-                  <div key={s.label} style={{ flex: 1, background: 'white', border: '0.5px solid #e8eaf0', borderRadius: 10, padding: '8px 6px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.val}</div>
-                    <div style={{ fontSize: 10, color: '#6b7280' }}>{s.label}</div>
-                  </div>
-                ))}
-              </div>
-              {personasSinCuarto.length > 0 && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>{personasSinCuarto.length} sin cuarto asignado</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {personasSinCuarto.slice(0, 6).map(p => (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#7f1d1d' }}>
-                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: p.tipo === 'servidor' ? '#cfe2ff' : '#f0fdf4', color: p.tipo === 'servidor' ? '#1e40af' : '#166534' }}>{p.tipo === 'servidor' ? 'SRV' : 'CAM'}</span>
-                        {p.nombre}
-                      </div>
-                    ))}
-                    {personasSinCuarto.length > 6 && <span style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>...y {personasSinCuarto.length - 6} más</span>}
-                  </div>
-                </div>
-              )}
-              <div style={{ position: 'relative', marginBottom: 10 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                <input type="text" placeholder="Buscar por habitación, bloque o nombre..." value={busquedaCuartos} onChange={e => setBusquedaCuartos(e.target.value)} style={{ width: '100%', padding: '10px 12px 10px 36px', border: '1.5px solid #e8eaf0', borderRadius: 10, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }} />
-                {busquedaCuartos && <button onClick={() => setBusquedaCuartos('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>✕</button>}
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-                {[{ label: 'Todos', val: null }, { label: 'Piso 1', val: 1 }, { label: 'Piso 2', val: 2 }, { label: 'Piso 3', val: 3 }].map(f => (
-                  <button key={String(f.val)} onClick={() => setFiltroPiso(f.val)} style={{ padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, background: filtroPiso === f.val ? '#0f1787' : '#f3f4f6', color: filtroPiso === f.val ? 'white' : '#6b7280' }}>{f.label}</button>
-                ))}
-                <div style={{ width: '100%', height: 0 }} />
-                {[{ label: 'Todos', val: 'todos' as const }, { label: 'Servidores', val: 'servidor' as const }, { label: 'Caminantes', val: 'caminante' as const }, { label: 'Libre', val: 'libre' as const }].map(f => (
-                  <button key={f.val} onClick={() => setFiltroTipo(f.val)} style={{ padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, background: filtroTipo === f.val ? '#7c3aed' : '#f3f4f6', color: filtroTipo === f.val ? 'white' : '#6b7280' }}>{f.label}</button>
-                ))}
-              </div>
-              {habitaciones.length === 0 ? (
-                <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '40px 24px', textAlign: 'center' }}>
-                  <p style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: '0 0 6px' }}>No hay habitaciones cargadas</p>
-                  <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Ejecuta el SQL para insertar las habitaciones en Supabase.</p>
-                </div>
-              ) : bloques.length === 0 ? (
-                <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 10, padding: '20px', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Sin resultados para ese filtro</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                  {bloques.map(bloque => {
-                    const habsBloque = habitacionesFiltradas.filter(h => h.bloque === bloque)
-                    if (habsBloque.length === 0) return null
-                    const piso = habsBloque[0].piso
-                    const esP1 = piso === 1
-                    const colorBadge = esP1 ? '#cfe2ff' : piso === 2 ? '#f0fdf4' : '#faf5ff'
-                    const colorTextBadge = esP1 ? '#1e40af' : piso === 2 ? '#166534' : '#6b21a8'
-                    return (
-                      <div key={bloque}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: colorBadge, color: colorTextBadge }}>Piso {piso}</span>
-                          <h3 style={{ fontSize: 13, fontWeight: 700, color: '#111827', margin: 0 }}>{bloque}</h3>
-                          {esP1 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#cfe2ff', color: '#1e40af' }}>Solo servidores</span>}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {habsBloque.map(hab => {
-                            const asigs = asignacionesHab.filter(a => a.habitacion_id === hab.id)
-                            const abierta = habExpandida === hab.id
-                            const llena = asigs.length >= hab.capacidad
-                            const tieneSrv = asigs.some(a => a.tipo_persona === 'servidor')
-                            const tieneCam = asigs.some(a => a.tipo_persona === 'caminante')
-                            const borderColor = tieneSrv && tieneCam ? '#d97706' : tieneSrv ? '#1e40af' : tieneCam ? '#16a34a' : '#e8eaf0'
-                            return (
-                              <div key={hab.id} style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 12, overflow: 'hidden', borderLeft: `3px solid ${borderColor}` }}>
-                                <button onClick={() => setHabExpandida(abierta ? null : hab.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                                  <div style={{ width: 36, height: 36, borderRadius: 10, background: llena ? '#f0fdf4' : '#f7f8fc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1.5px solid ${llena ? '#bbf7d0' : '#e8eaf0'}` }}>
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: llena ? '#16a34a' : '#0f1787' }}>{hab.numero}</span>
-                                  </div>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                                      <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>Hab. {hab.numero}</span>
-                                      {tieneSrv && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 20, background: '#cfe2ff', color: '#1e40af' }}>SRV</span>}
-                                      {tieneCam && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 20, background: '#f0fdf4', color: '#166534' }}>CAM</span>}
-                                    </div>
-                                    <span style={{ fontSize: 11, color: '#9ca3af' }}>{hab.tipo_cama}</span>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 12, fontWeight: 600, color: llena ? '#16a34a' : '#d97706' }}>{asigs.length}/{hab.capacidad}</span>
-                                    <span style={{ fontSize: 12, color: '#9ca3af' }}>{abierta ? '▲' : '▼'}</span>
-                                  </div>
-                                </button>
-                                {abierta && (
-                                  <div style={{ borderTop: '1px solid #f3f4f6', padding: '10px 14px' }}>
-                                    {asigs.length === 0 ? (
-                                      <p style={{ fontSize: 13, color: '#9ca3af', margin: '4px 0 8px', fontStyle: 'italic' }}>Habitación vacía</p>
-                                    ) : (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                                        {asigs.map(asig => (
-                                          <div key={asig.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: asig.tipo_persona === 'servidor' ? '#eff6ff' : '#f0fdf4', borderRadius: 8 }}>
-                                            <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 20, background: asig.tipo_persona === 'servidor' ? '#cfe2ff' : '#bbf7d0', color: asig.tipo_persona === 'servidor' ? '#1e40af' : '#166534', flexShrink: 0 }}>
-                                              {asig.tipo_persona === 'servidor' ? 'SRV' : 'CAM'}
-                                            </span>
-                                            <span style={{ fontSize: 13, fontWeight: 500, color: '#111827', flex: 1 }}>{asig.nombre}</span>
-                                            <button onClick={() => quitarPersonaDeHab(asig.id)} style={{ padding: '3px 8px', background: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✕</button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {asigs.length < hab.capacidad && personasSinCuarto.length > 0 && (
-                                      agregandoAHab === hab.id ? (
-                                        <div style={{ display: 'flex', gap: 6 }}>
-                                          <select value={personaSeleccionada} onChange={e => setPersonaSeleccionada(e.target.value)} style={{ flex: 1, fontSize: 12, border: '1.5px solid #e8eaf0', borderRadius: 8, padding: '6px 8px', outline: 'none' }}>
-                                            <option value="">Seleccionar persona...</option>
-                                            <optgroup label="Servidores">
-                                              {personasSinCuarto.filter(p => p.tipo === 'servidor').map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                                            </optgroup>
-                                            {!hab.solo_servidores && (
-                                              <optgroup label="Caminantes">
-                                                {personasSinCuarto.filter(p => p.tipo === 'caminante').map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                                              </optgroup>
-                                            )}
-                                          </select>
-                                          <button onClick={() => agregarPersonaAHab(hab.id)} style={{ padding: '6px 12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>OK</button>
-                                          <button onClick={() => { setAgregandoAHab(null); setPersonaSeleccionada('') }} style={{ padding: '6px 10px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>✕</button>
-                                        </div>
-                                      ) : (
-                                        <button onClick={() => setAgregandoAHab(hab.id)} style={{ width: '100%', padding: '7px', background: '#f0f2ff', color: '#0f1787', border: '1.5px dashed #c7d0ff', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                                          + Agregar persona
-                                        </button>
-                                      )
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── MANUAL ── */}
-      {tab === 'manual' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ background: 'white', border: '1.5px solid #e8eaf0', borderRadius: 14, padding: '20px' }}>
-            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 16 }}>
-              <div style={{ width: 48, height: 48, background: '#0f1787', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="24" height="24" fill="none" viewBox="0 0 24 24"><path d="M9 12h6M9 16h6M7 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8l-5-5H7z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M14 3v5h5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              </div>
-              <div>
-                <p style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: '0 0 4px' }}>Manual Effeta Mazuren</p>
-                <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Documento oficial con todas las instrucciones, actividades, guiones y protocolos.</p>
-              </div>
-            </div>
-            <button onClick={() => window.open('https://docs.google.com/document/d/1lB2M0-FyRe6Eu-2HjcLcnI96jfEqgikC71TWzuhNUR4/edit', '_blank')} style={{ width: '100%', padding: '12px', background: '#0f1787', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-              Abrir Manual
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+          {loadingMesas ? <div style={{ di
