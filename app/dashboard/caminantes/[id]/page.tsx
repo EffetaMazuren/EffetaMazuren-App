@@ -6,8 +6,21 @@ import { ArrowLeft, Download, MoreHorizontal, Plus, Mail, CheckCircle, EyeOff, C
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 
-function Chip({ label, bg, color }: any) {
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 11px', borderRadius: 20, fontSize: 11, fontWeight: 500, background: bg, color }}>{label}</span>
+function Chip({ label, bg, color, onClick }: any) {
+  return (
+    <span
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: '4px 11px', borderRadius: 20, fontSize: 11, fontWeight: 500,
+        background: bg, color,
+        cursor: onClick ? 'pointer' : 'default',
+        userSelect: 'none',
+      }}
+    >
+      {label}
+    </span>
+  )
 }
 
 function Accordion({ title, dot, hint, children }: any) {
@@ -117,6 +130,8 @@ export default function FichaCaminante() {
   const [valorEditar, setValorEditar] = useState('')
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [eliminandoCaminante, setEliminandoCaminante] = useState(false)
+  const [esSorpresa, setEsSorpresa] = useState(false)
+  const [togglingSorpresa, setTogglingSorpresa] = useState(false)
 
   const [paso, setPaso] = useState<'subir' | 'revisar' | 'guardando'>('subir')
   const [archivo, setArchivo] = useState<File | null>(null)
@@ -141,11 +156,20 @@ export default function FichaCaminante() {
     setCam(vista)
     const { data: completo } = await supabase.from('caminantes').select('*').eq('id', id).single()
     setDetalle(completo)
+    setEsSorpresa(completo?.es_sorpresa ?? false)
     const { data: p } = await supabase.from('pagos').select('*').eq('persona_id', id).order('fecha')
     setPagos(p || [])
     const { data: ct } = await supabase.from('contactos_emergencia').select('*').eq('persona_id', id).order('orden')
     setContactos(ct || [])
     setLoading(false)
+  }
+
+  async function toggleSorpresa() {
+    const nuevo = !esSorpresa
+    setTogglingSorpresa(true)
+    const { error } = await supabase.from('caminantes').update({ es_sorpresa: nuevo }).eq('id', id)
+    if (!error) setEsSorpresa(nuevo)
+    setTogglingSorpresa(false)
   }
 
   async function eliminarCaminante() {
@@ -279,11 +303,30 @@ export default function FichaCaminante() {
         <div>
           <div style={{ fontSize: 22, fontWeight: 500, color: '#0d0d14', letterSpacing: -0.3 }}>{detalle.nombre}</div>
           <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{detalle.tipo_documento} {detalle.numero_documento} · {detalle.edad} años</div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {cam.estado_pago === 'completo' && <Chip label="Pago completo" bg="#dcfce7" color="#166534" />}
             {cam.estado_pago === 'parcial' && <Chip label="Abono parcial" bg="#fef3c7" color="#92400e" />}
             {cam.estado_pago === 'sin_pago' && <Chip label="Sin pago" bg="#f3f4f6" color="#6b7280" />}
-            {detalle.es_sorpresa && <Chip label="Sorpresa" bg="#ede9fe" color="#5b21b6" />}
+
+            {/* ── CHIP SORPRESA CLICKEABLE ── */}
+            <button
+              onClick={toggleSorpresa}
+              disabled={togglingSorpresa}
+              title={esSorpresa ? 'Clic para quitar sorpresa' : 'Clic para marcar como sorpresa'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '4px 11px', borderRadius: 20, fontSize: 11, fontWeight: 500,
+                background: esSorpresa ? '#ede9fe' : '#f3f4f6',
+                color: esSorpresa ? '#5b21b6' : '#9ca3af',
+                border: esSorpresa ? '1px solid #c4b5fd' : '1px solid #e5e7eb',
+                cursor: togglingSorpresa ? 'wait' : 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              <EyeOff size={11} />
+              {togglingSorpresa ? '…' : esSorpresa ? 'Sorpresa' : 'Marcar sorpresa'}
+            </button>
+
             {detalle.observaciones && <Chip label="Con nota" bg="#f0f9ff" color="#0369a1" />}
           </div>
         </div>
@@ -297,7 +340,7 @@ export default function FichaCaminante() {
         </div>
       </div>
 
-      {detalle.es_sorpresa && contactos.length > 0 && (
+      {esSorpresa && contactos.length > 0 && (
         <div style={{ margin: '0 20px 14px', background: '#f5f3ff', border: '0.5px solid #c4b5fd', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           <EyeOff size={14} color="#5b21b6" style={{ marginTop: 1, flexShrink: 0 }} />
           <span style={{ fontSize: 12, color: '#5b21b6' }}>
@@ -308,7 +351,7 @@ export default function FichaCaminante() {
 
       <div style={{ display: 'flex', gap: 8, padding: '0 20px 16px', flexWrap: 'wrap' }}>
         <button onClick={enviarCorreo} disabled={enviandoCorreo} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: '#0f1787', color: '#fff' }}>
-          <Mail size={14} /> {enviandoCorreo ? 'Enviando...' : detalle.es_sorpresa ? 'Correo al contacto' : 'Enviar correo'}
+          <Mail size={14} /> {enviandoCorreo ? 'Enviando...' : esSorpresa ? 'Correo al contacto' : 'Enviar correo'}
         </button>
         <button onClick={abrirModal} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: '0.5px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: '#fff', color: '#0d0d14' }}>
           <Plus size={14} /> Registrar pago
@@ -418,7 +461,6 @@ export default function FichaCaminante() {
           ))}
         </Accordion>
 
-        {/* ── OBSERVACIONES (siempre visible, editable) ── */}
         <SeccionObservaciones caminanteId={id as string} observacionInicial={detalle.observaciones ?? null} />
 
         <Accordion title="Historial" dot="#d1d5db">
