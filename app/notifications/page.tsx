@@ -1,5 +1,7 @@
 'use client'
 
+import React from 'react'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -28,7 +30,7 @@ function tiempoRelativo(fecha: string): string {
   return `Hace ${d} días`
 }
 
-const TIPO_CONFIG: Record<string, { color: string; bg: string; icon: JSX.Element }> = {
+const TIPO_CONFIG: Record<string, { color: string; bg: string; icon: React.ReactNode }> = {
   pago: {
     color: '#16a34a', bg: '#f0fdf4',
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
