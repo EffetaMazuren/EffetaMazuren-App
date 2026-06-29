@@ -88,7 +88,7 @@ function tokensOf(s: string): string[] {
   return norm(s).split(/\s+/).filter(t => t.length > 1)
 }
 
-// Comparación de nombres: exige siempre que al menos 1 apellido coincida
+// Comparación de nombres: detecta segundo nombre compuesto compartido
 function nombreMatch(a: string, b: string): boolean {
   const nA = norm(a), nB = norm(b)
   if (nA === nB) return true
@@ -99,25 +99,20 @@ function nombreMatch(a: string, b: string): boolean {
   const tA = tokensOf(a)
   const tB = tokensOf(b)
 
-  // Necesitamos al menos 2 tokens en cada nombre para comparar
   if (tA.length < 2 || tB.length < 2) return false
 
-  // El primer nombre debe coincidir
-  const primerNombreMatch = tA[0] === tB[0]
-  if (!primerNombreMatch) return false
+  // Primer nombre debe coincidir
+  if (tA[0] !== tB[0]) return false
 
-  // Apellidos = todos los tokens excepto el primero
-  const apellidosA = tA.slice(1)
-  const apellidosB = tB.slice(1)
+  // Si el segundo token es igual en ambos (ej: "Pablo"), es nombre compuesto — no es apellido
+  const segundoCompartido = tA.length > 2 && tB.length > 2 && tA[1] === tB[1]
+  const desdeA = segundoCompartido ? 2 : 1
+  const desdeB = segundoCompartido ? 2 : 1
+  const apellidosA = tA.slice(desdeA)
+  const apellidosB = tB.slice(desdeB)
 
-  // Debe coincidir al menos 1 apellido
-  const apellidosCoinciden = apellidosA.filter(ap => apellidosB.includes(ap)).length
-  if (apellidosCoinciden === 0) return false
-
-  // Nombres con segundo nombre compuesto (ej: "Juan Pablo X" vs "Juan Pablo Y"):
-  // si el segundo token también coincide, exigir que coincida al menos 1 apellido real
-  // (ya garantizado arriba)
-  return true
+  // Debe coincidir al menos 1 apellido real
+  return apellidosA.filter(ap => apellidosB.includes(ap)).length >= 1
 }
 
 function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
