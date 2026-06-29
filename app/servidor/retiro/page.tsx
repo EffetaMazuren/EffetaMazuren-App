@@ -120,40 +120,6 @@ function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB
   return null
 }
 
-// Chips de info médica: alergia=rojo, restricción=ámbar, medicamento=morado
-const INFO_MEDICA = [
-  { key: 'alergias' as const,                   label: 'Alergia',      bg: '#fef2f2', color: '#dc2626', border: '#fca5a5' },
-  { key: 'restricciones_alimentarias' as const,  label: 'Restricción',  bg: '#fffbeb', color: '#d97706', border: '#fcd34d' },
-  { key: 'medicamentos' as const,                label: 'Medicamento',  bg: '#faf5ff', color: '#7c3aed', border: '#c4b5fd' },
-]
-
-function InfoMedicaChips({ cam }: { cam: CaminanteMesa }) {
-  const items = INFO_MEDICA.filter(m => cam[m.key] && cam[m.key]!.trim() !== '')
-  if (items.length === 0) return null
-  return (
-    <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 5 }}>
-      {items.map(({ key, label, bg, color, border }) => (
-        <div key={key} style={{
-          display: 'flex', gap: 6, alignItems: 'flex-start',
-          background: bg, border: `1px solid ${border}`,
-          borderRadius: 8, padding: '5px 9px',
-        }}>
-          <span style={{
-            fontSize: 9, fontWeight: 700, color, letterSpacing: 0.5,
-            textTransform: 'uppercase', paddingTop: 1, flexShrink: 0,
-            minWidth: 68,
-          }}>
-            {label}
-          </span>
-          <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.4 }}>
-            {cam[key]}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 interface Seguimiento {
   id?: string
   asignacion_mesa_id: string
@@ -161,81 +127,66 @@ interface Seguimiento {
   contesto: boolean
 }
 
+// Pill de info médica individual
+function PillMedica({ label, valor, color, bg, border }: { label: string; valor: string; color: string; bg: string; border: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', background: bg, border: `1px solid ${border}`, borderRadius: 8, padding: '5px 9px' }}>
+      <span style={{ fontSize: 9, fontWeight: 700, color, letterSpacing: 0.5, textTransform: 'uppercase', paddingTop: 1, flexShrink: 0, minWidth: 68 }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.4 }}>{valor}</span>
+    </div>
+  )
+}
+
 export default function RetiroPage() {
   const [info, setInfo] = useState<ServidorInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [nombreServidor, setNombreServidor] = useState('')
   const [actualizado, setActualizado] = useState(false)
-  const [camExpandido, setCamExpandido] = useState<string | null>(null)
+  // Un solo estado para qué panel está abierto: 'info-{id}' o 'sorpresa-{id}'
+  const [panelAbierto, setPanelAbierto] = useState<string | null>(null)
   const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
 
   const cargarDatos = useCallback(async (nombre: string) => {
     const [rolesRes, mesasRes] = await Promise.all([
-      supabase
-        .from('roles_retiro')
-        .select('rol, categoria, encargados')
-        .eq('retiro_id', RETIRO_ID)
-        .order('orden'),
-      supabase
-        .from('mesas')
-        .select('numero, adulto, lider, colider')
-        .eq('retiro_id', RETIRO_ID)
-        .order('numero'),
+      supabase.from('roles_retiro').select('rol, categoria, encargados').eq('retiro_id', RETIRO_ID).order('orden'),
+      supabase.from('mesas').select('numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero'),
     ])
 
-    const misRoles: RolRetiro[] = (rolesRes.data || []).filter(r =>
-      nombreEnLista(nombre, r.encargados || [])
-    )
-
+    const misRoles: RolRetiro[] = (rolesRes.data || []).filter(r => nombreEnLista(nombre, r.encargados || []))
     const todasMesas: MesaDB[] = mesasRes.data ?? []
     const mesaEncontrada = buscarMesaParaServidor(nombre, todasMesas)
 
     let caminantes: CaminanteMesa[] = []
     if (mesaEncontrada) {
-      const mesaNum = mesaEncontrada.mesa.numero
-
       const { data: mesaRow } = await supabase
-        .from('mesas')
-        .select('id')
-        .eq('retiro_id', RETIRO_ID)
-        .eq('numero', mesaNum)
-        .single()
+        .from('mesas').select('id').eq('retiro_id', RETIRO_ID).eq('numero', mesaEncontrada.mesa.numero).single()
 
       if (mesaRow) {
         const { data: asigData } = await supabase
-          .from('asignaciones_mesa')
-          .select('id, caminante_id, confirmado_por_lider')
-          .eq('mesa_id', mesaRow.id)
-          .eq('confirmado_por_lider', true)
+          .from('asignaciones_mesa').select('id, caminante_id, confirmado_por_lider')
+          .eq('mesa_id', mesaRow.id).eq('confirmado_por_lider', true)
 
         const asigMap: Record<string, string> = {}
         ;(asigData ?? []).forEach((a: any) => { asigMap[a.caminante_id] = a.id })
         const ids = (asigData ?? []).map((a: any) => a.caminante_id)
 
         if (ids.length > 0) {
-          // ── CAMBIO: se agregan alergias, restricciones_alimentarias, medicamentos ──
           const { data: camData } = await supabase
             .from('caminantes')
             .select('id, nombre, celular, edad, es_sorpresa, alergias, restricciones_alimentarias, medicamentos')
             .in('id', ids)
 
-          const camList = (camData ?? []) as (Omit<CaminanteMesa, 'asignacion_id' | 'contacto_emergencia'> & { asignacion_id?: string; contacto_emergencia?: ContactoEmergencia | null })[]
-
+          const camList = (camData ?? []) as any[]
           const sorpresas = camList.filter(c => c.es_sorpresa)
           const contactosMap: Record<string, ContactoEmergencia> = {}
 
           for (const s of sorpresas) {
             const { data: contactos } = await supabase
-              .from('contactos_emergencia')
-              .select('nombre, parentesco, celular')
-              .eq('persona_id', s.id)
-              .eq('tipo_persona', 'caminante')
-              .order('orden')
-              .limit(1)
-
-            if (contactos && contactos.length > 0) {
-              contactosMap[s.id] = contactos[0]
-            }
+              .from('contactos_emergencia').select('nombre, parentesco, celular')
+              .eq('persona_id', s.id).eq('tipo_persona', 'caminante').order('orden').limit(1)
+            if (contactos && contactos.length > 0) contactosMap[s.id] = contactos[0]
           }
 
           caminantes = camList.map(c => ({
@@ -245,14 +196,10 @@ export default function RetiroPage() {
           }))
 
           const { data: asigIds } = await supabase
-            .from('asignaciones_mesa')
-            .select('id')
-            .eq('mesa_id', mesaRow.id)
-            .eq('confirmado_por_lider', true)
+            .from('asignaciones_mesa').select('id').eq('mesa_id', mesaRow.id).eq('confirmado_por_lider', true)
           if (asigIds && asigIds.length > 0) {
             const { data: segData } = await supabase
-              .from('seguimiento_caminantes')
-              .select('id, asignacion_mesa_id, llamado, contesto')
+              .from('seguimiento_caminantes').select('id, asignacion_mesa_id, llamado, contesto')
               .in('asignacion_mesa_id', asigIds.map((a: any) => a.id))
             const segMap: Record<string, Seguimiento> = {}
             ;(segData ?? []).forEach((s: any) => { segMap[s.asignacion_mesa_id] = s })
@@ -262,12 +209,7 @@ export default function RetiroPage() {
       }
     }
 
-    setInfo({
-      roles: misRoles,
-      mesa: mesaEncontrada?.mesa,
-      esLiderDeMesa: mesaEncontrada?.esLider,
-      caminantes,
-    })
+    setInfo({ roles: misRoles, mesa: mesaEncontrada?.mesa, esLiderDeMesa: mesaEncontrada?.esLider, caminantes })
   }, [])
 
   useEffect(() => {
@@ -280,24 +222,14 @@ export default function RetiroPage() {
 
       let csvNombre = ''
       if (inscripcionId) {
-        const { data: srv } = await supabase
-          .from('servidores_inscripcion')
-          .select('nombre')
-          .eq('id', inscripcionId)
-          .single()
+        const { data: srv } = await supabase.from('servidores_inscripcion').select('nombre').eq('id', inscripcionId).single()
         csvNombre = srv?.nombre ?? ''
       } else {
-        const { data: srv } = await supabase
-          .from('servidores_inscripcion')
-          .select('nombre')
-          .eq('usuario_id', userId)
-          .eq('retiro_id', RETIRO_ID)
-          .single()
+        const { data: srv } = await supabase.from('servidores_inscripcion').select('nombre').eq('usuario_id', userId).eq('retiro_id', RETIRO_ID).single()
         csvNombre = srv?.nombre ?? ''
       }
 
       if (!csvNombre) { setLoading(false); return }
-
       setNombreServidor(csvNombre)
       await cargarDatos(csvNombre)
       setLoading(false)
@@ -307,26 +239,11 @@ export default function RetiroPage() {
 
   useEffect(() => {
     if (!nombreServidor) return
-
-    const channel = supabase
-      .channel('retiro-cambios')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` }, () => {
-        cargarDatos(nombreServidor)
-        setActualizado(true)
-        setTimeout(() => setActualizado(false), 3000)
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, () => {
-        cargarDatos(nombreServidor)
-        setActualizado(true)
-        setTimeout(() => setActualizado(false), 3000)
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'asignaciones_mesa' }, () => {
-        cargarDatos(nombreServidor)
-        setActualizado(true)
-        setTimeout(() => setActualizado(false), 3000)
-      })
+    const channel = supabase.channel('retiro-cambios')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'asignaciones_mesa' }, () => { cargarDatos(nombreServidor); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
       .subscribe()
-
     return () => { supabase.removeChannel(channel) }
   }, [nombreServidor, cargarDatos])
 
@@ -334,11 +251,7 @@ export default function RetiroPage() {
     const actual = seguimientos[asignacionMesaId] ?? { llamado: false, contesto: false }
     const nuevo = { ...actual, [campo]: !actual[campo] }
     setSeguimientos(prev => ({ ...prev, [asignacionMesaId]: { ...nuevo, asignacion_mesa_id: asignacionMesaId } }))
-    const { data: existing } = await supabase
-      .from('seguimiento_caminantes')
-      .select('id')
-      .eq('asignacion_mesa_id', asignacionMesaId)
-      .single()
+    const { data: existing } = await supabase.from('seguimiento_caminantes').select('id').eq('asignacion_mesa_id', asignacionMesaId).single()
     if (existing?.id) {
       await supabase.from('seguimiento_caminantes').update({ [campo]: nuevo[campo], updated_at: new Date().toISOString() }).eq('id', existing.id)
     } else {
@@ -370,9 +283,7 @@ export default function RetiroPage() {
 
       {actualizado && (
         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           Información actualizada
         </div>
       )}
@@ -395,9 +306,7 @@ export default function RetiroPage() {
           {info.mesa.adulto && (
             <div style={{ marginBottom: 14 }}>
               <p style={{ margin: '0 0 6px', fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: 0.8 }}>Adulto acompañante</p>
-              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 600 }}>
-                {info.mesa.adulto}
-              </div>
+              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 600 }}>{info.mesa.adulto}</div>
             </div>
           )}
 
@@ -437,116 +346,133 @@ export default function RetiroPage() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {info.caminantes.map((cam, i) => {
-              const expandido = camExpandido === cam.id
+              const infoKey = `info-${cam.id}`
+              const sorpresaKey = `sorpresa-${cam.id}`
+              const infoAbierta = panelAbierto === infoKey
+              const sorpresaAbierta = panelAbierto === sorpresaKey
               const tieneMedica = !!(cam.alergias || cam.restricciones_alimentarias || cam.medicamentos)
+              const seg = seguimientos[cam.asignacion_id] ?? { llamado: false, contesto: false }
+
               return (
                 <div key={cam.id} style={{
-                  border: cam.es_sorpresa ? '1.5px solid #fca5a5' : '1px solid #f3f4f6',
+                  border: cam.es_sorpresa ? '1.5px solid #fca5a5' : '1px solid #f0f0f3',
                   borderRadius: 12,
                   overflow: 'hidden',
-                  background: cam.es_sorpresa ? '#fff5f5' : '#fafafa',
+                  background: cam.es_sorpresa ? '#fff5f5' : 'white',
                 }}>
-                  <button
-                    onClick={() => setCamExpandido(expandido ? null : cam.id)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', background: 'none', border: 'none', cursor: cam.es_sorpresa ? 'pointer' : 'default', textAlign: 'left' }}
-                  >
-                    <div style={{ width: 26, height: 26, borderRadius: 8, background: cam.es_sorpresa ? '#dc2626' : '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0, marginTop: 1 }}>
+
+                  {/* ── FILA PRINCIPAL: número + nombre (clickeable) + checkboxes + flecha sorpresa ── */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px' }}>
+
+                    {/* Número */}
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: cam.es_sorpresa ? '#dc2626' : '#0f1787', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0 }}>
                       {i + 1}
                     </div>
 
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
-                          {cam.nombre}
+                    {/* Nombre — abre/cierra el panel de info personal */}
+                    <button
+                      onClick={() => setPanelAbierto(infoAbierta ? null : infoKey)}
+                      style={{ flex: 1, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {cam.nombre}
+                      </span>
+                      {cam.es_sorpresa && (
+                        <span style={{ fontSize: 10, background: '#dc2626', color: 'white', padding: '1px 7px', borderRadius: 20, fontWeight: 700, letterSpacing: 0.5, flexShrink: 0 }}>
+                          SORPRESA
                         </span>
-                        {cam.es_sorpresa && (
-                          <span style={{ fontSize: 10, background: '#dc2626', color: 'white', padding: '1px 7px', borderRadius: 20, fontWeight: 700, letterSpacing: 0.5 }}>
-                            SORPRESA
-                          </span>
-                        )}
-                      </div>
+                      )}
+                      {/* Indicador de que tiene info médica */}
+                      {tieneMedica && (
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#d97706', flexShrink: 0, display: 'inline-block' }} title="Tiene info médica" />
+                      )}
+                      {/* Chevron */}
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: infoAbierta ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </button>
 
-                      {/* Edad + celular */}
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                        {cam.edad ? `${cam.edad} años` : ''}
-                        {!cam.es_sorpresa && cam.celular && (
-                          <>
-                            {cam.edad ? <span> · </span> : null}
-                            <a href={`tel:${cam.celular}`} style={{ color: '#0f1787', fontWeight: 600, textDecoration: 'none', fontSize: 11 }}>
-                              {cam.celular}
-                            </a>
-                          </>
-                        )}
+                    {/* Checkboxes llamado/contestó (solo caminantes normales) */}
+                    {!cam.es_sorpresa && cam.asignacion_id && (
+                      <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                        {(['llamado', 'contesto'] as const).map(campo => {
+                          const activo = seg[campo]
+                          const label = campo === 'llamado' ? 'Llamado' : 'Contestó'
+                          return (
+                            <button key={campo}
+                              onClick={(ev) => { ev.stopPropagation(); toggleSeguimiento(cam.asignacion_id, campo) }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 4,
+                                padding: '3px 7px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600,
+                                background: activo ? (campo === 'llamado' ? '#dcfce7' : '#eff6ff') : '#f3f4f6',
+                                color: activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : '#6b7280',
+                              }}
+                            >
+                              <div style={{
+                                width: 10, height: 10, borderRadius: 3, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: `1.5px solid ${activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : '#9ca3af'}`,
+                                background: activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : 'transparent',
+                              }}>
+                                {activo && <svg width="7" height="7" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
+                              </div>
+                              {label}
+                            </button>
+                          )
+                        })}
                       </div>
+                    )}
 
-                      {/* Info médica — siempre visible si hay datos */}
-                      {!cam.es_sorpresa && tieneMedica && (
-                        <InfoMedicaChips cam={cam} />
+                    {/* Flecha sorpresa (abre panel sorpresa) */}
+                    {cam.es_sorpresa && (
+                      <button
+                        onClick={() => setPanelAbierto(sorpresaAbierta ? null : sorpresaKey)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', flexShrink: 0, color: '#dc2626', fontSize: 11 }}
+                      >
+                        {sorpresaAbierta ? '▲' : '▼'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* ── PANEL INFO PERSONAL (se abre al tocar el nombre) ── */}
+                  {infoAbierta && (
+                    <div style={{ borderTop: `1px solid ${cam.es_sorpresa ? '#fca5a5' : '#f0f0f3'}`, padding: '12px 14px', background: cam.es_sorpresa ? '#fff0f0' : '#f9f9fc', display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+                      {/* Edad */}
+                      {cam.edad && (
+                        <div style={{ fontSize: 12, color: '#6b7280' }}>
+                          <span style={{ fontWeight: 600, color: '#374151' }}>{cam.edad}</span> años
+                        </div>
                       )}
 
-                      {/* Checkboxes llamado / contestó */}
-                      {!cam.es_sorpresa && cam.asignacion_id && (
-                        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                          {(['llamado', 'contesto'] as const).map(campo => {
-                            const seg = seguimientos[cam.asignacion_id] ?? { llamado: false, contesto: false }
-                            const activo = seg[campo]
-                            const label = campo === 'llamado' ? 'Llamado' : 'Contestó'
-                            return (
-                              <button key={campo}
-                                onClick={(ev) => { ev.stopPropagation(); toggleSeguimiento(cam.asignacion_id, campo) }}
-                                style={{
-                                  display: 'flex', alignItems: 'center', gap: 4,
-                                  padding: '3px 8px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600,
-                                  background: activo ? (campo === 'llamado' ? '#dcfce7' : '#eff6ff') : '#f3f4f6',
-                                  color: activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : '#6b7280',
-                                }}
-                              >
-                                <div style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  border: `1.5px solid ${activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : '#9ca3af'}`,
-                                  background: activo ? (campo === 'llamado' ? '#16a34a' : '#0f1787') : 'transparent',
-                                }}>
-                                  {activo && <svg width="7" height="7" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
-                                </div>
-                                {label}
-                              </button>
-                            )
-                          })}
+                      {/* Celular */}
+                      {cam.celular && (
+                        <a href={`tel:${cam.celular}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#0f1787', fontWeight: 700, textDecoration: 'none', background: '#eef0fb', borderRadius: 9, padding: '7px 12px', width: 'fit-content' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.01 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92v2z"/>
+                          </svg>
+                          {cam.celular}
+                        </a>
+                      )}
+
+                      {/* Info médica */}
+                      {tieneMedica && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 2 }}>
+                          {cam.alergias && <PillMedica label="Alergia" valor={cam.alergias} color="#dc2626" bg="#fef2f2" border="#fca5a5" />}
+                          {cam.restricciones_alimentarias && <PillMedica label="Restricción" valor={cam.restricciones_alimentarias} color="#d97706" bg="#fffbeb" border="#fcd34d" />}
+                          {cam.medicamentos && <PillMedica label="Medicamento" valor={cam.medicamentos} color="#7c3aed" bg="#faf5ff" border="#c4b5fd" />}
                         </div>
+                      )}
+
+                      {!cam.celular && !tieneMedica && !cam.edad && (
+                        <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Sin información adicional registrada.</p>
                       )}
                     </div>
+                  )}
 
-                    {cam.es_sorpresa && (
-                      <span style={{ fontSize: 11, color: '#dc2626', flexShrink: 0, paddingTop: 4 }}>{expandido ? '▲' : '▼'}</span>
-                    )}
-                  </button>
-
-                  {/* ── DETALLE SORPRESA ── */}
-                  {cam.es_sorpresa && expandido && (
+                  {/* ── PANEL SORPRESA (se abre con la flecha roja) ── */}
+                  {cam.es_sorpresa && sorpresaAbierta && (
                     <div style={{ padding: '0 14px 14px', borderTop: '1px solid #fca5a5' }}>
                       <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '10px 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                        Caminante
-                      </p>
-                      <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px', border: '1px solid #fca5a5', marginBottom: 10 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 6 }}>
-                          {cam.nombre}
-                          {cam.edad ? <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 400, marginLeft: 6 }}>{cam.edad} años</span> : null}
-                        </div>
-                        {cam.celular && (
-                          <a
-                            href={`tel:${cam.celular}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#0f1787', fontWeight: 600, textDecoration: 'none' }}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.01 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92v2z"/>
-                            </svg>
-                            {cam.celular}
-                          </a>
-                        )}
-                        {/* Info médica dentro del panel sorpresa */}
-                        {tieneMedica && <InfoMedicaChips cam={cam} />}
-                      </div>
-
-                      <p style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                         Contacto para coordinar llegada
                       </p>
                       {cam.contacto_emergencia ? (
@@ -572,7 +498,6 @@ export default function RetiroPage() {
                       ) : (
                         <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Sin contacto registrado</p>
                       )}
-
                       <p style={{ fontSize: 11, color: '#dc2626', margin: '10px 0 0', lineHeight: 1.5 }}>
                         Este caminante no sabe que viene al retiro. Coordina la llegada con su contacto sin revelar el destino.
                       </p>
