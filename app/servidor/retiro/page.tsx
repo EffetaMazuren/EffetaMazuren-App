@@ -590,7 +590,7 @@ export default function RetiroPage() {
                             <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>Sin contacto registrado</p>
                           )}
                           <p style={{ fontSize: 11, color: '#dc2626', margin: '8px 0 0', lineHeight: 1.5 }}>
-                            Este caminante no sabe que viene al retiro. Coordina la llegada con su contacto sin revelar el destino.
+                            Este caminante no sabe que viene al retiro. Coordina la llegada con su contacto.
                           </p>
                         </div>
                       )}
