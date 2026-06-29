@@ -229,10 +229,15 @@ export default function DashboardPage() {
           <span className="text-[10px] text-gray-400 hidden sm:block">
             Actualizado {lastUpdated.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <button onClick={() => router.push('/notifications')} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={() => router.push('/notifications')} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors relative">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
+            {((data?.reembolsosPendientes ?? 0) + (data?.alertasAsistencia ?? 0)) > 0 && (
+              <span className="absolute top-0 right-0 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {(data?.reembolsosPendientes ?? 0) + (data?.alertasAsistencia ?? 0)}
+              </span>
+            )}
           </button>
           <button onClick={() => router.push('/perfil')} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
