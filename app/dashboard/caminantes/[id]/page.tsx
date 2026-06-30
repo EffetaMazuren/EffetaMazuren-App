@@ -223,7 +223,7 @@ export default function FichaCaminante() {
         body: JSON.stringify({ caminanteId: id, retiroId: retiro?.id, valor, fileUrl: driveData.fileUrl, fileName: driveData.fileName, filePath: driveData.fileId, registradoPor: user?.id, notas: notas || null }),
       })
       const pagoData = await pagoRes.json()
-      if (!pagoData.success) throw new Error('Error registrando pago')
+      if (!pagoData.success) throw new Error(pagoData.error || 'Error registrando pago')
       cerrarModal()
       window.location.reload()
     } catch (err: any) {
