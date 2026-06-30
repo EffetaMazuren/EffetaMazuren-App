@@ -20,8 +20,19 @@ export async function POST(request: NextRequest) {
       notas,
     } = body
 
-    if (!caminanteId || !retiroId || !valor || !registradoPor) {
-      return NextResponse.json({ error: 'Faltan datos requeridos' }, { status: 400 })
+    // ── VALIDACIÓN DETALLADA: dice exactamente qué campo falta ──
+    const faltantes: string[] = []
+    if (!caminanteId) faltantes.push('caminanteId')
+    if (!retiroId) faltantes.push('retiroId')
+    if (!valor) faltantes.push('valor')
+    if (!registradoPor) faltantes.push('registradoPor (sesión de usuario no disponible)')
+
+    if (faltantes.length > 0) {
+      console.error('Faltan datos requeridos:', faltantes, 'Body recibido:', body)
+      return NextResponse.json(
+        { error: `Faltan datos requeridos: ${faltantes.join(', ')}` },
+        { status: 400 }
+      )
     }
 
     // Registrar el pago en Supabase
@@ -45,8 +56,11 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (errorPago) {
-      console.error('Error registrando pago:', errorPago)
-      return NextResponse.json({ error: 'Error al registrar pago' }, { status: 500 })
+      console.error('Error registrando pago en Supabase:', errorPago)
+      return NextResponse.json(
+        { error: `Error al registrar pago: ${errorPago.message}` },
+        { status: 500 }
+      )
     }
 
     // Calcular total pagado
@@ -66,7 +80,6 @@ export async function POST(request: NextRequest) {
     const faltaPorPagar = Math.max(0, valorTotal - totalPagado)
     const inscritoOficialmente = totalPagado >= valorTotal
 
-    // Actualizar inscrito_oficialmente si ya pagó completo
     if (inscritoOficialmente) {
       await supabase
         .from('caminantes')
@@ -86,7 +99,6 @@ export async function POST(request: NextRequest) {
         const appsScriptUrl = process.env.APPS_SCRIPT_CORREOS_URL!
 
         if (caminante.es_sorpresa) {
-          // Obtener ambos contactos de emergencia
           const { data: contactos } = await supabase
             .from('contactos_emergencia')
             .select('nombre, parentesco, celular, orden')
@@ -109,7 +121,6 @@ export async function POST(request: NextRequest) {
             }),
           })
         } else if (caminante.correo) {
-          // Correo normal al caminante
           await fetch(appsScriptUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -131,62 +142,60 @@ export async function POST(request: NextRequest) {
     // ────────────────────────────────────────────────────────────────────
 
     // ── ACTUALIZAR HOJAS EXCEL ──────────────────────────────────────
-if (caminante) {
-  try {
-    // Obtener datos completos del caminante
-    const { data: camCompleto } = await supabase
-      .from('caminantes')
-      .select('*')
-      .eq('id', caminanteId)
-      .single()
+    if (caminante) {
+      try {
+        const { data: camCompleto } = await supabase
+          .from('caminantes')
+          .select('*')
+          .eq('id', caminanteId)
+          .single()
 
-    // Obtener contactos de emergencia
-    const { data: contactosExcel } = await supabase
-      .from('contactos_emergencia')
-      .select('nombre, parentesco, celular, orden')
-      .eq('persona_id', caminanteId)
-      .eq('tipo_persona', 'caminante')
-      .order('orden', { ascending: true })
+        const { data: contactosExcel } = await supabase
+          .from('contactos_emergencia')
+          .select('nombre, parentesco, celular, orden')
+          .eq('persona_id', caminanteId)
+          .eq('tipo_persona', 'caminante')
+          .order('orden', { ascending: true })
 
-    const c1 = contactosExcel?.find(c => c.orden === 1)
-    const c2 = contactosExcel?.find(c => c.orden === 2)
+        const c1 = contactosExcel?.find(c => c.orden === 1)
+        const c2 = contactosExcel?.find(c => c.orden === 2)
 
-    await fetch(process.env.APPS_SCRIPT_CORREOS_URL!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tipo: 'actualizar_hojas',
-        nombre: camCompleto?.nombre,
-        tipo_documento: camCompleto?.tipo_documento,
-        numero_documento: camCompleto?.numero_documento,
-        celular: camCompleto?.celular,
-        direccion: camCompleto?.direccion,
-        barrio: camCompleto?.barrio,
-        telefono_fijo: camCompleto?.telefono_fijo,
-        correo: camCompleto?.correo,
-        edad: camCompleto?.edad,
-        fecha_nacimiento: camCompleto?.fecha_nacimiento,
-        talla_camiseta: camCompleto?.talla_camiseta,
-        sacramentos: Array.isArray(camCompleto?.sacramentos) ? camCompleto.sacramentos.join(', ') : '',
-        es_sorpresa: camCompleto?.es_sorpresa,
-        alergias: camCompleto?.alergias,
-        restricciones_alimentarias: camCompleto?.restricciones_alimentarias,
-        medicamentos: camCompleto?.medicamentos,
-        eps: camCompleto?.eps,
-        observaciones: camCompleto?.observaciones,
-        contacto1_nombre: c1?.nombre || '',
-        contacto1_parentesco: c1?.parentesco || '',
-        contacto1_celular: c1?.celular || '',
-        contacto2_nombre: c2?.nombre || '',
-        contacto2_parentesco: c2?.parentesco || '',
-        contacto2_celular: c2?.celular || '',
-      }),
-    })
-  } catch (errExcel) {
-    console.error('Error actualizando hojas Excel:', errExcel)
-  }
-}
-// ────────────────────────────────────────────────────────────────
+        await fetch(process.env.APPS_SCRIPT_CORREOS_URL!, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo: 'actualizar_hojas',
+            nombre: camCompleto?.nombre,
+            tipo_documento: camCompleto?.tipo_documento,
+            numero_documento: camCompleto?.numero_documento,
+            celular: camCompleto?.celular,
+            direccion: camCompleto?.direccion,
+            barrio: camCompleto?.barrio,
+            telefono_fijo: camCompleto?.telefono_fijo,
+            correo: camCompleto?.correo,
+            edad: camCompleto?.edad,
+            fecha_nacimiento: camCompleto?.fecha_nacimiento,
+            talla_camiseta: camCompleto?.talla_camiseta,
+            sacramentos: Array.isArray(camCompleto?.sacramentos) ? camCompleto.sacramentos.join(', ') : '',
+            es_sorpresa: camCompleto?.es_sorpresa,
+            alergias: camCompleto?.alergias,
+            restricciones_alimentarias: camCompleto?.restricciones_alimentarias,
+            medicamentos: camCompleto?.medicamentos,
+            eps: camCompleto?.eps,
+            observaciones: camCompleto?.observaciones,
+            contacto1_nombre: c1?.nombre || '',
+            contacto1_parentesco: c1?.parentesco || '',
+            contacto1_celular: c1?.celular || '',
+            contacto2_nombre: c2?.nombre || '',
+            contacto2_parentesco: c2?.parentesco || '',
+            contacto2_celular: c2?.celular || '',
+          }),
+        })
+      } catch (errExcel) {
+        console.error('Error actualizando hojas Excel:', errExcel)
+      }
+    }
+    // ────────────────────────────────────────────────────────────────
 
     return NextResponse.json({
       success: true,
