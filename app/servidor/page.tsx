@@ -93,6 +93,16 @@ export default function ServidorPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/'); return; }
 
+    const { data: usuarioCheck } = await supabase
+      .from('usuarios')
+      .select('es_lider')
+      .eq('id', user.id)
+      .single()
+    if (usuarioCheck?.es_lider) {
+      router.push('/dashboard')
+      return
+}
+
     // 1. Intentar obtener datos de la tabla usuarios
     let servidorData: Servidor | null = null;
     const { data: usuarioData } = await supabase
