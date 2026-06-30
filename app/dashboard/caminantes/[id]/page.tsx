@@ -217,7 +217,8 @@ export default function FichaCaminante() {
       const driveData = await driveRes.json()
       if (!driveData.success) throw new Error('Error subiendo comprobante')
       const { data: retiro } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
       const pagoRes = await fetch('/api/pagos/registrar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caminanteId: id, retiroId: retiro?.id, valor, fileUrl: driveData.fileUrl, fileName: driveData.fileName, filePath: driveData.fileId, registradoPor: user?.id, notas: notas || null }),
