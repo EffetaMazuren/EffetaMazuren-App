@@ -18,6 +18,13 @@ interface ServidorInscripcion {
   es_lider_palancas: boolean | null
 }
 
+interface UsuarioLider {
+  id: string
+  nombre: string
+  correo: string | null
+  es_lider: boolean
+}
+
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 8 }}>
@@ -98,11 +105,19 @@ export default function ConfigPage() {
   const [toast, setToast] = useState<Toast>(null)
   const [sincronizando, setSincronizando] = useState(false)
 
+  // Palancas
   const [mostrarPalancas, setMostrarPalancas] = useState(false)
   const [servidores, setServidores] = useState<ServidorInscripcion[]>([])
   const [cargandoSrvs, setCargandoSrvs] = useState(false)
   const [guardandoId, setGuardandoId] = useState<string | null>(null)
   const [busquedaSrv, setBusquedaSrv] = useState('')
+
+  // Líderes
+  const [mostrarLideres, setMostrarLideres] = useState(false)
+  const [usuarios, setUsuarios] = useState<UsuarioLider[]>([])
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(false)
+  const [guardandoUserId, setGuardandoUserId] = useState<string | null>(null)
+  const [busquedaUsuario, setBusquedaUsuario] = useState('')
 
   function mostrarToast(msg: string, tipo: 'ok' | 'error') {
     setToast({ msg, tipo })
@@ -139,6 +154,16 @@ export default function ConfigPage() {
     setCargandoSrvs(false)
   }
 
+  async function cargarUsuarios() {
+    setCargandoUsuarios(true)
+    const { data } = await supabase
+      .from('usuarios')
+      .select('id, nombre, correo, es_lider')
+      .order('nombre')
+    setUsuarios(data || [])
+    setCargandoUsuarios(false)
+  }
+
   async function toggleGrupo(srv: ServidorInscripcion, nuevoGrupo: string | null) {
     setGuardandoId(srv.id)
     const { error } = await supabase
@@ -170,18 +195,39 @@ export default function ConfigPage() {
     setGuardandoId(null)
   }
 
+  async function toggleEsLider(usuario: UsuarioLider) {
+    setGuardandoUserId(usuario.id)
+    const nuevoValor = !usuario.es_lider
+    const { error } = await supabase
+      .from('usuarios')
+      .update({ es_lider: nuevoValor })
+      .eq('id', usuario.id)
+    if (error) {
+      mostrarToast('Error al guardar', 'error')
+    } else {
+      setUsuarios(prev => prev.map(u => u.id === usuario.id ? { ...u, es_lider: nuevoValor } : u))
+      mostrarToast(nuevoValor ? `Acceso de líder dado a ${usuario.nombre.split(' ')[0]}` : `Acceso quitado a ${usuario.nombre.split(' ')[0]}`, 'ok')
+    }
+    setGuardandoUserId(null)
+  }
+
   useEffect(() => {
     if (mostrarPalancas) cargarServidoresPalancas()
   }, [mostrarPalancas])
+
+  useEffect(() => {
+    if (mostrarLideres) cargarUsuarios()
+  }, [mostrarLideres])
 
   const servidoresFiltrados = servidores.filter(s =>
     busquedaSrv === '' || s.nombre.toLowerCase().includes(busquedaSrv.toLowerCase())
   )
 
-  const grupoColor: Record<string, { bg: string; text: string }> = {
-    'palancas': { bg: '#f0fdf4', text: '#15803d' },
-    'palancas_lider': { bg: '#eef0ff', text: '#0f1787' },
-  }
+  const usuariosFiltrados = usuarios.filter(u =>
+    busquedaUsuario === '' ||
+    u.nombre?.toLowerCase().includes(busquedaUsuario.toLowerCase()) ||
+    u.correo?.toLowerCase().includes(busquedaUsuario.toLowerCase())
+  )
 
   return (
     <div style={{ background: '#f7f8fc', minHeight: '100vh', paddingBottom: 100 }}>
@@ -207,6 +253,99 @@ export default function ConfigPage() {
         <Fila icon={Bell} label="Nuevos inscritos" color="#0f1787" sublabel="Alerta cuando alguien llena el formulario" toggle toggleValue={notifInscritos} onClick={() => setNotifInscritos(v => !v)} chevron={false} ultimo />
       </Seccion>
 
+      {/* ══ ACCESO LÍDERES ══ */}
+      <div style={{ marginTop: 20 }} />
+      <Seccion titulo="Acceso al Dashboard">
+        <Fila
+          icon={Shield} label="Gestionar líderes" color="#0f1787"
+          sublabel="Quién tiene acceso al dashboard de líderes"
+          onClick={() => setMostrarLideres(v => !v)}
+          chevron={!mostrarLideres}
+          ultimo={!mostrarLideres}
+        />
+
+        {mostrarLideres && (
+          <div style={{ borderTop: '0.5px solid #f3f4f6' }}>
+            <div style={{ padding: '10px 16px', background: '#eef0ff', borderBottom: '0.5px solid #e0e4ff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Lock size={13} color="#0f1787" />
+                <span style={{ fontSize: 12, color: '#0f1787', fontWeight: 500 }}>
+                  Los líderes activos ven el dashboard en vez del portal de servidor al iniciar sesión.
+                </span>
+              </div>
+            </div>
+
+            {/* Búsqueda */}
+            <div style={{ padding: '10px 16px', borderBottom: '0.5px solid #f3f4f6', position: 'relative' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)' }}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                value={busquedaUsuario}
+                onChange={e => setBusquedaUsuario(e.target.value)}
+                placeholder="Buscar por nombre o correo..."
+                style={{ width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8, border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827', background: '#f9fafb', boxSizing: 'border-box', outline: 'none' }}
+              />
+              {busquedaUsuario && (
+                <button onClick={() => setBusquedaUsuario('')} style={{ position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>×</button>
+              )}
+            </div>
+
+            {cargandoUsuarios ? (
+              <div style={{ padding: '20px 16px', textAlign: 'center' }}>
+                <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Cargando usuarios...</p>
+              </div>
+            ) : (
+              <div>
+                {usuariosFiltrados.length === 0 && (
+                  <div style={{ padding: '16px', textAlign: 'center' }}>
+                    <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Sin resultados</p>
+                  </div>
+                )}
+                {usuariosFiltrados.map((u, idx) => {
+                  const esUltimo = idx === usuariosFiltrados.length - 1
+                  return (
+                    <div key={u.id} style={{
+                      padding: '12px 16px',
+                      borderBottom: esUltimo ? 'none' : '0.5px solid #f3f4f6',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: u.es_lider ? '#fafbff' : 'white',
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: u.es_lider ? 600 : 400, color: u.es_lider ? '#0f1787' : '#0d0d14', margin: '0 0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {u.nombre}
+                        </p>
+                        <p style={{ fontSize: 11, color: '#9ca3af', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {u.correo || '—'}
+                        </p>
+                        {u.es_lider && (
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 10, background: '#eef0ff', color: '#0f1787', display: 'inline-block', marginTop: 3 }}>
+                            Líder activo
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        disabled={!!guardandoUserId}
+                        onClick={() => toggleEsLider(u)}
+                        style={{
+                          padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 600, flexShrink: 0,
+                          background: u.es_lider ? '#fef2f2' : '#f0fdf4',
+                          color: u.es_lider ? '#dc2626' : '#16a34a',
+                          opacity: guardandoUserId ? 0.5 : 1,
+                        }}
+                      >
+                        {guardandoUserId === u.id ? '…' : u.es_lider ? 'Quitar acceso' : 'Dar acceso'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </Seccion>
+
       {/* PALANCAS */}
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Grupo Palancas">
@@ -220,8 +359,6 @@ export default function ConfigPage() {
 
         {mostrarPalancas && (
           <div style={{ borderTop: '0.5px solid #f3f4f6' }}>
-
-            {/* Leyenda */}
             <div style={{ padding: '10px 16px', display: 'flex', gap: 12, flexWrap: 'wrap', borderBottom: '0.5px solid #f3f4f6' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <Users size={12} color="#16a34a" />
@@ -232,99 +369,43 @@ export default function ConfigPage() {
                 <span style={{ fontSize: 11, color: '#6b7280' }}>Ve dashboard</span>
               </div>
             </div>
-
-            {/* Nota líderes automáticos */}
             <div style={{ padding: '10px 16px', background: '#eef0ff', borderBottom: '0.5px solid #e0e4ff' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Lock size={13} color="#0f1787" />
-                <span style={{ fontSize: 12, color: '#0f1787', fontWeight: 500 }}>Los líderes (Antonia, Daniel, Sofía) siempre tienen acceso al dashboard.</span>
+                <span style={{ fontSize: 12, color: '#0f1787', fontWeight: 500 }}>Los líderes siempre tienen acceso al dashboard.</span>
               </div>
             </div>
-
-            {/* Barra de búsqueda */}
             <div style={{ padding: '10px 16px', borderBottom: '0.5px solid #f3f4f6', position: 'relative' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)' }}>
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
-              <input
-                value={busquedaSrv}
-                onChange={e => setBusquedaSrv(e.target.value)}
-                placeholder="Buscar servidor..."
-                style={{
-                  width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8,
-                  border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827',
-                  background: '#f9fafb', boxSizing: 'border-box', outline: 'none',
-                }}
-              />
-              {busquedaSrv && (
-                <button onClick={() => setBusquedaSrv('')} style={{ position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>×</button>
-              )}
+              <input value={busquedaSrv} onChange={e => setBusquedaSrv(e.target.value)} placeholder="Buscar servidor..." style={{ width: '100%', padding: '8px 10px 8px 32px', borderRadius: 8, border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827', background: '#f9fafb', boxSizing: 'border-box', outline: 'none' }} />
+              {busquedaSrv && <button onClick={() => setBusquedaSrv('')} style={{ position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>×</button>}
             </div>
-
             {cargandoSrvs ? (
-              <div style={{ padding: '20px 16px', textAlign: 'center' }}>
-                <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Cargando servidores...</p>
-              </div>
+              <div style={{ padding: '20px 16px', textAlign: 'center' }}><p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>Cargando servidores...</p></div>
             ) : (
               <div>
-                {servidoresFiltrados.length === 0 && (
-                  <div style={{ padding: '16px', textAlign: 'center' }}>
-                    <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No hay resultados para "{busquedaSrv}"</p>
-                  </div>
-                )}
+                {servidoresFiltrados.length === 0 && <div style={{ padding: '16px', textAlign: 'center' }}><p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>No hay resultados para "{busquedaSrv}"</p></div>}
                 {servidoresFiltrados.map((srv, idx) => {
                   const esPalancas = srv.grupo === 'palancas'
-                  const esPalancasLider = srv.grupo === 'palancas_lider'
                   const esLiderPalancas = !!srv.es_lider_palancas
                   const esUltimo = idx === servidoresFiltrados.length - 1
-
                   return (
-                    <div key={srv.id} style={{
-                      padding: '12px 16px',
-                      borderBottom: esUltimo ? 'none' : '0.5px solid #f3f4f6',
-                      display: 'flex', alignItems: 'center', gap: 10,
-                    }}>
+                    <div key={srv.id} style={{ padding: '12px 16px', borderBottom: esUltimo ? 'none' : '0.5px solid #f3f4f6', display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {srv.nombre}
-                        </p>
+                        <p style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{srv.nombre}</p>
                         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                           {esPalancas && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: '#f0fdf4', color: '#15803d' }}>Seguimiento</span>}
-                          {(esPalancasLider || esLiderPalancas) && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: '#eef0ff', color: '#0f1787' }}>Ve dashboard</span>}
-                          {!esPalancas && !esPalancasLider && !esLiderPalancas && <span style={{ fontSize: 10, color: '#d1d5db' }}>Sin acceso</span>}
+                          {esLiderPalancas && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: '#eef0ff', color: '#0f1787' }}>Ve dashboard</span>}
+                          {!esPalancas && !esLiderPalancas && <span style={{ fontSize: 10, color: '#d1d5db' }}>Sin acceso</span>}
                         </div>
                       </div>
-
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                        {/* Toggle: hace seguimiento */}
-                        <button
-                          disabled={!!guardandoId}
-                          onClick={() => toggleGrupo(srv, esPalancas ? null : 'palancas')}
-                          title="Hace seguimiento"
-                          style={{
-                            width: 34, height: 34, borderRadius: 8, border: '0.5px solid',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: esPalancas ? '#f0fdf4' : '#f9fafb',
-                            borderColor: esPalancas ? '#86efac' : '#e5e7eb',
-                            opacity: guardandoId ? 0.5 : 1,
-                          }}
-                        >
+                        <button disabled={!!guardandoId} onClick={() => toggleGrupo(srv, esPalancas ? null : 'palancas')} title="Hace seguimiento" style={{ width: 34, height: 34, borderRadius: 8, border: '0.5px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: esPalancas ? '#f0fdf4' : '#f9fafb', borderColor: esPalancas ? '#86efac' : '#e5e7eb', opacity: guardandoId ? 0.5 : 1 }}>
                           <Users size={15} color={esPalancas ? '#16a34a' : '#d1d5db'} />
                         </button>
-
-                        {/* Toggle: ve dashboard */}
-                        <button
-                          disabled={!!guardandoId}
-                          onClick={() => toggleLiderPalancas(srv)}
-                          title="Ve dashboard modo líder"
-                          style={{
-                            width: 34, height: 34, borderRadius: 8, border: '0.5px solid',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: esLiderPalancas ? '#eef0ff' : '#f9fafb',
-                            borderColor: esLiderPalancas ? '#c7d0ff' : '#e5e7eb',
-                            opacity: guardandoId ? 0.5 : 1,
-                          }}
-                        >
+                        <button disabled={!!guardandoId} onClick={() => toggleLiderPalancas(srv)} title="Ve dashboard modo líder" style={{ width: 34, height: 34, borderRadius: 8, border: '0.5px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: esLiderPalancas ? '#eef0ff' : '#f9fafb', borderColor: esLiderPalancas ? '#c7d0ff' : '#e5e7eb', opacity: guardandoId ? 0.5 : 1 }}>
                           <Shield size={15} color={esLiderPalancas ? '#0f1787' : '#d1d5db'} />
                         </button>
                       </div>
@@ -388,13 +469,7 @@ export default function ConfigPage() {
       )}
 
       {toast && (
-        <div style={{
-          position: 'fixed', bottom: 90, left: 20, right: 20, zIndex: 300,
-          background: toast.tipo === 'ok' ? '#0f1787' : '#dc2626',
-          color: '#fff', borderRadius: 14, padding: '14px 18px',
-          display: 'flex', alignItems: 'center', gap: 10,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.15)', animation: 'fadeUp 0.25s ease',
-        }}>
+        <div style={{ position: 'fixed', bottom: 90, left: 20, right: 20, zIndex: 300, background: toast.tipo === 'ok' ? '#0f1787' : '#dc2626', color: '#fff', borderRadius: 14, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', animation: 'fadeUp 0.25s ease' }}>
           {toast.tipo === 'ok' ? <Check size={16} color="#fff" /> : <AlertTriangle size={16} color="#fff" />}
           <span style={{ fontSize: 14, fontWeight: 500 }}>{toast.msg}</span>
         </div>
