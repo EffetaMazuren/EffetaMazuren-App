@@ -24,6 +24,9 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: 'magiclink',
     email,
+    options: {
+      redirectTo: 'https://effeta-mazuren-app.vercel.app',
+    },
   })
 
   if (error) {
