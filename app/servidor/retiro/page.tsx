@@ -89,23 +89,20 @@ function norm(s: string): string {
 }
 
 function tokensOf(s: string): string[] {
-  return norm(s).split(/\s+/).filter(t => t.length > 1)
+  return norm(s).split(/\s+/).filter(t => t.length > 2)
 }
 
+// IMPORTANTE: esta función debe coincidir exactamente con la de dashboard/retiro/page.tsx.
+// Requiere al menos 3 tokens compartidos (o 1er token + 2 más) para hacer match.
+// Esto evita que nombres incompletos como "Juan Pablo" (sin apellido) matcheen
+// con varias personas que comparten el mismo primer y segundo nombre.
 function nombreMatch(a: string, b: string): boolean {
   const nA = norm(a), nB = norm(b)
   if (nA === nB) return true
-  if (nA.includes(nB) || nB.includes(nA)) return true
-  const tA = tokensOf(a)
-  const tB = tokensOf(b)
-  if (tA.length < 2 || tB.length < 2) return false
-  if (tA[0] !== tB[0]) return false
-  const segundoCompartido = tA.length > 2 && tB.length > 2 && tA[1] === tB[1]
-  const desdeA = segundoCompartido ? 2 : 1
-  const desdeB = segundoCompartido ? 2 : 1
-  const apellidosA = tA.slice(desdeA)
-  const apellidosB = tB.slice(desdeB)
-  return apellidosA.filter(ap => apellidosB.includes(ap)).length >= 1
+  const tA = tokensOf(a), tB = tokensOf(b)
+  if (tA.filter(t => tB.includes(t)).length >= 3) return true
+  if (tA.length >= 3 && tB.length >= 3 && tB.includes(tA[0]) && tA.slice(1).filter(t => tB.includes(t)).length >= 2) return true
+  return false
 }
 
 function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
