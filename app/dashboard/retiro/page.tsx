@@ -24,12 +24,31 @@ function nombreMatch(a: string, b: string): boolean {
   return false
 }
 
+function loadJsPDF(): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const w = window as any
+    if (w.jspdf?.jsPDF) { resolve(w.jspdf.jsPDF); return }
+    const existing = document.getElementById('jspdf-cdn-script') as HTMLScriptElement | null
+    if (existing) {
+      existing.addEventListener('load', () => resolve(w.jspdf.jsPDF))
+      existing.addEventListener('error', () => reject(new Error('No se pudo cargar jsPDF')))
+      return
+    }
+    const script = document.createElement('script')
+    script.id = 'jspdf-cdn-script'
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+    script.onload = () => resolve(w.jspdf.jsPDF)
+    script.onerror = () => reject(new Error('No se pudo cargar jsPDF'))
+    document.body.appendChild(script)
+  })
+}
+
 type Tab = 'minutominuto' | 'roles' | 'mesas' | 'caminantes' | 'cuartos' | 'manual'
 type Dia = 'viernes' | 'sabado' | 'domingo'
 
 interface RolRetiro { id: string; categoria: string; rol: string; encargados: string[]; orden: number }
 interface Mesa { id: string; numero: number; adulto: string; lider: string; colider: string }
-interface Caminante { id: string; nombre: string; celular: string; edad: number | null }
+interface Caminante { id: string; nombre: string; celular: string; edad: number | null; es_dificil?: boolean; motivo_dificil?: string | null }
 interface Asignacion { id: string; caminante_id: string; mesa_id: string; mesa_numero: number; confirmado_por_lider: boolean; caminante: Caminante }
 interface Seguimiento { id?: string; asignacion_mesa_id: string; llamado: boolean; contesto: boolean }
 interface Habitacion { id: string; numero: string; piso: number; bloque: string; tipo_cama: string; capacidad: number; solo_servidores: boolean }
@@ -195,6 +214,8 @@ export default function RetiroDashboard() {
   const [editMesa, setEditMesa] = useState({adulto:'',lider:'',colider:''})
   const [guardandoMesa, setGuardandoMesa] = useState(false)
   const [exitoMesa, setExitoMesa] = useState('')
+  const [generandoPDF, setGenerandoPDF] = useState(false)
+  const [errorPDF, setErrorPDF] = useState('')
 
   // Caminantes
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>([])
@@ -212,6 +233,10 @@ export default function RetiroDashboard() {
   const [agregandoACam, setAgregandoACam] = useState<string|null>(null)
   const [camSel, setCamSel] = useState('')
   const [seguimientos, setSeguimientos] = useState<Record<string,Seguimiento>>({})
+  const [dificilEditId, setDificilEditId] = useState<string|null>(null)
+  const [motivoDificil, setMotivoDificil] = useState('')
+  const [guardandoDificil, setGuardandoDificil] = useState(false)
+  const [verCasosDificiles, setVerCasosDificiles] = useState(false)
 
   // Cuartos
   const [habitaciones, setHabitaciones] = useState<Habitacion[]>([])
@@ -287,7 +312,7 @@ export default function RetiroDashboard() {
     setLoadingCam(true)
     const { data: md } = await supabase.from('mesas').select('id,numero,adulto,lider,colider').eq('retiro_id',RETIRO_ID).order('numero')
     setMesasDisponibles(md??[])
-    const { data: ad } = await supabase.from('asignaciones_mesa').select('id,caminante_id,mesa_id,mesa_numero,confirmado_por_lider,caminantes(id,nombre,celular,edad)').order('mesa_numero')
+    const { data: ad } = await supabase.from('asignaciones_mesa').select('id,caminante_id,mesa_id,mesa_numero,confirmado_por_lider,caminantes(id,nombre,celular,edad,es_dificil,motivo_dificil)').order('mesa_numero')
     const asigs: Asignacion[] = (ad??[]).map((a:any)=>({id:a.id,caminante_id:a.caminante_id,mesa_id:a.mesa_id,mesa_numero:a.mesa_numero,confirmado_por_lider:a.confirmado_por_lider,caminante:a.caminantes})).filter((a:Asignacion)=>a.caminante)
     setAsignaciones(asigs)
     if (asigs.length>0) {
@@ -298,7 +323,7 @@ export default function RetiroDashboard() {
     const ids = [...new Set((pd??[]).map((p:any)=>p.persona_id))]
     const asigIds = new Set(asigs.map(a=>a.caminante_id))
     if (ids.length>0) {
-      const { data: cd } = await supabase.from('caminantes').select('id,nombre,celular,edad').in('id',ids).eq('retiro_id',RETIRO_ID).order('edad')
+      const { data: cd } = await supabase.from('caminantes').select('id,nombre,celular,edad,es_dificil,motivo_dificil').in('id',ids).eq('retiro_id',RETIRO_ID).order('edad')
       const todos: Caminante[] = cd??[]
       setSinAsignar(todos.filter(c=>!asigIds.has(c.id))); setCaminantesSinMesa(todos.filter(c=>!asigIds.has(c.id)))
     } else { setSinAsignar([]); setCaminantesSinMesa([]) }
@@ -398,6 +423,27 @@ export default function RetiroDashboard() {
     await supabase.from('asignaciones_mesa').insert({caminante_id:camId,mesa_id:mesaId,mesa_numero:mesaNum,sugerido_por_sistema:false,confirmado_por_lider:true})
     setAgregandoACam(null); setCamSel(''); await cargarCaminantes(); await syncMesas(); setGuardandoCam(false)
   }
+  const iniciarEdicionDificil = (cam: Caminante | undefined | null) => {
+    if (!cam) return
+    setDificilEditId(cam.id)
+    setMotivoDificil(cam.motivo_dificil ?? '')
+  }
+  const guardarDificil = async (camId: string) => {
+    setGuardandoDificil(true)
+    const motivo = motivoDificil.trim()
+    await supabase.from('caminantes').update({ es_dificil: true, motivo_dificil: motivo || null }).eq('id', camId)
+    setDificilEditId(null); setMotivoDificil('')
+    await cargarCaminantes()
+    setGuardandoDificil(false)
+  }
+  const quitarDificil = async (camId: string) => {
+    setGuardandoDificil(true)
+    await supabase.from('caminantes').update({ es_dificil: false, motivo_dificil: null }).eq('id', camId)
+    setDificilEditId(null); setMotivoDificil('')
+    await cargarCaminantes()
+    setGuardandoDificil(false)
+  }
+
   const iniciarEdicion = (r:RolRetiro) => { setEditandoId(r.id); setEditRol(r.rol); setEditEncargados(r.encargados.join(', ')) }
   const guardarEdicion = async (id:string) => {
     setGuardando(true)
@@ -422,6 +468,140 @@ export default function RetiroDashboard() {
     setGuardandoMesa(false)
   }
 
+  const descargarPDFMesas = async () => {
+    setGenerandoPDF(true)
+    setErrorPDF('')
+    try {
+      const jsPDFCtor = await loadJsPDF()
+
+      const { data: amData } = await supabase
+        .from('asignaciones_mesa')
+        .select('mesa_id,caminantes(id,nombre)')
+        .eq('confirmado_por_lider', true)
+
+      const { data: ahData } = await supabase
+        .from('asignaciones_habitacion')
+        .select('habitacion_id,persona_id,tipo_persona,nombre')
+        .eq('retiro_id', RETIRO_ID)
+
+      const { data: hData } = await supabase
+        .from('habitaciones')
+        .select('id,numero,bloque')
+        .eq('retiro_id', RETIRO_ID)
+
+      const habMap: Record<string,{numero:string;bloque:string}> = {}
+      ;(hData ?? []).forEach((h: any) => { habMap[h.id] = { numero: String(h.numero), bloque: h.bloque } })
+
+      const habPorCaminante: Record<string,{numero:string;bloque:string}> = {}
+      const servidoresConHab: {nombre:string;numero:string;bloque:string}[] = []
+      ;(ahData ?? []).forEach((a: any) => {
+        const h = habMap[a.habitacion_id]
+        if (!h) return
+        if (a.tipo_persona === 'caminante') habPorCaminante[a.persona_id] = h
+        else servidoresConHab.push({ nombre: a.nombre, ...h })
+      })
+
+      const buscarHabServidor = (nombre: string) => {
+        if (!nombre?.trim()) return null
+        const m = servidoresConHab.find(s => nombreMatch(nombre, s.nombre))
+        return m ? { numero: m.numero, bloque: m.bloque } : null
+      }
+
+      const camsPorMesa: Record<string, { nombre: string; habitacion: string }[]> = {}
+      ;(amData ?? []).forEach((a: any) => {
+        if (!a.caminantes) return
+        const h = habPorCaminante[a.caminantes.id]
+        if (!camsPorMesa[a.mesa_id]) camsPorMesa[a.mesa_id] = []
+        camsPorMesa[a.mesa_id].push({ nombre: a.caminantes.nombre, habitacion: h ? `Hab. ${h.numero} (${h.bloque})` : 'Sin cuarto asignado' })
+      })
+
+      const doc = new jsPDFCtor({ unit: 'pt', format: 'letter' })
+      const navy: [number, number, number] = [15, 23, 135]
+
+      mesas.forEach((mesa, idx) => {
+        if (idx > 0) doc.addPage()
+        let y = 50
+
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        doc.setTextColor(107, 114, 128)
+        doc.text('EFFETÁ MAZUREN — IX RETIRO · 3-5 JULIO 2026', 40, y)
+        y += 30
+
+        doc.setFontSize(22)
+        doc.setTextColor(navy[0], navy[1], navy[2])
+        doc.text(`Mesa ${mesa.numero}`, 40, y)
+        y += 20
+
+        doc.setDrawColor(232, 234, 240)
+        doc.line(40, y, 570, y)
+        y += 28
+
+        doc.setFontSize(10)
+        doc.setTextColor(107, 114, 128)
+        doc.setFont('helvetica', 'bold')
+        doc.text('LÍDERES', 40, y)
+        y += 20
+
+        const filaLider = (label: string, nombre: string) => {
+          if (!nombre?.trim()) return
+          const hab = buscarHabServidor(nombre)
+          doc.setFontSize(12)
+          doc.setTextColor(17, 24, 39)
+          doc.setFont('helvetica', 'bold')
+          doc.text(`${label}:`, 40, y)
+          doc.setFont('helvetica', 'normal')
+          doc.text(nombre, 115, y)
+          doc.setFontSize(10)
+          doc.setTextColor(107, 114, 128)
+          doc.text(hab ? `Hab. ${hab.numero} (${hab.bloque})` : 'Sin cuarto asignado', 380, y)
+          y += 22
+        }
+        filaLider('Adulto', mesa.adulto)
+        filaLider('Líder', mesa.lider)
+        filaLider('Co-líder', mesa.colider)
+
+        y += 12
+        doc.setDrawColor(232, 234, 240)
+        doc.line(40, y, 570, y)
+        y += 28
+
+        const cams = camsPorMesa[mesa.id] ?? []
+        doc.setFontSize(10)
+        doc.setTextColor(107, 114, 128)
+        doc.setFont('helvetica', 'bold')
+        doc.text(`CAMINANTES (${cams.length})`, 40, y)
+        y += 22
+
+        if (cams.length === 0) {
+          doc.setFontSize(12)
+          doc.setTextColor(156, 163, 175)
+          doc.setFont('helvetica', 'italic')
+          doc.text('Sin caminantes confirmados', 40, y)
+        } else {
+          cams.forEach((c, i) => {
+            if (y > 730) { doc.addPage(); y = 50 }
+            doc.setFontSize(12)
+            doc.setTextColor(17, 24, 39)
+            doc.setFont('helvetica', 'normal')
+            doc.text(`${i + 1}. ${c.nombre}`, 40, y)
+            doc.setFontSize(10)
+            doc.setTextColor(107, 114, 128)
+            doc.text(c.habitacion, 380, y)
+            y += 20
+          })
+        }
+      })
+
+      doc.save(`Mesas_IX_Retiro_Effeta_${new Date().toISOString().slice(0,10)}.pdf`)
+    } catch (e) {
+      console.error(e)
+      setErrorPDF('No se pudo generar el PDF. Intenta de nuevo.')
+    } finally {
+      setGenerandoPDF(false)
+    }
+  }
+
   // Derivados
   const bL=busqueda.toLowerCase()
   const resBus=busqueda.length>1?roles.filter(r=>r.encargados.some(e=>e.toLowerCase().includes(bL))):[]
@@ -434,6 +614,10 @@ export default function RetiroDashboard() {
   const asigFilt=busquedaCam.length>1?asignaciones.filter(a=>a.caminante?.nombre?.toLowerCase().includes(bCL)):asignaciones
   const aPM: Record<number,Asignacion[]>={}
   asigFilt.forEach(a=>{if(!aPM[a.mesa_numero])aPM[a.mesa_numero]=[];aPM[a.mesa_numero].push(a)})
+  const casosDificiles = [
+    ...asignaciones.filter(a=>a.caminante?.es_dificil).map(a=>({id:a.caminante.id,nombre:a.caminante.nombre,celular:a.caminante.celular,motivo:a.caminante.motivo_dificil,mesa:a.mesa_numero as number|null})),
+    ...sinAsignar.filter(c=>c.es_dificil).map(c=>({id:c.id,nombre:c.nombre,celular:c.celular,motivo:c.motivo_dificil,mesa:null as number|null})),
+  ]
   const bCuL=busquedaCuartos.toLowerCase()
   const habFilt=habitaciones.filter(h=>{
     if(filtroPiso!==null&&h.piso!==filtroPiso) return false
@@ -700,6 +884,12 @@ export default function RetiroDashboard() {
       {tab==='mesas'&&(
         <div>
           {exitoMesa&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ Mesa actualizada correctamente</div>}
+          {errorPDF&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#dc2626'}}>{errorPDF}</div>}
+          {!loadingMesas && mesas.length>0 && (
+            <button onClick={descargarPDFMesas} disabled={generandoPDF} style={{width:'100%',padding:'12px',background:generandoPDF?'#9ca3af':'#0f1787',color:'white',border:'none',borderRadius:12,fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              {generandoPDF?'Generando PDF...':'📄 Descargar PDF por mesa (líderes, caminantes y cuartos)'}
+            </button>
+          )}
           {loadingMesas?<Spinner/>:(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               {mesas.map(mesa=>(
@@ -746,6 +936,27 @@ export default function RetiroDashboard() {
           {exitoCam&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ {exitoCam}</div>}
           {loadingCam?<Spinner/>:(
             <>
+              {casosDificiles.length>0&&(
+                <div style={{background:'#fef2f2',border:'1.5px solid #fecaca',borderRadius:12,padding:'14px',marginBottom:16}}>
+                  <button onClick={()=>setVerCasosDificiles(v=>!v)} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'none',border:'none',cursor:'pointer',padding:0}}>
+                    <span style={{fontSize:12,fontWeight:700,color:'#991b1b',textTransform:'uppercase',letterSpacing:.5}}>⚠️ Casos difíciles ({casosDificiles.length})</span>
+                    <span style={{fontSize:12,color:'#991b1b'}}>{verCasosDificiles?'▲':'▼'}</span>
+                  </button>
+                  {verCasosDificiles&&(
+                    <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:12}}>
+                      {casosDificiles.map(c=>(
+                        <div key={c.id} style={{background:'white',borderRadius:8,padding:'10px 12px',border:'1px solid #fecaca'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
+                            <span style={{fontSize:13,fontWeight:600,color:'#111827'}}>{c.nombre}</span>
+                            {c.mesa!=null&&<span style={{fontSize:10,background:'#fef3c7',color:'#92400e',padding:'1px 7px',borderRadius:20,fontWeight:600,flexShrink:0}}>Mesa {c.mesa}</span>}
+                          </div>
+                          {c.motivo&&<p style={{fontSize:12,color:'#7f1d1d',margin:0,lineHeight:1.5}}>{c.motivo}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{display:'flex',gap:8,marginBottom:16}}>
                 <button onClick={generarSugerencia} disabled={generando||guardandoCam} style={{flex:1,padding:'10px',background:generando?'#9ca3af':'#0f1787',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer'}}>{generando?'Generando...':asignaciones.length>0?'Regenerar sugerencia':'Generar sugerencia automática'}</button>
                 {asignaciones.some(a=>!a.confirmado_por_lider)&&<button onClick={confirmarTodas} disabled={guardandoCam} style={{padding:'10px 14px',background:'#16a34a',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer'}}>Confirmar todas</button>}
@@ -753,7 +964,29 @@ export default function RetiroDashboard() {
               </div>
               {asignaciones.length>0&&<div style={{display:'flex',gap:8,marginBottom:16}}>{[{l:'Asignados',v:asignaciones.length,c:'#0f1787'},{l:'Sin asignar',v:sinAsignar.length,c:'#d97706'},{l:'Confirmados',v:asignaciones.filter(a=>a.confirmado_por_lider).length,c:'#16a34a'}].map(s=><div key={s.l} style={{flex:1,background:'white',border:'0.5px solid #e8eaf0',borderRadius:10,padding:'10px 14px',textAlign:'center'}}><div style={{fontSize:20,fontWeight:700,color:s.c}}>{s.v}</div><div style={{fontSize:11,color:'#6b7280'}}>{s.l}</div></div>)}</div>}
               {asignaciones.length>0&&<div style={{position:'relative',marginBottom:16}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)'}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" placeholder="Buscar caminante..." value={busquedaCam} onChange={e=>setBusquedaCam(e.target.value)} style={{width:'100%',padding:'10px 12px 10px 36px',border:'1.5px solid #e8eaf0',borderRadius:10,fontSize:13,outline:'none',boxSizing:'border-box',background:'white',fontFamily:'inherit'}}/>{busquedaCam&&<button onClick={()=>setBusquedaCam('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:16}}>✕</button>}</div>}
-              {sinAsignar.length>0&&<div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'12px 14px',marginBottom:16}}><p style={{fontSize:12,fontWeight:700,color:'#92400e',margin:'0 0 8px',textTransform:'uppercase',letterSpacing:.5}}>{sinAsignar.length} sin mesa</p><div style={{display:'flex',flexDirection:'column',gap:4}}>{sinAsignar.map(c=><div key={c.id} style={{fontSize:12,color:'#78350f'}}>{c.nombre}{c.edad?` · ${c.edad} años`:''}</div>)}</div></div>}
+              {sinAsignar.length>0&&<div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
+                <p style={{fontSize:12,fontWeight:700,color:'#92400e',margin:'0 0 8px',textTransform:'uppercase',letterSpacing:.5}}>{sinAsignar.length} sin mesa</p>
+                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  {sinAsignar.map(c=>(
+                    <div key={c.id}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                        <span style={{fontSize:12,color:'#78350f'}}>{c.nombre}{c.edad?` · ${c.edad} años`:''}{c.es_dificil&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:20,background:'#fecaca',color:'#991b1b'}}>DIFÍCIL</span>}</span>
+                        {dificilEditId!==c.id&&<button onClick={()=>iniciarEdicionDificil(c)} style={{fontSize:10,padding:'2px 8px',background:c.es_dificil?'#fef2f2':'#f3f4f6',color:c.es_dificil?'#dc2626':'#6b7280',border:'none',borderRadius:20,cursor:'pointer',fontWeight:600,flexShrink:0}}>{c.es_dificil?'Editar':'⚠️ Marcar difícil'}</button>}
+                      </div>
+                      {dificilEditId===c.id&&(
+                        <div style={{marginTop:6,padding:'8px',background:'white',borderRadius:8,border:'1px solid #fde68a'}}>
+                          <textarea value={motivoDificil} onChange={e=>setMotivoDificil(e.target.value)} rows={2} placeholder="Describe por qué es un caso difícil..." style={{width:'100%',padding:'6px 8px',border:'1.5px solid #e8eaf0',borderRadius:6,fontSize:12,outline:'none',boxSizing:'border-box',fontFamily:'inherit',resize:'vertical'}}/>
+                          <div style={{display:'flex',gap:6,marginTop:6}}>
+                            <button onClick={()=>guardarDificil(c.id)} disabled={guardandoDificil} style={{flex:1,padding:'6px',background:guardandoDificil?'#9ca3af':'#dc2626',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer'}}>{guardandoDificil?'Guardando...':'Guardar'}</button>
+                            {c.es_dificil&&<button onClick={()=>quitarDificil(c.id)} disabled={guardandoDificil} style={{padding:'6px 10px',background:'#f3f4f6',color:'#374151',border:'none',borderRadius:6,fontSize:11,cursor:'pointer'}}>Quitar</button>}
+                            <button onClick={()=>{setDificilEditId(null);setMotivoDificil('')}} style={{padding:'6px 10px',background:'#f3f4f6',color:'#374151',border:'none',borderRadius:6,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>}
               {asignaciones.length===0&&<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,padding:'40px 24px',textAlign:'center'}}><p style={{fontSize:15,fontWeight:600,color:'#111827',margin:'0 0 6px'}}>No hay asignaciones aún</p><p style={{fontSize:13,color:'#6b7280',margin:0}}>Haz clic en "Generar sugerencia automática".</p></div>}
               {asignaciones.length>0&&(
                 <div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -777,9 +1010,24 @@ export default function RetiroDashboard() {
                                 {cams.map(asig=>(
                                   <div key={asig.id} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'10px',background:asig.confirmado_por_lider?'#f0fdf4':'#fffbeb',borderRadius:8}}>
                                     <div style={{flex:1}}>
-                                      <div style={{fontSize:13,fontWeight:600,color:'#111827',marginBottom:2}}>{asig.caminante?.nombre}</div>
+                                      <div style={{fontSize:13,fontWeight:600,color:'#111827',marginBottom:2}}>{asig.caminante?.nombre}{asig.caminante?.es_dificil&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:20,background:'#fecaca',color:'#991b1b'}}>DIFÍCIL</span>}</div>
                                       <div style={{fontSize:11,color:'#6b7280',marginBottom:6}}>{asig.caminante?.celular}{asig.caminante?.edad?` · ${asig.caminante.edad} años`:''}</div>
-                                      <SeguimientoBadges asignacionId={asig.id} seguimientos={seguimientos} onToggle={toggleSeg}/>
+                                      <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                                        <SeguimientoBadges asignacionId={asig.id} seguimientos={seguimientos} onToggle={toggleSeg}/>
+                                        {dificilEditId!==asig.caminante?.id&&(
+                                          <button onClick={()=>iniciarEdicionDificil(asig.caminante)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontSize:10,fontWeight:600,background:asig.caminante?.es_dificil?'#fef2f2':'#f3f4f6',color:asig.caminante?.es_dificil?'#dc2626':'#6b7280'}}>{asig.caminante?.es_dificil?'Editar caso':'⚠️ Marcar difícil'}</button>
+                                        )}
+                                      </div>
+                                      {dificilEditId===asig.caminante?.id&&(
+                                        <div style={{marginTop:8,padding:'8px',background:'white',borderRadius:8,border:'1px solid #fecaca'}}>
+                                          <textarea value={motivoDificil} onChange={e=>setMotivoDificil(e.target.value)} rows={2} placeholder="Describe por qué es un caso difícil..." style={{width:'100%',padding:'6px 8px',border:'1.5px solid #e8eaf0',borderRadius:6,fontSize:12,outline:'none',boxSizing:'border-box',fontFamily:'inherit',resize:'vertical'}}/>
+                                          <div style={{display:'flex',gap:6,marginTop:6}}>
+                                            <button onClick={()=>guardarDificil(asig.caminante.id)} disabled={guardandoDificil} style={{flex:1,padding:'6px',background:guardandoDificil?'#9ca3af':'#dc2626',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer'}}>{guardandoDificil?'Guardando...':'Guardar'}</button>
+                                            {asig.caminante?.es_dificil&&<button onClick={()=>quitarDificil(asig.caminante.id)} disabled={guardandoDificil} style={{padding:'6px 10px',background:'#f3f4f6',color:'#374151',border:'none',borderRadius:6,fontSize:11,cursor:'pointer'}}>Quitar</button>}
+                                            <button onClick={()=>{setDificilEditId(null);setMotivoDificil('')}} style={{padding:'6px 10px',background:'#f3f4f6',color:'#374151',border:'none',borderRadius:6,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                     {editandoCamId===asig.id?(
                                       <div style={{display:'flex',gap:4,alignItems:'center'}}>
