@@ -151,24 +151,6 @@ const CATEGORIAS_COLOR: Record<string, { border: string; badge: string; text: st
   'Muro y Nudo':           { border: '#dc2626', badge: '#fef2f2', text: '#dc2626' },
 }
 
-function sugerirAsignacion(caminantes: Caminante[], mesas: Mesa[]) {
-  const mesasE = mesas.map(m => {
-    const ed = (t: string) => { const r = t.match(/(\d+)\s*años?/i)||t.match(/[-–]\s*(\d+)/); return r?parseInt(r[1]):null }
-    const eds = [ed(m.lider),ed(m.colider)].filter(Boolean) as number[]
-    return { ...m, edadP: eds.length>0 ? eds.reduce((a,b)=>a+b,0)/eds.length : 20 }
-  }).sort((a,b)=>a.edadP-b.edadP)
-  const cams = [...caminantes].sort((a,b)=>(a.edad??20)-(b.edad??20))
-  const res: {caminante_id:string;mesa_id:string;mesa_numero:number}[] = []
-  const cnt: Record<string,number> = {}
-  mesas.forEach(m=>{cnt[m.id]=0})
-  for (const c of cams) {
-    let best=mesasE[0],minD=Infinity
-    for (const m of mesasE) { if(cnt[m.id]>=CAMINANTES_POR_MESA) continue; const d=Math.abs((c.edad??20)-m.edadP); if(d<minD){minD=d;best=m} }
-    if(cnt[best.id]<CAMINANTES_POR_MESA){res.push({caminante_id:c.id,mesa_id:best.id,mesa_numero:best.numero});cnt[best.id]++}
-  }
-  return res
-}
-
 export default function RetiroDashboard() {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('minutominuto')
@@ -220,7 +202,6 @@ export default function RetiroDashboard() {
   // Caminantes
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>([])
   const [loadingCam, setLoadingCam] = useState(false)
-  const [generando, setGenerando] = useState(false)
   const [guardandoCam, setGuardandoCam] = useState(false)
   const [exitoCam, setExitoCam] = useState('')
   const [busquedaCam, setBusquedaCam] = useState('')
@@ -242,7 +223,6 @@ export default function RetiroDashboard() {
   const [habitaciones, setHabitaciones] = useState<Habitacion[]>([])
   const [asignacionesHab, setAsignacionesHab] = useState<AsignacionHabitacion[]>([])
   const [loadingCuartos, setLoadingCuartos] = useState(false)
-  const [generandoCuartos, setGenerandoCuartos] = useState(false)
   const [exitoCuartos, setExitoCuartos] = useState('')
   const [busquedaCuartos, setBusquedaCuartos] = useState('')
   const [filtroPiso, setFiltroPiso] = useState<number|null>(null)
@@ -365,46 +345,11 @@ export default function RetiroDashboard() {
     } catch(e){console.error(e)}
   }
 
-  const generarCuartosAleatorio = async () => {
-    setGenerandoCuartos(true)
-    try {
-      await supabase.from('asignaciones_habitacion').delete().eq('retiro_id',RETIRO_ID)
-      const { data: pd } = await supabase.from('pagos').select('persona_id').eq('retiro_id',RETIRO_ID).eq('tipo_persona','caminante').eq('estado','confirmado')
-      const idsCam=[...new Set((pd??[]).map((p:any)=>p.persona_id))]
-      let lc: {id:string;nombre:string}[] = []
-      if (idsCam.length>0) { const {data}=await supabase.from('caminantes').select('id,nombre').in('id',idsCam).eq('retiro_id',RETIRO_ID); lc=data??[] }
-      const {data:sd}=await supabase.from('servidores_inscripcion').select('id,nombre').eq('retiro_id',RETIRO_ID).eq('es_interno',true)
-      const ls: {id:string;nombre:string}[] = sd??[]
-      const sh=<T,>(a:T[]):T[]=>[...a].sort(()=>Math.random()-.5)
-      const {data:hd}=await supabase.from('habitaciones').select('*').eq('retiro_id',RETIRO_ID).order('piso').order('numero')
-      const hs:Habitacion[]=hd??[]; const p1=hs.filter(h=>h.piso===1); const p2=hs.filter(h=>h.piso>1)
-      const rows:any[]=[]; const cnt:Record<string,number>={}; hs.forEach(h=>{cnt[h.id]=0})
-      for (const s of sh(ls)) { const h=[...p1,...p2].find(h=>cnt[h.id]<h.capacidad); if(!h) break; rows.push({habitacion_id:h.id,persona_id:s.id,tipo_persona:'servidor',nombre:s.nombre,retiro_id:RETIRO_ID}); cnt[h.id]++ }
-      for (const c of sh(lc)) { const h=p2.find(h=>cnt[h.id]<h.capacidad); if(!h) break; rows.push({habitacion_id:h.id,persona_id:c.id,tipo_persona:'caminante',nombre:c.nombre,retiro_id:RETIRO_ID}); cnt[h.id]++ }
-      if (rows.length>0) await supabase.from('asignaciones_habitacion').insert(rows)
-      await cargarCuartos(); await syncHabitaciones()
-      setExitoCuartos('Cuartos asignados ✓'); setTimeout(()=>setExitoCuartos(''),3000)
-    } finally { setGenerandoCuartos(false) }
-  }
-
   const quitarDeHab = async (id:string) => { await supabase.from('asignaciones_habitacion').delete().eq('id',id); await cargarCuartos(); await syncHabitaciones() }
   const agregarAHab = async (habId:string) => {
     const p=sinCuarto.find(x=>x.id===personaSel); if(!p) return
     await supabase.from('asignaciones_habitacion').insert({habitacion_id:habId,persona_id:p.id,tipo_persona:p.tipo,nombre:p.nombre,retiro_id:RETIRO_ID})
     setAgregandoAHab(null); setPersonaSel(''); await cargarCuartos(); await syncHabitaciones()
-  }
-
-  const generarSugerencia = async () => {
-    setGenerando(true)
-    try {
-      const {data:pd}=await supabase.from('pagos').select('persona_id').eq('retiro_id',RETIRO_ID).eq('tipo_persona','caminante').eq('estado','confirmado')
-      const ids=[...new Set((pd??[]).map((p:any)=>p.persona_id))]; if(!ids.length){setGenerando(false);return}
-      const {data:cd}=await supabase.from('caminantes').select('id,nombre,celular,edad').in('id',ids).eq('retiro_id',RETIRO_ID)
-      const sug=sugerirAsignacion(cd??[],mesasDisponibles)
-      await supabase.from('asignaciones_mesa').delete().neq('id','00000000-0000-0000-0000-000000000000')
-      if (sug.length>0) await supabase.from('asignaciones_mesa').insert(sug.map(s=>({caminante_id:s.caminante_id,mesa_id:s.mesa_id,mesa_numero:s.mesa_numero,sugerido_por_sistema:true,confirmado_por_lider:false})))
-      await cargarCaminantes(); await syncMesas()
-    } finally { setGenerando(false) }
   }
 
   const confirmarTodas = async () => { setGuardandoCam(true); await supabase.from('asignaciones_mesa').update({confirmado_por_lider:true}).eq('confirmado_por_lider',false); await cargarCaminantes(); await syncMesas(); setExitoCam('Todas confirmadas'); setTimeout(()=>setExitoCam(''),2500); setGuardandoCam(false) }
@@ -957,11 +902,12 @@ export default function RetiroDashboard() {
                   )}
                 </div>
               )}
-              <div style={{display:'flex',gap:8,marginBottom:16}}>
-                <button onClick={generarSugerencia} disabled={generando||guardandoCam} style={{flex:1,padding:'10px',background:generando?'#9ca3af':'#0f1787',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer'}}>{generando?'Generando...':asignaciones.length>0?'Regenerar sugerencia':'Generar sugerencia automática'}</button>
-                {asignaciones.some(a=>!a.confirmado_por_lider)&&<button onClick={confirmarTodas} disabled={guardandoCam} style={{padding:'10px 14px',background:'#16a34a',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer'}}>Confirmar todas</button>}
-                {asignaciones.some(a=>a.confirmado_por_lider)&&<button onClick={desconfirmarTodas} disabled={guardandoCam} style={{padding:'10px 14px',background:'#f3f4f6',color:'#6b7280',border:'1.5px solid #e8eaf0',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer'}}>Desconfirmar</button>}
-              </div>
+              {(asignaciones.some(a=>!a.confirmado_por_lider)||asignaciones.some(a=>a.confirmado_por_lider))&&(
+                <div style={{display:'flex',gap:8,marginBottom:16}}>
+                  {asignaciones.some(a=>!a.confirmado_por_lider)&&<button onClick={confirmarTodas} disabled={guardandoCam} style={{flex:1,padding:'10px 14px',background:'#16a34a',color:'white',border:'none',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer'}}>Confirmar todas</button>}
+                  {asignaciones.some(a=>a.confirmado_por_lider)&&<button onClick={desconfirmarTodas} disabled={guardandoCam} style={{flex:1,padding:'10px 14px',background:'#f3f4f6',color:'#6b7280',border:'1.5px solid #e8eaf0',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer'}}>Desconfirmar</button>}
+                </div>
+              )}
               {asignaciones.length>0&&<div style={{display:'flex',gap:8,marginBottom:16}}>{[{l:'Asignados',v:asignaciones.length,c:'#0f1787'},{l:'Sin asignar',v:sinAsignar.length,c:'#d97706'},{l:'Confirmados',v:asignaciones.filter(a=>a.confirmado_por_lider).length,c:'#16a34a'}].map(s=><div key={s.l} style={{flex:1,background:'white',border:'0.5px solid #e8eaf0',borderRadius:10,padding:'10px 14px',textAlign:'center'}}><div style={{fontSize:20,fontWeight:700,color:s.c}}>{s.v}</div><div style={{fontSize:11,color:'#6b7280'}}>{s.l}</div></div>)}</div>}
               {asignaciones.length>0&&<div style={{position:'relative',marginBottom:16}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)'}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" placeholder="Buscar caminante..." value={busquedaCam} onChange={e=>setBusquedaCam(e.target.value)} style={{width:'100%',padding:'10px 12px 10px 36px',border:'1.5px solid #e8eaf0',borderRadius:10,fontSize:13,outline:'none',boxSizing:'border-box',background:'white',fontFamily:'inherit'}}/>{busquedaCam&&<button onClick={()=>setBusquedaCam('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:16}}>✕</button>}</div>}
               {sinAsignar.length>0&&<div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'12px 14px',marginBottom:16}}>
@@ -987,7 +933,7 @@ export default function RetiroDashboard() {
                   ))}
                 </div>
               </div>}
-              {asignaciones.length===0&&<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,padding:'40px 24px',textAlign:'center'}}><p style={{fontSize:15,fontWeight:600,color:'#111827',margin:'0 0 6px'}}>No hay asignaciones aún</p><p style={{fontSize:13,color:'#6b7280',margin:0}}>Haz clic en "Generar sugerencia automática".</p></div>}
+              {asignaciones.length===0&&<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,padding:'40px 24px',textAlign:'center'}}><p style={{fontSize:15,fontWeight:600,color:'#111827',margin:'0 0 6px'}}>No hay asignaciones aún</p><p style={{fontSize:13,color:'#6b7280',margin:0}}>Agrega caminantes a las mesas manualmente desde abajo.</p></div>}
               {asignaciones.length>0&&(
                 <div style={{display:'flex',flexDirection:'column',gap:10}}>
                   {mesasDisponibles.map(mesa=>{
@@ -1072,7 +1018,6 @@ export default function RetiroDashboard() {
           {exitoCuartos&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ {exitoCuartos}</div>}
           {loadingCuartos?<Spinner/>:(
             <>
-              <button onClick={generarCuartosAleatorio} disabled={generandoCuartos} style={{width:'100%',padding:'12px',background:generandoCuartos?'#9ca3af':'#0f1787',color:'white',border:'none',borderRadius:12,fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:14}}>{generandoCuartos?'Asignando...':totAsig>0?'🔀 Reasignar cuartos al azar':'🔀 Asignar cuartos al azar'}</button>
               <div style={{display:'flex',gap:8,marginBottom:16}}>{[{l:'Total asig.',v:totAsig,c:'#0f1787'},{l:'Servidores',v:totSrv,c:'#1e40af'},{l:'Caminantes',v:totCam,c:'#16a34a'},{l:'Sin cuarto',v:sinCuarto.length,c:'#dc2626'}].map(s=><div key={s.l} style={{flex:1,background:'white',border:'0.5px solid #e8eaf0',borderRadius:10,padding:'8px 6px',textAlign:'center'}}><div style={{fontSize:18,fontWeight:700,color:s.c}}>{s.v}</div><div style={{fontSize:10,color:'#6b7280'}}>{s.l}</div></div>)}</div>
               {sinCuarto.length>0&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:10,padding:'12px 14px',marginBottom:14}}><p style={{fontSize:12,fontWeight:700,color:'#991b1b',margin:'0 0 6px',textTransform:'uppercase',letterSpacing:.5}}>{sinCuarto.length} sin cuarto</p><div style={{display:'flex',flexDirection:'column',gap:3}}>{sinCuarto.slice(0,6).map(p=><div key={p.id} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#7f1d1d'}}><span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:20,background:p.tipo==='servidor'?'#cfe2ff':'#f0fdf4',color:p.tipo==='servidor'?'#1e40af':'#166534'}}>{p.tipo==='servidor'?'SRV':'CAM'}</span>{p.nombre}</div>)}{sinCuarto.length>6&&<span style={{fontSize:11,color:'#9ca3af',marginTop:2}}>...y {sinCuarto.length-6} más</span>}</div></div>}
               <div style={{position:'relative',marginBottom:10}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)'}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" placeholder="Buscar habitación, bloque o persona..." value={busquedaCuartos} onChange={e=>setBusquedaCuartos(e.target.value)} style={{width:'100%',padding:'10px 12px 10px 36px',border:'1.5px solid #e8eaf0',borderRadius:10,fontSize:13,outline:'none',boxSizing:'border-box',background:'white',fontFamily:'inherit'}}/>{busquedaCuartos&&<button onClick={()=>setBusquedaCuartos('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:16}}>✕</button>}</div>
