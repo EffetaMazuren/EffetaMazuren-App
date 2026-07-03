@@ -43,7 +43,7 @@ function loadJsPDF(): Promise<any> {
   })
 }
 
-type Tab = 'minutominuto' | 'roles' | 'mesas' | 'caminantes' | 'cuartos' | 'manual'
+type Tab = 'minutominuto' | 'roles' | 'mesas' | 'caminantes' | 'cuartos' | 'tabla' | 'manual'
 type Dia = 'viernes' | 'sabado' | 'domingo'
 
 interface RolRetiro { id: string; categoria: string; rol: string; encargados: string[]; orden: number }
@@ -54,6 +54,7 @@ interface Seguimiento { id?: string; asignacion_mesa_id: string; llamado: boolea
 interface Habitacion { id: string; numero: string; piso: number; bloque: string; tipo_cama: string; capacidad: number; solo_servidores: boolean }
 interface AsignacionHabitacion { id: string; habitacion_id: string; persona_id: string; tipo_persona: 'caminante' | 'servidor'; nombre: string }
 interface ServidorPalancas { id: string; nombre: string; palancas_lider: boolean }
+interface FilaTabla { caminanteId: string; nombre: string; celular: string; edad: number | null; asigMesaId: string | null; mesaId: string | null; mesaNumero: number | null; asigHabId: string | null; habId: string | null; habNumero: string | null; habBloque: string | null }
 
 interface ItemMM { id?: string; hora: string; actividad: string; encargado: string; detalle?: string; tipo?: 'charla'|'actividad'|'comida'|'logistica'|'espiritual'; orden_item: number }
 interface BloqueMM { titulo: string; camiseta?: string; orden_bloque: number; items: ItemMM[] }
@@ -232,12 +233,22 @@ export default function RetiroDashboard() {
   const [agregandoAHab, setAgregandoAHab] = useState<string|null>(null)
   const [personaSel, setPersonaSel] = useState('')
 
+  // Tabla editable
+  const [filasTabla, setFilasTabla] = useState<FilaTabla[]>([])
+  const [mesasTabla, setMesasTabla] = useState<Mesa[]>([])
+  const [habitacionesTabla, setHabitacionesTabla] = useState<Habitacion[]>([])
+  const [loadingTabla, setLoadingTabla] = useState(false)
+  const [busquedaTabla, setBusquedaTabla] = useState('')
+  const [guardandoFilaId, setGuardandoFilaId] = useState<string|null>(null)
+  const [exitoTabla, setExitoTabla] = useState('')
+
   useEffect(() => {
     if (tab==='minutominuto') cargarMM()
     if (tab==='roles') { cargarRoles(); cargarPalancas() }
     if (tab==='mesas') cargarMesas()
     if (tab==='caminantes') cargarCaminantes()
     if (tab==='cuartos') cargarCuartos()
+    if (tab==='tabla') cargarTabla()
   }, [tab])
 
   const cargarMM = async () => {
@@ -344,6 +355,64 @@ export default function RetiroDashboard() {
       await fetch(APPS_SCRIPT_MESAS,{method:'POST',body:JSON.stringify({tipo:'actualizar_mesas',mesas:Object.values(pm)})})
     } catch(e){console.error(e)}
   }
+
+  const cargarTabla = useCallback(async () => {
+    setLoadingTabla(true)
+    const { data: md } = await supabase.from('mesas').select('id,numero,adulto,lider,colider').eq('retiro_id',RETIRO_ID).order('numero')
+    setMesasTabla(md??[])
+    const { data: hd } = await supabase.from('habitaciones').select('*').eq('retiro_id',RETIRO_ID).eq('solo_servidores',false).order('piso').order('numero')
+    setHabitacionesTabla(hd??[])
+    const { data: pd } = await supabase.from('pagos').select('persona_id').eq('retiro_id',RETIRO_ID).eq('tipo_persona','caminante').eq('estado','confirmado')
+    const ids = [...new Set((pd??[]).map((p:any)=>p.persona_id))]
+    let caminantes: Caminante[] = []
+    if (ids.length>0) { const { data: cd } = await supabase.from('caminantes').select('id,nombre,celular,edad').in('id',ids).eq('retiro_id',RETIRO_ID).order('nombre'); caminantes = cd??[] }
+    const { data: amd } = await supabase.from('asignaciones_mesa').select('id,caminante_id,mesa_id,mesa_numero')
+    const mesaPorCam: Record<string,{asigId:string;mesaId:string;mesaNumero:number}> = {}
+    ;(amd??[]).forEach((a:any)=>{ mesaPorCam[a.caminante_id]={asigId:a.id,mesaId:a.mesa_id,mesaNumero:a.mesa_numero} })
+    const { data: ahd } = await supabase.from('asignaciones_habitacion').select('id,habitacion_id,persona_id').eq('retiro_id',RETIRO_ID).eq('tipo_persona','caminante')
+    const habMapNum: Record<string,{numero:string;bloque:string}> = {}
+    ;(hd??[]).forEach((h:Habitacion)=>{ habMapNum[h.id]={numero:h.numero,bloque:h.bloque} })
+    const habPorCam: Record<string,{asigId:string;habId:string;numero:string;bloque:string}> = {}
+    ;(ahd??[]).forEach((a:any)=>{ const h=habMapNum[a.habitacion_id]; habPorCam[a.persona_id]={asigId:a.id,habId:a.habitacion_id,numero:h?.numero??'?',bloque:h?.bloque??''} })
+    const filas: FilaTabla[] = caminantes.map(c=>{
+      const m=mesaPorCam[c.id], h=habPorCam[c.id]
+      return { caminanteId:c.id, nombre:c.nombre, celular:c.celular, edad:c.edad, asigMesaId:m?.asigId??null, mesaId:m?.mesaId??null, mesaNumero:m?.mesaNumero??null, asigHabId:h?.asigId??null, habId:h?.habId??null, habNumero:h?.numero??null, habBloque:h?.bloque??null }
+    })
+    setFilasTabla(filas)
+    setLoadingTabla(false)
+  }, [])
+
+  const cambiarMesaTabla = async (fila: FilaTabla, nuevaMesaId: string) => {
+    setGuardandoFilaId(fila.caminanteId)
+    if (!nuevaMesaId) {
+      if (fila.asigMesaId) await supabase.from('asignaciones_mesa').delete().eq('id', fila.asigMesaId)
+    } else {
+      const mesa = mesasTabla.find(m=>m.id===nuevaMesaId)
+      if (mesa) {
+        if (fila.asigMesaId) await supabase.from('asignaciones_mesa').update({ mesa_id: mesa.id, mesa_numero: mesa.numero, confirmado_por_lider: true }).eq('id', fila.asigMesaId)
+        else await supabase.from('asignaciones_mesa').insert({ caminante_id: fila.caminanteId, mesa_id: mesa.id, mesa_numero: mesa.numero, sugerido_por_sistema: false, confirmado_por_lider: true })
+      }
+    }
+    await cargarTabla()
+    await syncMesas()
+    setExitoTabla('Mesa actualizada'); setTimeout(()=>setExitoTabla(''),2000)
+    setGuardandoFilaId(null)
+  }
+
+  const cambiarHabTabla = async (fila: FilaTabla, nuevaHabId: string) => {
+    setGuardandoFilaId(fila.caminanteId)
+    if (!nuevaHabId) {
+      if (fila.asigHabId) await supabase.from('asignaciones_habitacion').delete().eq('id', fila.asigHabId)
+    } else {
+      if (fila.asigHabId) await supabase.from('asignaciones_habitacion').update({ habitacion_id: nuevaHabId }).eq('id', fila.asigHabId)
+      else await supabase.from('asignaciones_habitacion').insert({ habitacion_id: nuevaHabId, persona_id: fila.caminanteId, tipo_persona: 'caminante', nombre: fila.nombre, retiro_id: RETIRO_ID })
+    }
+    await cargarTabla()
+    await syncHabitaciones()
+    setExitoTabla('Cuarto actualizado'); setTimeout(()=>setExitoTabla(''),2000)
+    setGuardandoFilaId(null)
+  }
+
 
   const quitarDeHab = async (id:string) => { await supabase.from('asignaciones_habitacion').delete().eq('id',id); await cargarCuartos(); await syncHabitaciones() }
   const agregarAHab = async (habId:string) => {
@@ -575,8 +644,10 @@ export default function RetiroDashboard() {
   })
   const bloquesCuartos=[...new Set(habFilt.map(h=>h.bloque))]
   const totAsig=asignacionesHab.length, totSrv=asignacionesHab.filter(a=>a.tipo_persona==='servidor').length, totCam=asignacionesHab.filter(a=>a.tipo_persona==='caminante').length
+  const bTL=busquedaTabla.toLowerCase()
+  const filasFiltradas=busquedaTabla.length>1?filasTabla.filter(f=>f.nombre.toLowerCase().includes(bTL)):filasTabla
 
-  const tabs: {id:Tab;label:string}[] = [{id:'minutominuto',label:'Minuto a Minuto'},{id:'roles',label:'Roles'},{id:'mesas',label:'Mesas'},{id:'caminantes',label:'Caminantes'},{id:'cuartos',label:'Cuartos'},{id:'manual',label:'Manual'}]
+  const tabs: {id:Tab;label:string}[] = [{id:'minutominuto',label:'Minuto a Minuto'},{id:'roles',label:'Roles'},{id:'mesas',label:'Mesas'},{id:'caminantes',label:'Caminantes'},{id:'cuartos',label:'Cuartos'},{id:'tabla',label:'Tabla'},{id:'manual',label:'Manual'}]
   const dias: {id:Dia;label:string;fecha:string}[] = [{id:'viernes',label:'Viernes',fecha:'3 Jul'},{id:'sabado',label:'Sábado',fecha:'4 Jul'},{id:'domingo',label:'Domingo',fecha:'5 Jul'}]
 
   const Spinner = () => <div style={{display:'flex',justifyContent:'center',padding:40}}><div style={{width:28,height:28,border:'3px solid #e2e4f0',borderTopColor:'#0f1787',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>
@@ -1087,6 +1158,67 @@ export default function RetiroDashboard() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══ TABLA ══ */}
+      {tab==='tabla'&&(
+        <div>
+          {exitoTabla&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ {exitoTabla}</div>}
+          {loadingTabla?<Spinner/>:(
+            <>
+              <div style={{position:'relative',marginBottom:16}}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)'}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" placeholder="Buscar caminante..." value={busquedaTabla} onChange={e=>setBusquedaTabla(e.target.value)} style={{width:'100%',padding:'10px 12px 10px 36px',border:'1.5px solid #e8eaf0',borderRadius:10,fontSize:13,outline:'none',boxSizing:'border-box',background:'white',fontFamily:'inherit'}}/>
+                {busquedaTabla&&<button onClick={()=>setBusquedaTabla('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:16}}>✕</button>}
+              </div>
+              <p style={{fontSize:11,color:'#9ca3af',margin:'0 0 12px'}}>{filasFiltradas.length} caminante{filasFiltradas.length!==1?'s':''} · Los cambios se guardan automáticamente</p>
+              {filasTabla.length===0?(
+                <div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,padding:'40px 24px',textAlign:'center'}}>
+                  <p style={{fontSize:15,fontWeight:600,color:'#111827',margin:'0 0 6px'}}>No hay caminantes confirmados aún</p>
+                </div>
+              ):(
+                <div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,overflow:'hidden'}}>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',minWidth:520}}>
+                      <thead>
+                        <tr style={{background:'#f7f8fc'}}>
+                          <th style={{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #e8eaf0'}}>Caminante</th>
+                          <th style={{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #e8eaf0'}}>Mesa</th>
+                          <th style={{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:700,color:'#6b7280',textTransform:'uppercase',letterSpacing:.5,borderBottom:'1px solid #e8eaf0'}}>Habitación</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filasFiltradas.map((f,idx)=>{
+                          const guardandoFila=guardandoFilaId===f.caminanteId
+                          return (
+                            <tr key={f.caminanteId} style={{background:idx%2===0?'white':'#fafbfe'}}>
+                              <td style={{padding:'10px 14px',borderBottom:'1px solid #f3f4f6',verticalAlign:'top'}}>
+                                <div style={{fontSize:13,fontWeight:600,color:'#111827'}}>{f.nombre}</div>
+                                <div style={{fontSize:11,color:'#9ca3af'}}>{f.celular}{f.edad?` · ${f.edad} años`:''}</div>
+                              </td>
+                              <td style={{padding:'10px 14px',borderBottom:'1px solid #f3f4f6',verticalAlign:'top'}}>
+                                <select value={f.mesaId??''} disabled={guardandoFila} onChange={e=>cambiarMesaTabla(f,e.target.value)} style={{width:'100%',minWidth:110,padding:'6px 8px',border:'1.5px solid #e8eaf0',borderRadius:8,fontSize:12,outline:'none',background:guardandoFila?'#f3f4f6':'white',fontFamily:'inherit',color:f.mesaId?'#111827':'#9ca3af'}}>
+                                  <option value="">Sin mesa</option>
+                                  {mesasTabla.map(m=><option key={m.id} value={m.id}>Mesa {m.numero}</option>)}
+                                </select>
+                              </td>
+                              <td style={{padding:'10px 14px',borderBottom:'1px solid #f3f4f6',verticalAlign:'top'}}>
+                                <select value={f.habId??''} disabled={guardandoFila} onChange={e=>cambiarHabTabla(f,e.target.value)} style={{width:'100%',minWidth:140,padding:'6px 8px',border:'1.5px solid #e8eaf0',borderRadius:8,fontSize:12,outline:'none',background:guardandoFila?'#f3f4f6':'white',fontFamily:'inherit',color:f.habId?'#111827':'#9ca3af'}}>
+                                  <option value="">Sin cuarto</option>
+                                  {habitacionesTabla.map(h=><option key={h.id} value={h.id}>Hab. {h.numero} ({h.bloque})</option>)}
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </>
