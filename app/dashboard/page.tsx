@@ -13,6 +13,11 @@ const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 const META_RECAUDO = 50_000_000
 const CUPO_MAXIMO = 60
 
+const NOMBRES_MES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+]
+
 interface DashboardData {
   totalCaminantes: number
   caminantesInscritos: number
@@ -33,6 +38,12 @@ interface DashboardData {
   diasRestantes: number
   reembolsosPendientes: number
   alertasAsistencia: number
+}
+
+interface CumpleanosMes {
+  nombre: string
+  dia: number
+  esHoy: boolean
 }
 
 function formatCOP(value: number): string {
@@ -58,6 +69,32 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState('Líder')
   const [expandedCard, setExpandedCard] = useState<'caminantes' | 'servidores' | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+  const [cumpleanosMes, setCumpleanosMes] = useState<CumpleanosMes[]>([])
+
+  async function fetchCumpleanos() {
+    try {
+      const hoy = new Date()
+      const diaHoy = hoy.getDate()
+      const mesHoy = hoy.getMonth() + 1
+
+      const { data: usuariosCumple } = await supabase
+        .from('usuarios')
+        .select('nombre, dia_cumpleanos, mes_cumpleanos')
+        .eq('mes_cumpleanos', mesHoy)
+        .not('dia_cumpleanos', 'is', null)
+        .order('dia_cumpleanos', { ascending: true })
+
+      const lista: CumpleanosMes[] = (usuariosCumple ?? []).map(u => ({
+        nombre: u.nombre as string,
+        dia: u.dia_cumpleanos as number,
+        esHoy: u.dia_cumpleanos === diaHoy,
+      }))
+
+      setCumpleanosMes(lista)
+    } catch (err) {
+      console.error('Error fetching cumpleanos:', err)
+    }
+  }
 
   async function fetchDashboard() {
     try {
@@ -174,6 +211,7 @@ export default function DashboardPage() {
     })
 
     fetchDashboard()
+    fetchCumpleanos()
 
     const channel = supabase
       .channel('dashboard-realtime')
@@ -182,6 +220,7 @@ export default function DashboardPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'caminantes' }, fetchDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'servidores_inscripcion' }, fetchDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'asistencias' }, fetchDashboard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'usuarios' }, fetchCumpleanos)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -190,6 +229,7 @@ export default function DashboardPage() {
   const porcentajeMeta = data ? Math.min(100, (data.totalRecaudado / META_RECAUDO) * 100) : 0
   const porcentajeCupos = data ? Math.min(100, (data.caminantesConAbono / CUPO_MAXIMO) * 100) : 0
   const metaServidores = data ? Math.min(100, ((data.servidoresPagoCompleto * 380_000) / (CUPO_MAXIMO * 380_000)) * 100) : 0
+  const mesActualNombre = NOMBRES_MES[new Date().getMonth()]
 
   const getHora = () => {
     const h = new Date().getHours()
@@ -260,6 +300,40 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
+
+        {/* Cumpleaños del mes */}
+        {cumpleanosMes.length > 0 && (
+          <div className="bg-white rounded-2xl mb-4 overflow-hidden shadow-sm border border-gray-100 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg leading-none">🎂</span>
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                Cumpleaños de {mesActualNombre}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {cumpleanosMes.map((c, i) => (
+                <div
+                  key={`${c.nombre}-${i}`}
+                  className={`flex items-center justify-between rounded-xl px-3 py-2 ${
+                    c.esHoy ? 'bg-amber-50' : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className={`text-sm font-bold w-7 text-center ${c.esHoy ? 'text-amber-700' : 'text-gray-400'}`}>
+                      {c.dia}
+                    </span>
+                    <span className="text-sm font-medium text-gray-800">{c.nombre}</span>
+                  </div>
+                  {c.esHoy && (
+                    <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                      ¡Hoy! 🎉
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Hero — Meta de Recaudo */}
         <div className="bg-[#0f1787] rounded-2xl p-5 mb-3 overflow-hidden relative">
