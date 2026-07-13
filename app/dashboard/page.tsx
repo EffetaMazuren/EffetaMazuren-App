@@ -593,6 +593,16 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Enviar comunicados a servidores en tiempo real</p>
           </button>
 
+          <button onClick={() => router.push('/dashboard/identidades')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><line x1="13" y1="10" x2="18" y2="10"/><line x1="13" y1="14" x2="18" y2="14"/><line x1="5" y1="16" x2="11" y2="16"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Identidades</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Personas con historial a través de varios retiros</p>
+          </button>
+
         </div>
 
         {/* Indicador en tiempo real */}
