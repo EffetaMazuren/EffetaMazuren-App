@@ -132,14 +132,19 @@ export default function RegistroServidor() {
     if (!videoRef.current || !canvasRef.current) return
     const video = videoRef.current
     const canvas = canvasRef.current
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+
+    // Limitar el lado mayor a 480px -- suficiente para un colage de miniaturas,
+    // pesa una fracción de la resolución nativa de la cámara.
+    const MAX_LADO = 480
+    const escala = Math.min(1, MAX_LADO / Math.max(video.videoWidth, video.videoHeight))
+    canvas.width = Math.round(video.videoWidth * escala)
+    canvas.height = Math.round(video.videoHeight * escala)
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     ctx.translate(canvas.width, 0)
     ctx.scale(-1, 1)
-    ctx.drawImage(video, 0, 0)
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
     canvas.toBlob(blob => {
       if (!blob) return

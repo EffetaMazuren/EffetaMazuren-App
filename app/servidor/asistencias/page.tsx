@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
+import { estaDentroDeVentana } from '@/lib/asistencia-horario'
 
 const BUCKET = 'comprobantes-pagos'
 const FECHA_INICIO_ASISTENCIAS = '2026-06-16'
@@ -14,7 +15,10 @@ interface Reunion {
   fecha: string
   tipo: string
   cancelada: boolean
+  hora_inicio: string | null
+  hora_fin: string | null
   asistio: boolean | null
+  fuera_de_horario: boolean
   asistencia_id: string | null
   foto_url: string | null
 }
@@ -64,7 +68,7 @@ export default function AsistenciasServidor() {
 
     const { data: reuns } = await supabase
       .from('reuniones')
-      .select('id, nombre, fecha, tipo, cancelada')
+      .select('id, nombre, fecha, tipo, cancelada, hora_inicio, hora_fin')
       .eq('retiro_id', RETIRO_ID)
       .gte('fecha', FECHA_INICIO_ASISTENCIAS)
       .lte('fecha', hoy)
@@ -72,7 +76,7 @@ export default function AsistenciasServidor() {
 
     const { data: asists } = await supabase
       .from('asistencias')
-      .select('id, reunion_id, asistio, foto_url')
+      .select('id, reunion_id, asistio, foto_url, fuera_de_horario')
       .eq('servidor_inscripcion_id', srvId)
 
     const asistMap = new Map(asists?.map(a => [a.reunion_id, a]) || [])
@@ -85,7 +89,10 @@ export default function AsistenciasServidor() {
         fecha: r.fecha,
         tipo: r.tipo,
         cancelada: r.cancelada ?? false,
+        hora_inicio: r.hora_inicio,
+        hora_fin: r.hora_fin,
         asistio: asist?.asistio ?? null,
+        fuera_de_horario: asist?.fuera_de_horario ?? false,
         asistencia_id: asist?.id || null,
         foto_url: asist?.foto_url || null,
       }
@@ -100,14 +107,8 @@ export default function AsistenciasServidor() {
     return hoy.toDateString() === fechaReunion.toDateString()
   }
 
-  const despuesDe6pm = () => {
-    const ahora = new Date()
-    const horaCol = (ahora.getUTCHours() - 5 + 24) % 24
-    return horaCol >= 18
-  }
-
   const esHorarioNormal = (r: Reunion) => {
-    return esHoy(r.fecha) && despuesDe6pm()
+    return estaDentroDeVentana(r, new Date())
   }
 
   const puedeRegistrar = (r: Reunion) => {
@@ -222,7 +223,7 @@ export default function AsistenciasServidor() {
     }, 'image/jpeg', 0.85)
   }
 
-  const totalAsistidas = reuniones.filter(r => r.asistio === true).length
+  const totalAsistidas = reuniones.filter(r => r.asistio === true && !r.fuera_de_horario).length
   const totalValidas = reuniones.filter(r => !r.cancelada).length
   const porcentaje = totalValidas > 0 ? Math.round((totalAsistidas / totalValidas) * 100) : 0
 
@@ -232,7 +233,7 @@ export default function AsistenciasServidor() {
   let racha = 0
   for (const r of ordenadas) {
     if (r.cancelada) continue
-    if (r.asistio === true) racha++
+    if (r.asistio === true && !r.fuera_de_horario) racha++
     else break
   }
 
@@ -295,7 +296,7 @@ export default function AsistenciasServidor() {
           {reunionActiva && !esHorarioNormal(reunionActiva) && (
             <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '8px 14px', marginBottom: 16, maxWidth: 360, width: '100%' }}>
               <p style={{ margin: 0, fontSize: 12, color: '#92400e', textAlign: 'center' }}>
-                Estas registrando fuera del horario normal (después de 6pm). Los líderes recibirán una alerta.
+                Estás fuera de la ventana de horario válida para esta reunión. La foto se guarda igual, pero no cuenta para tu racha ni tu asistencia.
               </p>
             </div>
           )}
@@ -340,13 +341,13 @@ export default function AsistenciasServidor() {
                 {puedeRegistrar(r) ? (
                   <button
                     onClick={() => abrirCamara(r)}
-                    style={{ padding: '8px 12px', background: despuesDe6pm() ? '#0f1787' : '#d97706', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+                    style={{ padding: '8px 12px', background: esHorarioNormal(r) ? '#0f1787' : '#d97706', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
                   >
                     Foto
                   </button>
                 ) : (
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20, flexShrink: 0, background: r.cancelada ? '#f3f4f6' : r.asistio ? '#f0fdf4' : '#f9fafb', color: r.cancelada ? '#9ca3af' : r.asistio ? '#16a34a' : '#9ca3af' }}>
-                    {r.cancelada ? 'Cancelada' : r.asistio ? 'Asisti' : 'Sin registro'}
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20, flexShrink: 0, background: r.cancelada ? '#f3f4f6' : r.asistio && r.fuera_de_horario ? '#fef3c7' : r.asistio ? '#f0fdf4' : '#f9fafb', color: r.cancelada ? '#9ca3af' : r.asistio && r.fuera_de_horario ? '#92400e' : r.asistio ? '#16a34a' : '#9ca3af' }}>
+                    {r.cancelada ? 'Cancelada' : r.asistio && r.fuera_de_horario ? 'Fuera de horario' : r.asistio ? 'Asistí' : 'Sin registro'}
                   </span>
                 )}
               </div>

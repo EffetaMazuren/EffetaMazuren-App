@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useRetiroActual } from '@/lib/retiro-context';
+import { getVersiculoDelDia } from '@/lib/versiculos';
 
 interface Servidor {
   id: string;
@@ -12,18 +13,21 @@ interface Servidor {
   correo: string | null;
 }
 
-interface Pago {
-  valor: number;
-}
-
 interface Reunion {
   id: string;
   nombre: string;
   fecha: string;
 }
 
-interface Asistencia {
+interface AsistenciaReunion {
   reunion_id: string;
+  fecha: string;
+  tipo: string;
+  cancelada: boolean;
+  hora_inicio: string | null;
+  hora_fin: string | null;
+  asistio: boolean | null;
+  fuera_de_horario: boolean;
 }
 
 interface Mensaje {
@@ -36,54 +40,24 @@ interface Mensaje {
   destinatario_id: string | null;
 }
 
-function getVersiculoPreview() {
-  const VERSICULOS_PREVIEW = [
-    { ref: 'Filipenses 4:13', texto: 'Todo lo puedo en Cristo que me fortalece.' },
-    { ref: 'Jeremías 29:11', texto: 'Porque yo sé los pensamientos que tengo acerca de vosotros, dice el Señor, pensamientos de paz.' },
-    { ref: 'Salmos 46:10', texto: 'Estad quietos, y conoced que yo soy Dios.' },
-    { ref: 'Juan 14:27', texto: 'La paz os dejo, mi paz os doy; yo no os la doy como el mundo la da.' },
-    { ref: 'Isaías 40:31', texto: 'Pero los que esperan en el Señor renovarán sus fuerzas.' },
-    { ref: 'Romanos 8:28', texto: 'Y sabemos que a los que aman a Dios, todas las cosas les ayudan a bien.' },
-    { ref: 'Salmos 23:1', texto: 'El Señor es mi pastor; nada me faltará.' },
-    { ref: '1 Juan 4:8', texto: 'El que no ama, no ha conocido a Dios; porque Dios es amor.' },
-    { ref: 'Mateo 11:28', texto: 'Venid a mí todos los que estáis trabajados y cargados, y yo os haré descansar.' },
-    { ref: 'Salmos 27:1', texto: 'El Señor es mi luz y mi salvación; ¿de quién temeré?' },
-    { ref: 'Juan 3:16', texto: 'Porque de tal manera amó Dios al mundo, que ha dado a su Hijo unigénito.' },
-    { ref: 'Gálatas 5:22', texto: 'Mas el fruto del Espíritu es amor, gozo, paz, paciencia, benignidad, bondad, fe.' },
-    { ref: 'Proverbios 3:5', texto: 'Fíate del Señor de todo tu corazón, y no te apoyes en tu propia prudencia.' },
-    { ref: 'Salmos 118:24', texto: 'Este es el día que hizo el Señor; nos gozaremos y alegraremos en él.' },
-    { ref: 'Marcos 10:45', texto: 'El Hijo del Hombre no vino para ser servido, sino para servir.' },
-    { ref: '1 Corintios 13:13', texto: 'Y ahora permanecen la fe, la esperanza y el amor, pero el mayor de ellos es el amor.' },
-    { ref: 'Hebreos 12:1', texto: 'Corramos con paciencia la carrera que tenemos por delante.' },
-    { ref: 'Josué 1:9', texto: 'Esfuérzate y sé valiente; no temas ni desmayes, porque el Señor tu Dios estará contigo.' },
-    { ref: 'Isaías 41:10', texto: 'No temas, porque yo estoy contigo; no desmayes, porque yo soy tu Dios.' },
-    { ref: '2 Timoteo 1:7', texto: 'Porque no nos ha dado Dios espíritu de cobardía, sino de poder, de amor y de dominio propio.' },
-    { ref: 'Lamentaciones 3:23', texto: 'Nuevas son cada mañana; grande es tu fidelidad.' },
-    { ref: 'Juan 15:13', texto: 'Nadie tiene mayor amor que este, que uno ponga su vida por sus amigos.' },
-    { ref: 'Miqueas 6:8', texto: 'Solamente hacer justicia, y amar misericordia, y humillarte ante tu Dios.' },
-    { ref: 'Sofonías 3:17', texto: 'El Señor está en medio de ti, poderoso, él salvará.' },
-  ];
-  const periodos = Math.floor(Date.now() / (12 * 60 * 60 * 1000));
-  return VERSICULOS_PREVIEW[periodos % VERSICULOS_PREVIEW.length];
-}
-
-function norm(s: string) {
-  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-}
-
 export default function ServidorPage() {
   const router = useRouter();
   const { id: RETIRO_ID } = useRetiroActual();
   const [servidor, setServidor] = useState<Servidor | null>(null);
-  const [pagos, setPagos] = useState<Pago[]>([]);
   const [proximaReunion, setProximaReunion] = useState<Reunion | null>(null);
-  const [asistencias, setAsistencias] = useState<Asistencia[]>([]);
+  const [asistenciasReuniones, setAsistenciasReuniones] = useState<AsistenciaReunion[]>([]);
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
-  const [esAngelito, setEsAngelito] = useState(false);
   const [cargando, setCargando] = useState(true);
 
+  const [inscripcionId, setInscripcionId] = useState<string | null>(null);
+  const [ideaRecaudo, setIdeaRecaudo] = useState<string | null>(null);
+  const [ideaReunion, setIdeaReunion] = useState<string | null>(null);
+  const [formIdeaRecaudo, setFormIdeaRecaudo] = useState('');
+  const [formIdeaReunion, setFormIdeaReunion] = useState('');
+  const [enviandoIdeas, setEnviandoIdeas] = useState(false);
+
   const inscripcionIdRef = useRef<string | null>(null);
-  const versiculoPreview = getVersiculoPreview();
+  const versiculoPreview = getVersiculoDelDia();
 
   useEffect(() => {
     cargarDatos();
@@ -151,52 +125,48 @@ export default function ServidorPage() {
 
     setServidor(servidorData);
 
-    // Buscar inscripción con es_interno
+    // Buscar inscripción del retiro activo
     const { data: inscripcion } = await supabase
       .from('servidores_inscripcion')
-      .select('id, es_interno, nombre')
+      .select('id, nombre, idea_recaudo, idea_reunion')
       .eq('usuario_id', user.id)
       .eq('retiro_id', RETIRO_ID)
       .single();
 
     if (inscripcion) {
       inscripcionIdRef.current = inscripcion.id;
+      setInscripcionId(inscripcion.id);
+      setIdeaRecaudo(inscripcion.idea_recaudo);
+      setIdeaReunion(inscripcion.idea_reunion);
 
-      const { data: pagosData } = await supabase
-        .from('pagos')
-        .select('valor')
-        .eq('persona_id', inscripcion.id)
-        .eq('tipo_persona', 'servidor');
-      if (pagosData) setPagos(pagosData);
+      const hoyRacha = new Date().toISOString().split('T')[0];
+      const { data: reunionesRacha } = await supabase
+        .from('reuniones')
+        .select('id, fecha, tipo, cancelada, hora_inicio, hora_fin')
+        .eq('retiro_id', RETIRO_ID)
+        .lte('fecha', hoyRacha)
+        .order('fecha', { ascending: false });
 
-      const { data: asistenciasData } = await supabase
+      const { data: asistsRacha } = await supabase
         .from('asistencias')
-        .select('reunion_id')
+        .select('reunion_id, asistio, fuera_de_horario')
         .eq('servidor_inscripcion_id', inscripcion.id);
-      if (asistenciasData) setAsistencias(asistenciasData);
 
-      // Verificar si es externo sin roles asignados → angelito
-      if (inscripcion.es_interno === false) {
-        const { data: rolesData } = await supabase
-          .from('roles_retiro')
-          .select('encargados')
-          .eq('retiro_id', RETIRO_ID);
-
-        const nombreNorm = norm(inscripcion.nombre ?? '');
-        const tokens = nombreNorm.split(' ').filter((t: string) => t.length > 2);
-
-        const tieneRol = (rolesData ?? []).some((r: any) => {
-          return (r.encargados ?? []).some((enc: string) => {
-            const encNorm = norm(enc);
-            if (encNorm === nombreNorm) return true;
-            const tokensEnc = encNorm.split(' ').filter((t: string) => t.length > 2);
-            const coincidencias = tokens.filter((t: string) => tokensEnc.includes(t)).length;
-            return coincidencias >= 3;
-          });
-        });
-
-        if (!tieneRol) setEsAngelito(true);
-      }
+      const asistMapRacha = new Map((asistsRacha ?? []).map(a => [a.reunion_id, a]));
+      const combinado: AsistenciaReunion[] = (reunionesRacha ?? []).map(r => {
+        const a = asistMapRacha.get(r.id);
+        return {
+          reunion_id: r.id,
+          fecha: r.fecha,
+          tipo: r.tipo,
+          cancelada: r.cancelada ?? false,
+          hora_inicio: r.hora_inicio,
+          hora_fin: r.hora_fin,
+          asistio: a?.asistio ?? null,
+          fuera_de_horario: a?.fuera_de_horario ?? false,
+        };
+      });
+      setAsistenciasReuniones(combinado);
     }
 
     const hoy = new Date().toISOString().split('T')[0];
@@ -256,12 +226,34 @@ export default function ServidorPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const totalPagado = pagos.reduce((acc, p) => acc + (p.valor || 0), 0);
-  const cuotaTotal = 260000;
-  const porcentajePago = Math.min(100, Math.round((totalPagado / cuotaTotal) * 100));
-  const estadoPago = totalPagado >= cuotaTotal ? 'completo' : totalPagado > 0 ? 'parcial' : 'sin_pago';
-  const colorEstado = estadoPago === 'completo' ? '#16a34a' : estadoPago === 'parcial' ? '#d97706' : '#6b7280';
-  const textoEstado = estadoPago === 'completo' ? 'Pago completo' : estadoPago === 'parcial' ? 'Pago parcial' : 'Sin pagos';
+  const asistenciasQueCuentan = asistenciasReuniones.filter(a => a.asistio === true && !a.fuera_de_horario).length;
+
+  let racha = 0;
+  for (const a of asistenciasReuniones) {
+    if (a.cancelada) continue;
+    if (a.asistio === true && !a.fuera_de_horario) racha++;
+    else break;
+  }
+
+  async function enviarIdeas() {
+    if (!inscripcionId) return;
+    if (!formIdeaRecaudo.trim() && !formIdeaReunion.trim()) return;
+
+    setEnviandoIdeas(true);
+    const { error } = await supabase
+      .from('servidores_inscripcion')
+      .update({
+        idea_recaudo: formIdeaRecaudo.trim() || null,
+        idea_reunion: formIdeaReunion.trim() || null,
+      })
+      .eq('id', inscripcionId);
+
+    if (!error) {
+      setIdeaRecaudo(formIdeaRecaudo.trim() || null);
+      setIdeaReunion(formIdeaReunion.trim() || null);
+    }
+    setEnviandoIdeas(false);
+  }
 
   function formatFechaReunion(fecha: string) {
     const d = new Date(fecha + 'T00:00:00');
@@ -304,33 +296,11 @@ export default function ServidorPage() {
         <div style={{ position: 'relative', zIndex: 1 }}>
           <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px', margin: '0 0 6px', letterSpacing: '1px' }}>EFFETÁ MAZUREN</p>
           <h1 style={{ color: 'white', fontSize: '26px', fontWeight: 600, margin: '0 0 4px' }}>Hola, {nombre}</h1>
-          <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '14px', margin: 0 }}>{servidor.rol || 'Servidor'} · Retiro 2026</p>
+          <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '14px', margin: 0 }}>Servidor</p>
         </div>
       </div>
 
       <div style={{ maxWidth: '500px', margin: '-20px auto 0', padding: '0 16px 100px', position: 'relative', zIndex: 2 }}>
-
-        {/* ── BANNER ANGELITO ── */}
-        {esAngelito && (
-          <div style={{
-            background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
-            borderRadius: '16px', padding: '20px', marginBottom: '12px', color: 'white',
-            position: 'relative', overflow: 'hidden',
-          }}>
-            <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '100px', height: '100px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', position: 'relative', zIndex: 1 }}>
-              <div style={{ fontSize: '32px', flexShrink: 0, lineHeight: 1 }}>👼</div>
-              <div>
-                <p style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: 700, color: 'white' }}>
-                  Eres angelito
-                </p>
-                <p style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 }}>
-                  Nos puedes acompañar a cuidar el Santísimo, la parte más importante de todo el retiro.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Card versículo */}
         <button
@@ -394,29 +364,53 @@ export default function ServidorPage() {
           )}
         </div>
 
-        {/* Card pago */}
-        <div style={{ background: 'white', border: '1px solid #e8eaf0', borderRadius: '16px', padding: '20px', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <svg width="18" height="18" fill="none" stroke="#374151" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                <rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" />
-              </svg>
-              <span style={{ color: '#374151', fontSize: '14px', fontWeight: 500 }}>Mi pago</span>
-            </div>
-            <span style={{ background: colorEstado + '15', color: colorEstado, fontSize: '12px', fontWeight: 500, borderRadius: '20px', padding: '3px 10px' }}>{textoEstado}</span>
+        {/* Card racha */}
+        <div style={{ background: 'white', border: '1px solid #e8eaf0', borderRadius: '16px', padding: '20px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: '#fffbeb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '26px' }}>
+            🔥
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <span style={{ color: '#6b7280', fontSize: '13px' }}>Pagado</span>
-            <span style={{ color: '#1f2937', fontSize: '13px', fontWeight: 500 }}>${totalPagado.toLocaleString('es-CO')}</span>
-          </div>
-          <div style={{ background: '#f3f4f6', borderRadius: '100px', height: '6px', marginBottom: '10px' }}>
-            <div style={{ background: colorEstado, borderRadius: '100px', height: '6px', width: porcentajePago + '%', transition: 'width 0.5s ease' }} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#9ca3af', fontSize: '12px' }}>{porcentajePago}% completado</span>
-            <span style={{ color: '#9ca3af', fontSize: '12px' }}>Total: $260.000</span>
+          <div>
+            <p style={{ margin: '0 0 2px', color: '#1f2937', fontSize: '20px', fontWeight: 700 }}>{racha} {racha === 1 ? 'semana' : 'semanas'}</p>
+            <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>Racha de asistencia · {asistenciasQueCuentan} en total</p>
           </div>
         </div>
+
+        {/* Card ideas -- solo si falta alguna */}
+        {(ideaRecaudo === null || ideaReunion === null) && (
+          <div style={{ background: 'white', border: '1px solid #e8eaf0', borderRadius: '16px', padding: '20px', marginBottom: '12px' }}>
+            <p style={{ margin: '0 0 4px', color: '#1f2937', fontSize: '14px', fontWeight: 600 }}>Cuéntanos tu idea</p>
+            <p style={{ margin: '0 0 14px', color: '#9ca3af', fontSize: '12px' }}>Ayúdanos con estas dos ideas para este retiro.</p>
+            {ideaRecaudo === null && (
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Idea para recaudar fondos</label>
+                <textarea
+                  value={formIdeaRecaudo}
+                  onChange={e => setFormIdeaRecaudo(e.target.value)}
+                  rows={2}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #e2e4f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
+                />
+              </div>
+            )}
+            {ideaReunion === null && (
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Idea para una reunión</label>
+                <textarea
+                  value={formIdeaReunion}
+                  onChange={e => setFormIdeaReunion(e.target.value)}
+                  rows={2}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #e2e4f0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
+                />
+              </div>
+            )}
+            <button
+              onClick={enviarIdeas}
+              disabled={enviandoIdeas}
+              style={{ width: '100%', padding: '11px', background: enviandoIdeas ? '#9ca3af' : '#0f1787', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: enviandoIdeas ? 'not-allowed' : 'pointer' }}
+            >
+              {enviandoIdeas ? 'Enviando...' : 'Enviar'}
+            </button>
+          </div>
+        )}
 
         {/* Card próxima reunión */}
         {proximaReunion && (
@@ -444,7 +438,7 @@ export default function ServidorPage() {
             </div>
             <div>
               <p style={{ margin: '0 0 2px', color: '#1f2937', fontSize: '13px', fontWeight: 500 }}>Asistencia</p>
-              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>{asistencias.length} registros</p>
+              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>{asistenciasQueCuentan} registros</p>
             </div>
           </button>
 
@@ -456,7 +450,7 @@ export default function ServidorPage() {
             </div>
             <div>
               <p style={{ margin: '0 0 2px', color: '#1f2937', fontSize: '13px', fontWeight: 500 }}>Facturas</p>
-              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>Subir reembolso</p>
+              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>No hay retiros pendientes</p>
             </div>
           </button>
 
@@ -468,7 +462,7 @@ export default function ServidorPage() {
             </div>
             <div>
               <p style={{ margin: '0 0 2px', color: '#1f2937', fontSize: '13px', fontWeight: 500 }}>Mi pago</p>
-              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>Ver comprobante</p>
+              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>Aún no hay retiros por pagar</p>
             </div>
           </button>
 
@@ -480,7 +474,7 @@ export default function ServidorPage() {
             </div>
             <div>
               <p style={{ margin: '0 0 2px', color: '#1f2937', fontSize: '13px', fontWeight: 500 }}>Mi retiro</p>
-              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>Rol y mesa</p>
+              <p style={{ margin: 0, color: '#9ca3af', fontSize: '12px' }}>No hay retiros pendientes</p>
             </div>
           </button>
         </div>

@@ -601,6 +601,36 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Personas con historial a través de varios retiros</p>
           </button>
 
+          <button onClick={() => router.push('/dashboard/servidores/fotos')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Fotos de servidores</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Colage de caras y nombres de los inscritos</p>
+          </button>
+
+          <button onClick={() => router.push('/dashboard/servidores/ideas')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Ideas de servidores</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Ideas de recaudo de fondos y de reuniones</p>
+          </button>
+
+          <button onClick={() => router.push('/dashboard/servidores/asistencias')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 16 11 18 15 14"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Asistencias de servidores</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Rachas, totales y filtro por nombre</p>
+          </button>
+
         </div>
 
         {/* Indicador en tiempo real */}

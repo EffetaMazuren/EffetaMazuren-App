@@ -36,6 +36,8 @@ export default function ReunionesLider() {
 
   const [nuevaFecha, setNuevaFecha] = useState('')
   const [nuevaNombre, setNuevaNombre] = useState('')
+  const [nuevaHoraInicio, setNuevaHoraInicio] = useState('')
+  const [nuevaHoraFin, setNuevaHoraFin] = useState('')
   const [creando, setCreando] = useState(false)
   const [mostrarFormulario, setMostrarFormulario] = useState(false)
 
@@ -150,6 +152,8 @@ export default function ReunionesLider() {
   const crearReunion = async () => {
     if (!nuevaFecha) { setError('Selecciona una fecha'); return }
     if (!nuevaNombre.trim()) { setError('Escribe un nombre para la reunión'); return }
+    if (!nuevaHoraInicio || !nuevaHoraFin) { setError('Define la ventana de horario en la que la asistencia va a contar'); return }
+    if (nuevaHoraInicio >= nuevaHoraFin) { setError('La hora de inicio debe ser antes que la hora de fin'); return }
 
     setCreando(true)
     setError('')
@@ -161,7 +165,9 @@ export default function ReunionesLider() {
         nombre: nuevaNombre.trim(),
         fecha: nuevaFecha,
         tipo: 'especial',
-        cancelada: false
+        cancelada: false,
+        hora_inicio: nuevaHoraInicio,
+        hora_fin: nuevaHoraFin,
       })
 
     if (err) {
@@ -170,6 +176,8 @@ export default function ReunionesLider() {
       setExito('Reunión creada')
       setNuevaFecha('')
       setNuevaNombre('')
+      setNuevaHoraInicio('')
+      setNuevaHoraFin('')
       setMostrarFormulario(false)
       await cargarReuniones()
       setTimeout(() => setExito(''), 2500)
@@ -420,6 +428,41 @@ export default function ReunionesLider() {
                 }}
               />
             </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                  Hora de inicio
+                </label>
+                <input
+                  type="time"
+                  value={nuevaHoraInicio}
+                  onChange={e => setNuevaHoraInicio(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 10,
+                    border: '1.5px solid #e2e4f0', fontSize: 14,
+                    outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                  Hora de fin
+                </label>
+                <input
+                  type="time"
+                  value={nuevaHoraFin}
+                  onChange={e => setNuevaHoraFin(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 10,
+                    border: '1.5px solid #e2e4f0', fontSize: 14,
+                    outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: '#9ca3af' }}>
+              La asistencia de este evento solo cuenta dentro de esta ventana de horario.
+            </p>
             <button
               onClick={crearReunion}
               disabled={creando}
