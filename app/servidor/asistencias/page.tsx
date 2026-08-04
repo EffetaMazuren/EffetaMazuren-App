@@ -152,14 +152,19 @@ export default function AsistenciasServidor() {
 
     const video = videoRef.current
     const canvas = canvasRef.current
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+
+    // Limitar el lado mayor a 480px -- mismo criterio que la foto de registro,
+    // estas se borran a los 15 días pero mientras tanto pesan lo mínimo.
+    const MAX_LADO = 480
+    const escala = Math.min(1, MAX_LADO / Math.max(video.videoWidth, video.videoHeight))
+    canvas.width = Math.round(video.videoWidth * escala)
+    canvas.height = Math.round(video.videoHeight * escala)
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     ctx.translate(canvas.width, 0)
     ctx.scale(-1, 1)
-    ctx.drawImage(video, 0, 0)
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
     setSubiendo(true)
     detenerCamara()
