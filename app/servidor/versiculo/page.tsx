@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useRetiroActual } from '@/lib/retiro-context';
-import { getVersiculoDelDia } from '@/lib/versiculos';
+import { getVersiculoDelDia, VERSICULOS } from '@/lib/versiculos';
 
 interface Reflexion {
   id: string;
