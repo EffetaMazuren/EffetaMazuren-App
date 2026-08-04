@@ -4,11 +4,11 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import { ChevronRight } from 'lucide-react'
-
-const CUPO_MAXIMO = 60
+import { useRetiroActual } from '@/lib/retiro-context'
 
 export default function PersonasPage() {
   const router = useRouter()
+  const { capacidad_caminantes: CUPO_MAXIMO } = useRetiroActual()
   const [loading, setLoading] = useState(true)
 
   // Caminantes

@@ -1,0 +1,75 @@
+-- Columnas nuevas para el registro self-service de servidores (v2), que
+-- reemplaza la lógica actual de app/servidor/registro/page.tsx -- hoy ese
+-- flujo requiere que un líder precargue la fila en servidores_inscripcion
+-- antes de que la persona pueda "reclamarla"; el flujo nuevo crea la
+-- inscripción directamente. NO se aplica desde esta sesión -- a ejecutar
+-- manualmente después de revisión, igual que el resto de migraciones de
+-- este branch.
+--
+-- ALCANCE: solo 3 columnas nuevas, aditivas, en tablas que ya existen.
+-- Riesgo cero para filas existentes -- ninguna tiene NOT NULL ni default
+-- distinto de NULL, así que no hace falta backfill.
+--
+-- ================================================================
+-- personas.foto_url
+-- ================================================================
+-- Foto de identidad de la persona, capturada una sola vez en su primer
+-- registro (misma cámara/patrón de captura que ya usa
+-- app/servidor/asistencias/page.tsx). Vive en `personas`, no en
+-- `servidores_inscripcion`, porque es un dato de identidad que persiste
+-- entre ediciones del retiro -- si la persona ya tiene foto de un
+-- registro anterior, el formulario nuevo no la vuelve a pedir.
+--
+-- ================================================================
+-- servidores_inscripcion.idea_recaudo / idea_reunion
+-- ================================================================
+-- Al contrario de la foto, estos dos SÍ van en servidores_inscripcion,
+-- no en personas: son respuestas ligadas a una inscripción concreta
+-- (retiro_id), no a la identidad de la persona. Un servidor recurrente
+-- responde estas dos preguntas de nuevo en cada edición aunque ya tenga
+-- persona y foto guardadas de antes -- por diseño, no es un descuido.
+--
+-- ================================================================
+-- SOBRE POLÍTICAS RLS -- deliberadamente NO se agrega ninguna aquí
+-- ================================================================
+-- Agregar una columna a una tabla que ya tiene RLS habilitado NO
+-- requiere ningún cambio de política por sí solo -- RLS filtra FILAS,
+-- no columnas, así que cualquier policy existente (using/with check)
+-- ya cubre las columnas nuevas automáticamente para quien pueda tocar
+-- esa fila.
+--
+-- El problema real NO es de columnas, es de qué operaciones puede hacer
+-- HOY un servidor recién autenticado (no líder) sobre estas dos tablas,
+-- verificado contra las migraciones ya commiteadas en este repo:
+--
+-- * `personas` tiene exactamente 2 políticas hoy: SELECT y INSERT,
+--   ambas restringidas a `usuarios.rol = 'lider'`
+--   (20260712000001_personas_select_policy_lideres.sql,
+--   20260713000000_personas_vinculacion_policies.sql). NO existe
+--   ninguna política UPDATE sobre `personas` -- confirmado, cero
+--   ocurrencias de `.update(` sobre esta tabla en todo el código, y
+--   cero políticas UPDATE en las migraciones. Un servidor autenticándose
+--   por primera vez no es líder, así que ni el INSERT (persona nueva) ni
+--   el UPDATE (foto_url de una persona existente) que necesita el flujo
+--   nuevo pasan las políticas actuales.
+-- * `servidores_inscripcion` tiene una política UPDATE confirmada
+--   ("Autenticados pueden actualizar servidores", to authenticated, sin
+--   restricción adicional -- verificado en Supabase Studio en sesión
+--   anterior). El INSERT que necesita este flujo (crear la inscripción
+--   sin precarga de líder) NO tiene precedente: el código actual nunca
+--   inserta en esta tabla, solo actualiza filas que un líder ya creó --
+--   así que no hay evidencia de que INSERT esté permitido para
+--   `authenticated`. Sigue sin confirmar en Supabase Studio.
+--
+-- Esta migración se limita a las 3 columnas. La resolución de qué puede
+-- escribir un servidor auto-registrándose (nueva política RLS vs. mover
+-- esas escrituras a una ruta /api con service_role) es una decisión de
+-- arquitectura aparte, pendiente de confirmar antes de escribir el
+-- código de las pantallas.
+
+alter table personas
+  add column foto_url text null;
+
+alter table servidores_inscripcion
+  add column idea_recaudo text null,
+  add column idea_reunion text null;

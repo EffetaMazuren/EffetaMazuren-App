@@ -3,15 +3,12 @@
 import { useEffect, useState, ReactElement } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter, usePathname } from 'next/navigation'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
-const META_RECAUDO = 50_000_000
-const CUPO_MAXIMO = 60
 
 const NOMBRES_MES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -63,6 +60,7 @@ function formatCOPFull(value: number): string {
 
 export default function DashboardPage() {
   const router = useRouter()
+  const { id: RETIRO_ID, meta_financiera: META_RECAUDO, capacidad_caminantes: CUPO_MAXIMO } = useRetiroActual()
   const pathname = usePathname()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)

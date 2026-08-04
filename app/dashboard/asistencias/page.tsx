@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 interface Alerta {
   id: string
@@ -18,6 +17,7 @@ interface Alerta {
 
 export default function AlertasAsistenciasPage() {
   const router = useRouter()
+  const { id: RETIRO_ID } = useRetiroActual()
   const [alertas, setAlertas] = useState<Alerta[]>([])
   const [todas, setTodas] = useState<any[]>([])
   const [tab, setTab] = useState<'alertas' | 'todas'>('alertas')
@@ -34,17 +34,19 @@ export default function AlertasAsistenciasPage() {
         .select(`
           id, foto_url, fecha_registro, motivo_alerta, fuera_de_horario,
           servidor_inscripcion:servidor_inscripcion_id(nombre),
-          reunion:reunion_id(nombre, fecha)
+          reunion:reunion_id!inner(nombre, fecha, retiro_id)
         `)
         .eq('fuera_de_horario', true)
+        .eq('reunion.retiro_id', RETIRO_ID)
         .order('fecha_registro', { ascending: false }),
       supabase
         .from('asistencias')
         .select(`
           id, foto_url, fecha_registro, motivo_alerta, fuera_de_horario, asistio,
           servidor_inscripcion:servidor_inscripcion_id(nombre),
-          reunion:reunion_id(nombre, fecha)
+          reunion:reunion_id!inner(nombre, fecha, retiro_id)
         `)
+        .eq('reunion.retiro_id', RETIRO_ID)
         .order('fecha_registro', { ascending: false })
         .limit(100),
     ])

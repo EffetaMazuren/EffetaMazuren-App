@@ -1,83 +1,160 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-type Paso = 'buscar' | 'confirmar' | 'crear' | 'listo'
-type ModoBusqueda = 'nombre' | 'cedula'
+type Paso = 'cedula' | 'ya_tiene_cuenta' | 'formulario' | 'enviando' | 'listo' | 'error'
 
-interface ServidorEncontrado {
-  id: string
-  nombre: string
-  es_interno: boolean
-  usuario_id: string | null
-  numero_documento: string | null
+const cardStyle: React.CSSProperties = {
+  background: 'white', borderRadius: 16,
+  padding: 28, boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
 }
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '11px 14px', borderRadius: 10,
+  border: '1.5px solid #e2e4f0', fontSize: 15,
+  outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit',
+}
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6,
+}
+const botonPrimario = (loading: boolean): React.CSSProperties => ({
+  width: '100%', padding: '13px',
+  background: loading ? '#9ca3af' : '#0f1787',
+  color: 'white', border: 'none', borderRadius: 10,
+  fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+})
 
 export default function RegistroServidor() {
   const router = useRouter()
-  const [paso, setPaso] = useState<Paso>('buscar')
-  const [modo, setModo] = useState<ModoBusqueda>('nombre')
-  const [busqueda, setBusqueda] = useState('')
-  const [resultados, setResultados] = useState<ServidorEncontrado[]>([])
-  const [seleccionado, setSeleccionado] = useState<ServidorEncontrado | null>(null)
-  const [email, setEmail] = useState('')
+
+  const [paso, setPaso] = useState<Paso>('cedula')
+  const [numeroDocumento, setNumeroDocumento] = useState('')
+  const [error, setError] = useState('')
+
+  const [personaId, setPersonaId] = useState<string | null>(null)
+  const [tieneFoto, setTieneFoto] = useState(false)
+
+  const [nombre, setNombre] = useState('')
+  const [correo, setCorreo] = useState('')
   const [password, setPassword] = useState('')
   const [password2, setPassword2] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [ideaRecaudo, setIdeaRecaudo] = useState('')
+  const [ideaReunion, setIdeaReunion] = useState('')
 
-  const buscarServidor = async () => {
-    if (busqueda.trim().length < 3) {
-      setError(modo === 'nombre'
-        ? 'Escribe al menos 3 letras de tu nombre'
-        : 'Escribe al menos 3 dígitos de tu cédula')
+  const [camaraActiva, setCamaraActiva] = useState(false)
+  const [fotoBlob, setFotoBlob] = useState<Blob | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  useEffect(() => () => detenerCamara(), [])
+
+  const buscarDocumento = async () => {
+    if (numeroDocumento.trim().length < 3) {
+      setError('Escribe tu número de documento')
       return
     }
-    setLoading(true)
     setError('')
+    setPaso('enviando')
 
-    let query = supabase
-      .from('servidores_inscripcion')
-      .select('id, nombre, es_interno, usuario_id, numero_documento')
-      .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
+    try {
+      const res = await fetch('/api/servidor/registro/buscar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_documento: numeroDocumento.trim() }),
+      })
+      const data = await res.json()
 
-    if (modo === 'nombre') {
-      query = query.ilike('nombre', `%${busqueda.trim()}%`)
-    } else {
-      query = query.ilike('numero_documento', `%${busqueda.trim()}%`)
+      if (!res.ok || data.error) {
+        setError(data.error || 'Error al buscar tu documento')
+        setPaso('cedula')
+        return
+      }
+
+      if (data.estado === 'tiene_cuenta') {
+        setPaso('ya_tiene_cuenta')
+        return
+      }
+
+      if (data.estado === 'error') {
+        setError(data.mensaje)
+        setPaso('cedula')
+        return
+      }
+
+      if (data.estado === 'persona_existente') {
+        setPersonaId(data.personaId)
+        setTieneFoto(!!data.tieneFoto)
+      } else {
+        setPersonaId(null)
+        setTieneFoto(false)
+      }
+
+      setPaso('formulario')
+    } catch {
+      setError('No se pudo conectar. Intenta de nuevo.')
+      setPaso('cedula')
     }
-
-    const { data, error: err } = await query
-
-    setLoading(false)
-
-    if (err || !data?.length) {
-      setError(modo === 'nombre'
-        ? 'No encontramos ese nombre. Verifica con tu líder que estés inscrito.'
-        : 'No encontramos esa cédula. Verifica con tu líder que estés inscrito.')
-      setResultados([])
-      return
-    }
-
-    setResultados(data)
-    setPaso('confirmar')
   }
 
-  const seleccionarServidor = (s: ServidorEncontrado) => {
-    if (s.usuario_id) {
-      setError('Este perfil ya tiene cuenta creada. Inicia sesión en la pantalla principal.')
-      return
-    }
-    setSeleccionado(s)
-    setPaso('crear')
+  const abrirCamara = async () => {
     setError('')
+    setCamaraActiva(true)
+    setTimeout(async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: false,
+        })
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.play()
+        }
+      } catch {
+        setError('No se pudo acceder a la cámara. Verifica los permisos.')
+        setCamaraActiva(false)
+      }
+    }, 100)
   }
 
-  const crearCuenta = async () => {
-    if (!email.trim() || !password) {
-      setError('Completa todos los campos')
+  const detenerCamara = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+    }
+    setCamaraActiva(false)
+  }
+
+  const tomarFoto = () => {
+    if (!videoRef.current || !canvasRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.translate(canvas.width, 0)
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, 0, 0)
+
+    canvas.toBlob(blob => {
+      if (!blob) return
+      setFotoBlob(blob)
+      setFotoPreview(URL.createObjectURL(blob))
+      detenerCamara()
+    }, 'image/jpeg', 0.85)
+  }
+
+  const enviarFormulario = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    if (!nombre.trim() || !correo.trim() || !password) {
+      setError('Completa todos los campos obligatorios')
       return
     }
     if (password !== password2) {
@@ -88,379 +165,218 @@ export default function RegistroServidor() {
       setError('La contraseña debe tener al menos 6 caracteres')
       return
     }
-    if (!seleccionado) return
+    if (!tieneFoto && !fotoBlob) {
+      setError('Tómate una foto para continuar')
+      return
+    }
 
-    setLoading(true)
-    setError('')
+    setPaso('enviando')
 
-    const emailLower = email.trim().toLowerCase()
+    try {
+      const form = new FormData()
+      form.append('numero_documento', numeroDocumento.trim())
+      form.append('nombre', nombre.trim())
+      form.append('correo', correo.trim())
+      form.append('password', password)
+      form.append('idea_recaudo', ideaRecaudo.trim())
+      form.append('idea_reunion', ideaReunion.trim())
+      if (fotoBlob) form.append('foto', fotoBlob, 'foto.jpg')
 
-    // 1. Crear cuenta en Supabase Auth
-    const { error: authErr } = await supabase.auth.signUp({
-      email: emailLower,
-      password,
-      options: {
-        data: {
-          nombre: seleccionado.nombre,
-          servidor_inscripcion_id: seleccionado.id
-        }
+      const res = await fetch('/api/servidor/registro/crear', { method: 'POST', body: form })
+      const data = await res.json()
+
+      if (!res.ok || data.error) {
+        setError(data.error || 'No se pudo completar el registro')
+        setPaso('formulario')
+        return
       }
-    })
 
-    if (authErr) {
-      setError(authErr.message === 'User already registered'
-        ? 'Este correo ya tiene cuenta. Inicia sesión normal.'
-        : (authErr.message || 'Error al crear cuenta'))
-      setLoading(false)
-      return
-    }
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: correo.trim().toLowerCase(),
+        password,
+      })
 
-    // 2. Hacer signIn inmediatamente para obtener el user.id de forma segura
-    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
-      email: emailLower,
-      password,
-    })
+      if (signInErr) {
+        // La cuenta quedó creada correctamente -- solo falló el inicio de
+        // sesión automático. La persona puede entrar manual desde "/".
+        setPaso('listo')
+        return
+      }
 
-    if (signInErr || !signInData?.user?.id) {
-      // La cuenta se creó pero no pudimos vincular — igual dejamos pasar
-      // el layout intentará vincular por metadata
-      setLoading(false)
       setPaso('listo')
-      return
+    } catch {
+      setError('No se pudo conectar. Intenta de nuevo.')
+      setPaso('formulario')
     }
-
-    const newUserId = signInData.user.id
-
-    // 3. Insertar en tabla usuarios
-    await supabase
-      .from('usuarios')
-      .upsert({
-        id: newUserId,
-        nombre: seleccionado.nombre,
-        correo: emailLower,
-        rol: 'servidor'
-      }, { onConflict: 'id' })
-
-    // 4. Vincular usuario_id en servidores_inscripcion
-    await supabase
-      .from('servidores_inscripcion')
-      .update({ usuario_id: newUserId })
-      .eq('id', seleccionado.id)
-
-    setLoading(false)
-    setPaso('listo')
   }
 
-  if (paso === 'buscar') return (
-    <div style={{
-      minHeight: '100vh', background: '#f7f8fc',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-    }}>
+  const contenedor: React.CSSProperties = {
+    minHeight: '100vh', background: '#f7f8fc',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+  }
+  const logo = (
+    <div style={{ textAlign: 'center', marginBottom: 32 }}>
+      <div style={{ fontFamily: 'Georgia, serif', fontSize: 28, fontWeight: 700, color: '#0f1787', letterSpacing: 4, marginBottom: 6 }}>
+        EFFETÁ
+      </div>
+    </div>
+  )
+
+  if (paso === 'cedula' || paso === 'enviando') return (
+    <div style={contenedor}>
       <div style={{ width: '100%', maxWidth: 420 }}>
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{
-            fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 700,
-            color: '#0f1787', letterSpacing: 4, marginBottom: 8
-          }}>EFFETÁ</div>
-          <p style={{ color: '#6b7280', fontSize: 15, margin: 0 }}>Crear cuenta de servidor</p>
-        </div>
-
-        <div style={{
-          background: 'white', borderRadius: 16,
-          padding: 28, boxShadow: '0 2px 16px rgba(0,0,0,0.06)'
-        }}>
+        {logo}
+        <div style={cardStyle}>
           <h2 style={{ margin: '0 0 16px', fontSize: 18, color: '#111827', fontWeight: 600 }}>
-            Búscate en la lista
+            Regístrate como servidor
           </h2>
-
-          <div style={{
-            display: 'flex', background: '#f3f4f6',
-            borderRadius: 10, padding: 4, marginBottom: 20, gap: 4
-          }}>
-            {(['nombre', 'cedula'] as ModoBusqueda[]).map(m => (
-              <button
-                key={m}
-                onClick={() => { setModo(m); setBusqueda(''); setError('') }}
-                style={{
-                  flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
-                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                  background: modo === m ? 'white' : 'transparent',
-                  color: modo === m ? '#0f1787' : '#6b7280',
-                  boxShadow: modo === m ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
-                  transition: 'all 0.15s'
-                }}
-              >
-                {m === 'nombre' ? 'Por nombre' : 'Por cédula'}
-              </button>
-            ))}
+          <div style={{ marginBottom: 8 }}>
+            <label style={labelStyle}>Número de documento</label>
+            <input
+              type="number"
+              value={numeroDocumento}
+              onChange={e => { setNumeroDocumento(e.target.value); setError('') }}
+              onKeyDown={e => e.key === 'Enter' && buscarDocumento()}
+              placeholder="Ej: 1000181545"
+              style={inputStyle}
+              autoFocus
+              disabled={paso === 'enviando'}
+            />
           </div>
 
-          <input
-            type={modo === 'cedula' ? 'number' : 'text'}
-            value={busqueda}
-            onChange={e => { setBusqueda(e.target.value); setError('') }}
-            onKeyDown={e => e.key === 'Enter' && buscarServidor()}
-            placeholder={modo === 'nombre' ? 'Ej: María González' : 'Ej: 1000181545'}
-            style={{
-              width: '100%', padding: '12px 14px', borderRadius: 10,
-              border: '1.5px solid #e2e4f0', fontSize: 16,
-              outline: 'none', marginBottom: 8, boxSizing: 'border-box',
-              fontFamily: 'inherit', color: '#111827'
-            }}
-            autoFocus
-          />
-
           {error && (
-            <p style={{
-              color: '#dc2626', fontSize: 13, margin: '0 0 12px',
-              background: '#fef2f2', padding: '8px 12px', borderRadius: 8
-            }}>{error}</p>
+            <p style={{ color: '#dc2626', fontSize: 13, margin: '8px 0 0', background: '#fef2f2', padding: '8px 12px', borderRadius: 8 }}>
+              {error}
+            </p>
           )}
 
-          <button
-            onClick={buscarServidor}
-            disabled={loading}
-            style={{
-              width: '100%', padding: '13px',
-              background: loading ? '#9ca3af' : '#0f1787',
-              color: 'white', border: 'none', borderRadius: 10,
-              fontSize: 15, fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >{loading ? 'Buscando...' : 'Buscar'}</button>
+          <button onClick={buscarDocumento} disabled={paso === 'enviando'} style={{ ...botonPrimario(paso === 'enviando'), marginTop: 16 }}>
+            {paso === 'enviando' ? 'Buscando...' : 'Continuar'}
+          </button>
         </div>
 
         <p style={{ textAlign: 'center', marginTop: 24, fontSize: 14, color: '#6b7280' }}>
           ¿Ya tienes cuenta?{' '}
-          <button
-            onClick={() => router.push('/')}
-            style={{
-              background: 'none', border: 'none', color: '#0f1787',
-              fontWeight: 600, cursor: 'pointer', fontSize: 14
-            }}
-          >Inicia sesión</button>
+          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', color: '#0f1787', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
+            Inicia sesión
+          </button>
         </p>
       </div>
     </div>
   )
 
-  if (paso === 'confirmar') return (
-    <div style={{
-      minHeight: '100vh', background: '#f7f8fc',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-    }}>
-      <div style={{ width: '100%', maxWidth: 420 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            fontFamily: 'Georgia, serif', fontSize: 28, fontWeight: 700,
-            color: '#0f1787', letterSpacing: 4, marginBottom: 6
-          }}>EFFETÁ</div>
-          <p style={{ color: '#6b7280', fontSize: 14, margin: 0 }}>¿Cuál eres tú?</p>
-        </div>
-
-        <div style={{
-          background: 'white', borderRadius: 16,
-          padding: 24, boxShadow: '0 2px 16px rgba(0,0,0,0.06)'
-        }}>
-          <p style={{ margin: '0 0 16px', fontSize: 14, color: '#374151', fontWeight: 500 }}>
-            Encontramos {resultados.length} resultado{resultados.length > 1 ? 's' : ''}:
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {resultados.map(s => (
-              <button
-                key={s.id}
-                onClick={() => seleccionarServidor(s)}
-                style={{
-                  padding: '14px 16px', border: '1.5px solid #e2e4f0',
-                  borderRadius: 12, background: 'white', cursor: 'pointer',
-                  textAlign: 'left'
-                }}
-              >
-                <div style={{ fontWeight: 600, color: '#111827', fontSize: 15 }}>
-                  {s.nombre}
-                </div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
-                  {s.numero_documento && `CC ${s.numero_documento} · `}
-                  {s.es_interno ? 'Servidor interno' : 'Servidor externo'}
-                  {s.usuario_id && ' · Cuenta ya creada'}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {error && (
-            <p style={{
-              color: '#dc2626', fontSize: 13, margin: '16px 0 0',
-              background: '#fef2f2', padding: '8px 12px', borderRadius: 8
-            }}>{error}</p>
-          )}
-
-          <button
-            onClick={() => { setPaso('buscar'); setResultados([]); setError('') }}
-            style={{
-              marginTop: 16, width: '100%', padding: '11px',
-              background: 'none', border: '1.5px solid #e2e4f0',
-              borderRadius: 10, color: '#6b7280', fontSize: 14,
-              cursor: 'pointer', fontWeight: 500
-            }}
-          >← Volver a buscar</button>
-        </div>
-      </div>
-    </div>
-  )
-
-  if (paso === 'crear') return (
-    <div style={{
-      minHeight: '100vh', background: '#f7f8fc',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-    }}>
-      <div style={{ width: '100%', maxWidth: 420 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            fontFamily: 'Georgia, serif', fontSize: 28, fontWeight: 700,
-            color: '#0f1787', letterSpacing: 4, marginBottom: 6
-          }}>EFFETÁ</div>
-        </div>
-
-        <div style={{
-          background: 'white', borderRadius: 16,
-          padding: 28, boxShadow: '0 2px 16px rgba(0,0,0,0.06)'
-        }}>
-          <div style={{
-            background: '#f0f2ff', borderRadius: 10,
-            padding: '12px 16px', marginBottom: 24
-          }}>
-            <p style={{ margin: 0, fontSize: 13, color: '#4b5563' }}>Creando cuenta para</p>
-            <p style={{ margin: '2px 0 0', fontWeight: 700, color: '#0f1787', fontSize: 16 }}>
-              {seleccionado?.nombre}
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={{
-                display: 'block', fontSize: 13, fontWeight: 600,
-                color: '#374151', marginBottom: 6
-              }}>Correo electrónico</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => { setEmail(e.target.value); setError('') }}
-                placeholder="tu@correo.com"
-                style={{
-                  width: '100%', padding: '11px 14px', borderRadius: 10,
-                  border: '1.5px solid #e2e4f0', fontSize: 15,
-                  outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit'
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{
-                display: 'block', fontSize: 13, fontWeight: 600,
-                color: '#374151', marginBottom: 6
-              }}>Contraseña</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError('') }}
-                placeholder="Mínimo 6 caracteres"
-                style={{
-                  width: '100%', padding: '11px 14px', borderRadius: 10,
-                  border: '1.5px solid #e2e4f0', fontSize: 15,
-                  outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit'
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{
-                display: 'block', fontSize: 13, fontWeight: 600,
-                color: '#374151', marginBottom: 6
-              }}>Repetir contraseña</label>
-              <input
-                type="password"
-                value={password2}
-                onChange={e => { setPassword2(e.target.value); setError('') }}
-                placeholder="Repite la contraseña"
-                style={{
-                  width: '100%', padding: '11px 14px', borderRadius: 10,
-                  border: '1.5px solid #e2e4f0', fontSize: 15,
-                  outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit'
-                }}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <p style={{
-              color: '#dc2626', fontSize: 13, margin: '12px 0 0',
-              background: '#fef2f2', padding: '8px 12px', borderRadius: 8
-            }}>{error}</p>
-          )}
-
-          <button
-            onClick={crearCuenta}
-            disabled={loading}
-            style={{
-              marginTop: 20, width: '100%', padding: '13px',
-              background: loading ? '#9ca3af' : '#0f1787',
-              color: 'white', border: 'none', borderRadius: 10,
-              fontSize: 15, fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >{loading ? 'Creando cuenta...' : 'Crear mi cuenta'}</button>
-
-          <button
-            onClick={() => { setPaso('confirmar'); setError('') }}
-            style={{
-              marginTop: 10, width: '100%', padding: '11px',
-              background: 'none', border: '1.5px solid #e2e4f0',
-              borderRadius: 10, color: '#6b7280', fontSize: 14, cursor: 'pointer'
-            }}
-          >← Elegir otro nombre</button>
-        </div>
-      </div>
-    </div>
-  )
-
-  return (
-    <div style={{
-      minHeight: '100vh', background: '#f7f8fc',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-    }}>
+  if (paso === 'ya_tiene_cuenta') return (
+    <div style={contenedor}>
       <div style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
-        <div style={{
-          width: 64, height: 64, background: '#dcfce7', borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 auto 20px'
-        }}>
+        {logo}
+        <div style={cardStyle}>
+          <p style={{ margin: '0 0 20px', fontSize: 15, color: '#374151' }}>
+            Este documento ya tiene una cuenta creada.
+          </p>
+          <button onClick={() => router.push('/')} style={botonPrimario(false)}>
+            Iniciar sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (paso === 'formulario') return (
+    <div style={contenedor}>
+      <div style={{ width: '100%', maxWidth: 420 }}>
+        {logo}
+        <form onSubmit={enviarFormulario} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={labelStyle}>Nombre completo</label>
+            <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Correo electrónico</label>
+            <input type="email" value={correo} onChange={e => setCorreo(e.target.value)} placeholder="tu@correo.com" style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Contraseña</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Repetir contraseña</label>
+            <input type="password" value={password2} onChange={e => setPassword2(e.target.value)} style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>¿Qué idea tienes para el recaudo de fondos?</label>
+            <textarea value={ideaRecaudo} onChange={e => setIdeaRecaudo(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
+          </div>
+          <div>
+            <label style={labelStyle}>¿Qué idea tienes para una reunión?</label>
+            <textarea value={ideaReunion} onChange={e => setIdeaReunion(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
+          </div>
+
+          {!tieneFoto && (
+            <div>
+              <label style={labelStyle}>Foto de tu cara</label>
+              {fotoPreview ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <img src={fotoPreview} alt="Tu foto" style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
+                  <button type="button" onClick={() => { setFotoBlob(null); setFotoPreview(null); abrirCamara() }} style={{ background: 'none', border: '1.5px solid #e2e4f0', borderRadius: 10, padding: '8px 14px', fontSize: 13, color: '#6b7280', cursor: 'pointer' }}>
+                    Repetir foto
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={abrirCamara} style={{ width: '100%', padding: '13px', background: '#f0f2ff', border: '1.5px dashed #c7d2fe', borderRadius: 10, color: '#0f1787', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Tomar foto
+                </button>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <p style={{ color: '#dc2626', fontSize: 13, margin: 0, background: '#fef2f2', padding: '8px 12px', borderRadius: 8 }}>
+              {error}
+            </p>
+          )}
+
+          <button type="submit" style={botonPrimario(false)}>
+            Crear mi cuenta
+          </button>
+        </form>
+      </div>
+
+      {camaraActiva && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <p style={{ color: 'white', fontSize: 15, fontWeight: 600, marginBottom: 16, textAlign: 'center' }}>
+            Tómate una foto de tu cara
+          </p>
+          <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', maxWidth: 360, borderRadius: 16, transform: 'scaleX(-1)', marginBottom: 24 }} />
+          <canvas ref={canvasRef} style={{ display: 'none' }} />
+          <div style={{ display: 'flex', gap: 12, width: '100%', maxWidth: 360 }}>
+            <button onClick={detenerCamara} style={{ flex: 1, padding: '14px', background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', borderRadius: 12, fontSize: 15, cursor: 'pointer', fontWeight: 500 }}>
+              Cancelar
+            </button>
+            <button onClick={tomarFoto} style={{ flex: 2, padding: '14px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+              Tomar foto
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  // paso === 'listo'
+  return (
+    <div style={contenedor}>
+      <div style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
+        <div style={{ width: 64, height: 64, background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12"/>
+            <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
-        <h2 style={{ margin: '0 0 8px', fontSize: 22, color: '#111827', fontWeight: 700 }}>
-          ¡Cuenta creada!
-        </h2>
+        <h2 style={{ margin: '0 0 8px', fontSize: 22, color: '#111827', fontWeight: 700 }}>¡Cuenta creada!</h2>
         <p style={{ color: '#6b7280', fontSize: 15, lineHeight: 1.6, marginBottom: 32 }}>
-          Bienvenido, <strong>{seleccionado?.nombre.split(' ')[0]}</strong>.
-          Ya puedes acceder a tu portal.
+          Bienvenido, <strong>{nombre.split(' ')[0]}</strong>. Ya puedes acceder a tu portal.
         </p>
-        <div style={{
-          background: '#f0fdf4', borderRadius: 10, padding: '12px 16px',
-          fontSize: 13, color: '#166534', marginBottom: 28, lineHeight: 1.5
-        }}>
-          Tu cuenta quedó vinculada correctamente.
-        </div>
-        <button
-          onClick={() => router.push('/')}
-          style={{
-            width: '100%', padding: '13px', background: '#0f1787',
-            color: 'white', border: 'none', borderRadius: 10,
-            fontSize: 15, fontWeight: 600, cursor: 'pointer'
-          }}
-        >Ir al inicio de sesión</button>
+        <button onClick={() => router.push('/servidor')} style={botonPrimario(false)}>
+          Ir a mi portal
+        </button>
       </div>
     </div>
   )

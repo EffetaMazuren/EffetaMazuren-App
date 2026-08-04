@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useRetiroActual } from '@/lib/retiro-context'
 import BottomNav from '@/components/BottomNav'
 import {
   User, Bell, Shield, Download, RefreshCw,
@@ -95,10 +96,9 @@ function Modal({ titulo, mensaje, confirmLabel, onConfirm, onCancel, peligro }: 
   )
 }
 
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
-
 export default function ConfigPage() {
   const router = useRouter()
+  const { id: RETIRO_ID } = useRetiroActual()
   const [notifPagos, setNotifPagos] = useState(true)
   const [notifInscritos, setNotifInscritos] = useState(true)
   const [modal, setModal] = useState<'cerrar_sesion' | 'sync' | null>(null)

@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 interface Persona {
   id: string
@@ -46,6 +45,7 @@ interface ServidorSinVincular {
 export default function FichaIdentidadPage() {
   const router = useRouter()
   const { id } = useParams()
+  const { id: RETIRO_ID } = useRetiroActual()
 
   const [persona, setPersona] = useState<Persona | null>(null)
   const [caminante, setCaminante] = useState<ParticipacionCaminante[]>([])

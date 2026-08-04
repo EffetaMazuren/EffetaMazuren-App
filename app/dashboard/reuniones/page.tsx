@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 interface Reunion {
   id: string
@@ -28,6 +27,7 @@ interface Asistencia {
 
 export default function ReunionesLider() {
   const router = useRouter()
+  const { id: RETIRO_ID } = useRetiroActual()
   const [reuniones, setReuniones] = useState<Reunion[]>([])
   const [loading, setLoading] = useState(true)
   const [guardando, setGuardando] = useState('')

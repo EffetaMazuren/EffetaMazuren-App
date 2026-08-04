@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 interface PerfilData {
   nombre: string
@@ -12,8 +11,28 @@ interface PerfilData {
   rol: string | null
 }
 
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+function formatearFechasRetiro(fechaInicio: string, fechaFin: string): string {
+  const inicio = new Date(fechaInicio + 'T00:00:00')
+  const fin = new Date(fechaFin + 'T00:00:00')
+
+  if (inicio.getMonth() === fin.getMonth() && inicio.getFullYear() === fin.getFullYear()) {
+    const dias: number[] = []
+    for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) dias.push(d.getDate())
+    const listaDias = dias.length > 1
+      ? `${dias.slice(0, -1).join(', ')} y ${dias[dias.length - 1]}`
+      : `${dias[0]}`
+    return `${listaDias} de ${MESES[inicio.getMonth()]} de ${inicio.getFullYear()}`
+  }
+
+  const fmt = (d: Date) => `${d.getDate()} de ${MESES[d.getMonth()]}`
+  return `${fmt(inicio)} al ${fmt(fin)} de ${fin.getFullYear()}`
+}
+
 export default function PerfilPage() {
   const router = useRouter()
+  const retiro = useRetiroActual()
   const [perfil, setPerfil] = useState<PerfilData | null>(null)
   const [loading, setLoading] = useState(true)
   const [cerrando, setCerrando] = useState(false)
@@ -94,8 +113,8 @@ export default function PerfilPage() {
         <div style={{ background: 'white', borderRadius: 16, padding: '20px', marginBottom: 16, border: '0.5px solid #e8eaf0' }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 14px' }}>Retiro activo</p>
           {[
-            { label: 'Nombre', value: 'IX Retiro Effetá Mazuren' },
-            { label: 'Fecha', value: '3, 4 y 5 de julio de 2026' },
+            { label: 'Nombre', value: retiro.nombre },
+            { label: 'Fecha', value: formatearFechasRetiro(retiro.fecha_inicio, retiro.fecha_fin) },
             { label: 'Lugar', value: 'Casa Santa Luisa Los Pinares' },
           ].map((item, i, arr) => (
             <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: i < arr.length - 1 ? 12 : 0, marginBottom: i < arr.length - 1 ? 12 : 0, borderBottom: i < arr.length - 1 ? '0.5px solid #f3f4f6' : 'none' }}>

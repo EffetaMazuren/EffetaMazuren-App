@@ -1,10 +1,10 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
+import { useRetiroActual } from '@/lib/retiro-context';
 
 export default function ReembolsoPage() {
+  const { id: RETIRO_ID } = useRetiroActual();
   const [servidorId, setServidorId] = useState<string | null>(null);
   const [usuarioId, setUsuarioId] = useState<string | null>(null);
   const [categorias, setCategorias] = useState<any[]>([]);

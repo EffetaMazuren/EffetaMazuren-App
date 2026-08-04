@@ -3,12 +3,16 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useRetiroActual } from '@/lib/retiro-context'
 
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+// Rutas visibles/permitidas del portal de servidor mientras se rediseña el
+// resto -- reversar es agregar la ruta de vuelta a esta lista, nada más.
+const RUTAS_ACTIVAS = ['/servidor', '/servidor/asistencias', '/servidor/registro']
 
 export default function ServidorLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
+  const { id: RETIRO_ID } = useRetiroActual()
   const [nombre, setNombre] = useState('')
   const [loading, setLoading] = useState(true)
   const [esPalancas, setEsPalancas] = useState(false)
@@ -19,6 +23,11 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
 
       if (!session && pathname !== '/servidor/registro') {
         router.push('/')
+        return
+      }
+
+      if (!RUTAS_ACTIVAS.includes(pathname)) {
+        router.push('/servidor')
         return
       }
 
@@ -160,7 +169,8 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
     ),
   }
 
-  const navItems = esPalancas ? [...navItemsBase, tabPalancas] : navItemsBase
+  const navItems = (esPalancas ? [...navItemsBase, tabPalancas] : navItemsBase)
+    .filter(item => RUTAS_ACTIVAS.includes(item.href))
 
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>

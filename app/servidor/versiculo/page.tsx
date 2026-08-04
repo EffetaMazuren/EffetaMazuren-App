@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useRetiroActual } from '@/lib/retiro-context';
 
 const VERSICULOS = [
   { ref: 'Génesis 1:1', texto: 'En el principio creó Dios los cielos y la tierra.' },
@@ -266,6 +267,7 @@ interface Reflexion {
 
 export default function VersiculoPage() {
   const router = useRouter();
+  const { id: RETIRO_ID } = useRetiroActual();
   const [inscripcionId, setInscripcionId] = useState<string | null>(null);
   const [reflexiones, setReflexiones] = useState<Reflexion[]>([]);
   const [nuevaReflexion, setNuevaReflexion] = useState('');
@@ -289,7 +291,7 @@ export default function VersiculoPage() {
       .from('servidores_inscripcion')
       .select('id')
       .eq('usuario_id', user.id)
-      .eq('retiro_id', '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e')
+      .eq('retiro_id', RETIRO_ID)
       .single();
 
     if (!inscripcion) { router.push('/servidor'); return; }

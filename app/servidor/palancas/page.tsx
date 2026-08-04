@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRetiroActual } from '@/lib/retiro-context';
 
 interface Caminante {
   id: string;
@@ -28,7 +29,6 @@ interface CaminanteConContactos extends Caminante {
   contacto2: ContactoInfo | null;
 }
 
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_QYfs6yiwRH1aQRt2smJoQIgRQ-bzFzWK3fgDFrbD6ApiaUygGIEYJUVcxp7Mf00oOw/exec';
 
 const SERVIDORES_PALANCAS_IDS = [
@@ -76,6 +76,7 @@ function norm(s: string) {
 }
 
 export default function PalancasServidorPage() {
+  const { id: RETIRO_ID } = useRetiroActual();
   const [modo, setModo] = useState<'cargando' | 'servidor' | 'lider' | 'error'>('cargando');
   const [error, setError] = useState('');
 

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRetiroActual } from '@/lib/retiro-context';
 
 interface Seguimiento {
   id: string;
@@ -17,7 +18,6 @@ interface Seguimiento {
   updated_at: string;
 }
 
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_QYfs6yiwRH1aQRt2smJoQIgRQ-bzFzWK3fgDFrbD6ApiaUygGIEYJUVcxp7Mf00oOw/exec';
 
 const SERVIDORES_PALANCAS_IDS = [
@@ -45,6 +45,7 @@ const APODOS: Record<string, string> = {
 };
 
 export default function DashboardPalancasPage() {
+  const { id: RETIRO_ID } = useRetiroActual();
   const [seguimiento, setSeguimiento] = useState<Seguimiento[]>([]);
   const [servidores, setServidores] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);

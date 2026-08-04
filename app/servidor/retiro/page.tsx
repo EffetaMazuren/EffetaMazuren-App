@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 interface RolRetiro {
   rol: string
@@ -205,6 +204,7 @@ function CampoEditable({
 }
 
 export default function RetiroPage() {
+  const { id: RETIRO_ID } = useRetiroActual()
   const [info, setInfo] = useState<ServidorInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [nombreServidor, setNombreServidor] = useState('')

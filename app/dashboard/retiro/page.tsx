@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useRetiroActual } from '@/lib/retiro-context'
 
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 const CAMINANTES_POR_MESA = 6
 const APPS_SCRIPT_MESAS = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
 const APPS_SCRIPT_HABITACIONES = 'https://script.google.com/macros/s/AKfycbx0ECn_Bv7pDUvSxna_ewwZcUt7kwDE4WQuMZk5QTq4SfpSYKG7xXzuIqi12lVDDE_aGQ/exec'
@@ -154,6 +154,7 @@ const CATEGORIAS_COLOR: Record<string, { border: string; badge: string; text: st
 
 export default function RetiroDashboard() {
   const router = useRouter()
+  const { id: RETIRO_ID } = useRetiroActual()
   const [tab, setTab] = useState<Tab>('minutominuto')
   const [diaActivo, setDiaActivo] = useState<Dia>('viernes')
   const [expandido, setExpandido] = useState<string|null>(null)

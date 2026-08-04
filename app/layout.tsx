@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { RetiroProvider } from '@/lib/retiro-context'
 
 export const metadata: Metadata = {
   title: 'Effetá Mazuren',
@@ -12,7 +13,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body>
+        <RetiroProvider>{children}</RetiroProvider>
+      </body>
     </html>
   )
 }

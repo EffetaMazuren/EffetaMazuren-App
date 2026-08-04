@@ -3,8 +3,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useRetiroActual } from '@/lib/retiro-context'
 
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 const BUCKET = 'comprobantes-pagos'
 
 interface Comprobante {
@@ -25,6 +25,7 @@ interface PagoResumen {
 
 export default function PagoServidor() {
   const router = useRouter()
+  const { id: RETIRO_ID } = useRetiroActual()
   const fileRef = useRef<HTMLInputElement>(null)
   const [comprobantes, setComprobantes] = useState<Comprobante[]>([])
   const [resumen, setResumen] = useState<PagoResumen | null>(null)

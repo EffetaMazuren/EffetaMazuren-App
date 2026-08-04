@@ -3,8 +3,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useRetiroActual } from '@/lib/retiro-context'
 
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
 const BUCKET = 'comprobantes-pagos'
 const FECHA_INICIO_ASISTENCIAS = '2026-06-16'
 
@@ -21,6 +21,7 @@ interface Reunion {
 
 export default function AsistenciasServidor() {
   const router = useRouter()
+  const { id: RETIRO_ID } = useRetiroActual()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)

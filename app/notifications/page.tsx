@@ -5,8 +5,7 @@ import React from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 interface Notificacion {
   id: string
@@ -59,6 +58,7 @@ const TIPO_CONFIG: Record<string, { color: string; bg: string; icon: React.React
 
 export default function NotificationsPage() {
   const router = useRouter()
+  const { id: RETIRO_ID } = useRetiroActual()
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([])
   const [loading, setLoading] = useState(true)
 

@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-
-const RETIRO_ID = '21da7588-f7d9-4bf8-a6f6-ae6c8258c00e';
+import { useRetiroActual } from '@/lib/retiro-context';
 
 interface Servidor {
   id: string;
@@ -74,6 +73,7 @@ function norm(s: string) {
 
 export default function ServidorPage() {
   const router = useRouter();
+  const { id: RETIRO_ID } = useRetiroActual();
   const [servidor, setServidor] = useState<Servidor | null>(null);
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [proximaReunion, setProximaReunion] = useState<Reunion | null>(null);
