@@ -199,21 +199,30 @@ export default function AsistenciasServidor() {
 
       const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(nombreArchivo)
 
-      const { error: asistErr } = await supabase
-        .from('asistencias')
-        .upsert({
-          usuario_id: usuarioId,
-          servidor_inscripcion_id: inscripcionId,
-          reunion_id: reunionActiva.id,
-          asistio: true,
-          foto_url: urlData.publicUrl,
-          fecha_registro: new Date().toISOString(),
-          fuera_de_horario: fueraDeHorario,
-          motivo_alerta: motivoAlerta,
-        }, { onConflict: 'servidor_inscripcion_id,reunion_id' })
+      let asistErr: string | null = null
+      try {
+        const res = await fetch('/api/servidor/asistencias/marcar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            usuarioId,
+            servidorInscripcionId: inscripcionId,
+            reunionId: reunionActiva.id,
+            fotoUrl: urlData.publicUrl,
+            fueraDeHorario,
+            motivoAlerta,
+          }),
+        })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          asistErr = body.error || 'Error desconocido'
+        }
+      } catch (err) {
+        asistErr = err instanceof Error ? err.message : 'Error desconocido'
+      }
 
       if (asistErr) {
-        setError('Error al registrar asistencia: ' + asistErr.message)
+        setError('Error al registrar asistencia: ' + asistErr)
       } else {
         if (fueraDeHorario) {
           setExito('Asistencia registrada. Los líderes fueron notificados que fue fuera de horario.')
