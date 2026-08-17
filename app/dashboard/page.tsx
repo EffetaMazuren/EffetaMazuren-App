@@ -476,6 +476,21 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Tareas pendientes del retiro</p>
           </button>
 
+          <button onClick={() => router.push('/dashboard/servidores/asistencias')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative">
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 16 11 18 15 14"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Asistencias</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Rachas, marcar, fotos y alertas</p>
+            {(data?.alertasAsistencia ?? 0) > 0 && (
+              <span className="absolute top-3 right-3 bg-amber-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {data?.alertasAsistencia}
+              </span>
+            )}
+          </button>
+
           <button onClick={() => router.push('/dashboard/palancas')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 mb-2">
@@ -530,21 +545,6 @@ export default function DashboardPage() {
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Ideas de servidores</span>
             </div>
             <p className="text-sm text-gray-600 leading-tight">Ideas de recaudo de fondos y de reuniones</p>
-          </button>
-
-          <button onClick={() => router.push('/dashboard/servidores/asistencias')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative">
-            <div className="flex items-center gap-2 mb-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 16 11 18 15 14"/>
-              </svg>
-              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Asistencias de servidores</span>
-            </div>
-            <p className="text-sm text-gray-600 leading-tight">Rachas, totales, fotos y alertas fuera de horario</p>
-            {(data?.alertasAsistencia ?? 0) > 0 && (
-              <span className="absolute top-3 right-3 bg-amber-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                {data?.alertasAsistencia}
-              </span>
-            )}
           </button>
 
         </div>
