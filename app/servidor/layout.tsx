@@ -39,7 +39,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
           .from('usuarios')
           .select('rol')
           .eq('id', userId)
-          .single()
+          .maybeSingle()
 
         if (usuario?.rol === 'lider') {
           router.push('/dashboard')
@@ -52,7 +52,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
             .from('servidores_inscripcion')
             .select('id, usuario_id, nombre, grupo')
             .eq('id', inscripcionId)
-            .single()
+            .maybeSingle()
 
           if (srv && !srv.usuario_id) {
             await supabase
@@ -70,7 +70,7 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
             .select('nombre, grupo')
             .eq('usuario_id', userId)
             .eq('retiro_id', RETIRO_ID)
-            .single()
+            .maybeSingle()
 
           if (srv?.nombre) setNombre(srv.nombre)
           if (srv?.grupo === 'palancas') setEsPalancas(true)

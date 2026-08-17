@@ -67,11 +67,12 @@ export default function ServidorPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/'); return; }
 
-    const { data: usuarioCheck } = await supabase
+    const { data: usuarioCheck, error: errUsuarioCheck } = await supabase
       .from('usuarios')
       .select('es_lider')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
+    if (errUsuarioCheck) console.error('Error consultando usuarios.es_lider:', errUsuarioCheck);
     if (usuarioCheck?.es_lider) {
       router.push('/dashboard')
       return
@@ -79,29 +80,57 @@ export default function ServidorPage() {
 
     // 1. Intentar obtener datos de la tabla usuarios
     let servidorData: Servidor | null = null;
-    const { data: usuarioData } = await supabase
+    const { data: usuarioData, error: errUsuarioData } = await supabase
       .from('usuarios')
       .select('id, nombre, rol, correo')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
+    if (errUsuarioData) console.error('Error consultando usuarios:', errUsuarioData);
 
     if (usuarioData) {
       servidorData = usuarioData;
     } else {
-      // 2. FALLBACK: buscar directamente en servidores_inscripcion
+      // 2. FALLBACK: buscar directamente en servidores_inscripcion por usuario_id
       //    (ocurre cuando usuario_id quedó NULL y no se creó fila en usuarios)
-      const { data: inscFallback } = await supabase
+      const { data: inscFallback, error: errFallback } = await supabase
         .from('servidores_inscripcion')
         .select('id, nombre, es_interno')
         .eq('usuario_id', user.id)
         .eq('retiro_id', RETIRO_ID)
-        .single();
+        .maybeSingle();
+      if (errFallback) console.error('Error en fallback por usuario_id:', errFallback);
 
-      if (inscFallback) {
+      let inscripcionRecuperada = inscFallback;
+
+      // 3. FALLBACK 2: buscar por correo -- cubre cuentas donde el link de
+      //    usuario_id nunca se completó (hueco del flujo de registro viejo,
+      //    antes de que la creación de cuenta pasara por /api con rollback).
+      //    Si aparece, se repara el link para que la próxima vez entre por
+      //    el camino normal.
+      if (!inscripcionRecuperada && user.email) {
+        const { data: inscPorCorreo, error: errCorreo } = await supabase
+          .from('servidores_inscripcion')
+          .select('id, nombre, es_interno')
+          .eq('correo', user.email.toLowerCase())
+          .eq('retiro_id', RETIRO_ID)
+          .is('usuario_id', null)
+          .maybeSingle();
+        if (errCorreo) console.error('Error en fallback por correo:', errCorreo);
+
+        if (inscPorCorreo) {
+          await supabase
+            .from('servidores_inscripcion')
+            .update({ usuario_id: user.id })
+            .eq('id', inscPorCorreo.id);
+          inscripcionRecuperada = inscPorCorreo;
+        }
+      }
+
+      if (inscripcionRecuperada) {
         // Construir objeto servidor desde la inscripción
         servidorData = {
           id: user.id,
-          nombre: inscFallback.nombre ?? '',
+          nombre: inscripcionRecuperada.nombre ?? '',
           rol: null,
           correo: user.email ?? null,
         };
@@ -109,13 +138,10 @@ export default function ServidorPage() {
         // Intentar crear la fila faltante en usuarios para que la próxima vez funcione normal
         await supabase.from('usuarios').upsert({
           id: user.id,
-          nombre: inscFallback.nombre ?? '',
+          nombre: inscripcionRecuperada.nombre ?? '',
           correo: user.email ?? null,
-          rol: null,
+          rol: 'servidor',
         }, { onConflict: 'id' });
-
-        // También linkear el usuario_id en servidores_inscripcion si faltaba
-        // (doble seguro, aunque ya debería estar linkeado si llegamos aquí por usuario_id)
       } else {
         // No hay inscripción — sí mandar a registro
         router.push('/servidor/registro');
@@ -126,12 +152,13 @@ export default function ServidorPage() {
     setServidor(servidorData);
 
     // Buscar inscripción del retiro activo
-    const { data: inscripcion } = await supabase
+    const { data: inscripcion, error: errInscripcion } = await supabase
       .from('servidores_inscripcion')
       .select('id, nombre, idea_recaudo, idea_reunion')
       .eq('usuario_id', user.id)
       .eq('retiro_id', RETIRO_ID)
-      .single();
+      .maybeSingle();
+    if (errInscripcion) console.error('Error consultando inscripción:', errInscripcion);
 
     if (inscripcion) {
       inscripcionIdRef.current = inscripcion.id;
