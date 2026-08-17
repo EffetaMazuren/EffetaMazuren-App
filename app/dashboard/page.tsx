@@ -10,11 +10,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const NOMBRES_MES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-]
-
 interface DashboardData {
   totalCaminantes: number
   caminantesInscritos: number
@@ -35,12 +30,6 @@ interface DashboardData {
   diasRestantes: number
   reembolsosPendientes: number
   alertasAsistencia: number
-}
-
-interface CumpleanosMes {
-  nombre: string
-  dia: number
-  esHoy: boolean
 }
 
 function formatCOP(value: number): string {
@@ -67,32 +56,6 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState('Líder')
   const [expandedCard, setExpandedCard] = useState<'caminantes' | 'servidores' | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
-  const [cumpleanosMes, setCumpleanosMes] = useState<CumpleanosMes[]>([])
-
-  async function fetchCumpleanos() {
-    try {
-      const hoy = new Date()
-      const diaHoy = hoy.getDate()
-      const mesHoy = hoy.getMonth() + 1
-
-      const { data: usuariosCumple } = await supabase
-        .from('usuarios')
-        .select('nombre, dia_cumpleanos, mes_cumpleanos')
-        .eq('mes_cumpleanos', mesHoy)
-        .not('dia_cumpleanos', 'is', null)
-        .order('dia_cumpleanos', { ascending: true })
-
-      const lista: CumpleanosMes[] = (usuariosCumple ?? []).map(u => ({
-        nombre: u.nombre as string,
-        dia: u.dia_cumpleanos as number,
-        esHoy: u.dia_cumpleanos === diaHoy,
-      }))
-
-      setCumpleanosMes(lista)
-    } catch (err) {
-      console.error('Error fetching cumpleanos:', err)
-    }
-  }
 
   async function fetchDashboard() {
     try {
@@ -209,7 +172,6 @@ export default function DashboardPage() {
     })
 
     fetchDashboard()
-    fetchCumpleanos()
 
     const channel = supabase
       .channel('dashboard-realtime')
@@ -218,7 +180,6 @@ export default function DashboardPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'caminantes' }, fetchDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'servidores_inscripcion' }, fetchDashboard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'asistencias' }, fetchDashboard)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'usuarios' }, fetchCumpleanos)
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -227,7 +188,6 @@ export default function DashboardPage() {
   const porcentajeMeta = data ? Math.min(100, (data.totalRecaudado / META_RECAUDO) * 100) : 0
   const porcentajeCupos = data ? Math.min(100, (data.caminantesConAbono / CUPO_MAXIMO) * 100) : 0
   const metaServidores = data ? Math.min(100, ((data.servidoresPagoCompleto * 380_000) / (CUPO_MAXIMO * 380_000)) * 100) : 0
-  const mesActualNombre = NOMBRES_MES[new Date().getMonth()]
 
   const getHora = () => {
     const h = new Date().getHours()
@@ -298,40 +258,6 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
-
-        {/* Cumpleaños del mes */}
-        {cumpleanosMes.length > 0 && (
-          <div className="bg-white rounded-2xl mb-4 overflow-hidden shadow-sm border border-gray-100 p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg leading-none">🎂</span>
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Cumpleaños de {mesActualNombre}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              {cumpleanosMes.map((c, i) => (
-                <div
-                  key={`${c.nombre}-${i}`}
-                  className={`flex items-center justify-between rounded-xl px-3 py-2 ${
-                    c.esHoy ? 'bg-amber-50' : 'bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className={`text-sm font-bold w-7 text-center ${c.esHoy ? 'text-amber-700' : 'text-gray-400'}`}>
-                      {c.dia}
-                    </span>
-                    <span className="text-sm font-medium text-gray-800">{c.nombre}</span>
-                  </div>
-                  {c.esHoy && (
-                    <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
-                      ¡Hoy! 🎉
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Hero — Meta de Recaudo */}
         <div className="bg-[#0f1787] rounded-2xl p-5 mb-3 overflow-hidden relative">
@@ -550,21 +476,6 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Tareas pendientes del retiro</p>
           </button>
 
-          <button onClick={() => router.push('/dashboard/asistencias')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative">
-            <div className="flex items-center gap-2 mb-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
-              </svg>
-              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Asistencias</span>
-            </div>
-            <p className="text-sm text-gray-600 leading-tight">Fotos y alertas fuera de horario</p>
-            {(data?.alertasAsistencia ?? 0) > 0 && (
-              <span className="absolute top-3 right-3 bg-amber-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                {data?.alertasAsistencia}
-              </span>
-            )}
-          </button>
-
           <button onClick={() => router.push('/dashboard/palancas')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 mb-2">
@@ -621,14 +532,19 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 leading-tight">Ideas de recaudo de fondos y de reuniones</p>
           </button>
 
-          <button onClick={() => router.push('/dashboard/servidores/asistencias')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
+          <button onClick={() => router.push('/dashboard/servidores/asistencias')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow relative">
             <div className="flex items-center gap-2 mb-2">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="9 16 11 18 15 14"/>
               </svg>
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Asistencias de servidores</span>
             </div>
-            <p className="text-sm text-gray-600 leading-tight">Rachas, totales y filtro por nombre</p>
+            <p className="text-sm text-gray-600 leading-tight">Rachas, totales, fotos y alertas fuera de horario</p>
+            {(data?.alertasAsistencia ?? 0) > 0 && (
+              <span className="absolute top-3 right-3 bg-amber-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                {data?.alertasAsistencia}
+              </span>
+            )}
           </button>
 
         </div>

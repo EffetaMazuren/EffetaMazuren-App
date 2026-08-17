@@ -25,8 +25,19 @@ interface FilaServidor {
   racha: number
 }
 
+interface Alerta {
+  id: string
+  foto_url: string | null
+  fecha_registro: string
+  motivo_alerta: string
+  fuera_de_horario: boolean
+  asistio?: boolean
+  servidor_inscripcion: { nombre: string } | null
+  reunion: { nombre: string; fecha: string } | null
+}
+
 type Orden = 'total' | 'racha'
-type Tab = 'resumen' | 'marcar'
+type Tab = 'resumen' | 'marcar' | 'alertas' | 'fotos'
 
 export default function AsistenciasServidoresPage() {
   const router = useRouter()
@@ -43,6 +54,10 @@ export default function AsistenciasServidoresPage() {
   const [reunionSeleccionada, setReunionSeleccionada] = useState<string>('')
   const [guardando, setGuardando] = useState<string | null>(null)
 
+  const [alertas, setAlertas] = useState<Alerta[]>([])
+  const [todas, setTodas] = useState<Alerta[]>([])
+  const [imagenAmpliada, setImagenAmpliada] = useState<Alerta | null>(null)
+
   useEffect(() => {
     const verificar = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -56,10 +71,40 @@ export default function AsistenciasServidoresPage() {
 
       if (usuario?.rol !== 'lider') { router.push('/servidor'); return }
 
-      await cargar()
+      await Promise.all([cargar(), cargarFotos()])
     }
     verificar()
   }, [])
+
+  async function cargarFotos() {
+    const [{ data: alts }, { data: tod }] = await Promise.all([
+      supabase
+        .from('asistencias')
+        .select(`
+          id, foto_url, fecha_registro, motivo_alerta, fuera_de_horario,
+          servidor_inscripcion:servidor_inscripcion_id(nombre),
+          reunion:reunion_id!inner(nombre, fecha, retiro_id)
+        `)
+        .eq('fuera_de_horario', true)
+        .eq('reunion.retiro_id', RETIRO_ID)
+        .order('fecha_registro', { ascending: false }),
+      supabase
+        .from('asistencias')
+        .select(`
+          id, foto_url, fecha_registro, motivo_alerta, fuera_de_horario, asistio,
+          servidor_inscripcion:servidor_inscripcion_id(nombre),
+          reunion:reunion_id!inner(nombre, fecha, retiro_id)
+        `)
+        .eq('reunion.retiro_id', RETIRO_ID)
+        .order('fecha_registro', { ascending: false })
+        .limit(100),
+    ])
+    setAlertas((alts || []) as unknown as Alerta[])
+    setTodas((tod || []) as unknown as Alerta[])
+  }
+
+  const fmtFecha = (iso: string) =>
+    new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
   async function cargar() {
     setLoading(true)
@@ -138,19 +183,29 @@ export default function AsistenciasServidoresPage() {
     const clave = `${servidor.id}-${reunionSeleccionada}`
     setGuardando(clave)
 
-    const { error: errMarcar } = await supabase
-      .from('asistencias')
-      .upsert({
-        servidor_inscripcion_id: servidor.id,
-        usuario_id: servidor.usuario_id,
-        reunion_id: reunionSeleccionada,
-        asistio: valor,
-        fuera_de_horario: false,
-        fecha_registro: new Date().toISOString(),
-      }, { onConflict: 'servidor_inscripcion_id,reunion_id' })
+    let fallo = false
+    try {
+      const res = await fetch('/api/lider/asistencias/marcar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          servidorInscripcionId: servidor.id,
+          usuarioId: servidor.usuario_id,
+          reunionId: reunionSeleccionada,
+          asistio: valor,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        console.error('Error marcando asistencia:', body)
+        fallo = true
+      }
+    } catch (err) {
+      console.error('Error marcando asistencia:', err)
+      fallo = true
+    }
 
-    if (errMarcar) {
-      console.error('Error marcando asistencia:', errMarcar)
+    if (fallo) {
       setError('No se pudo guardar. Intenta de nuevo.')
     } else {
       setAsistenciaMap(prev => {
@@ -203,28 +258,47 @@ export default function AsistenciasServidoresPage() {
           Solo cuentan las tomadas dentro de la ventana de horario válida.
         </p>
 
-        <div className="flex bg-white rounded-xl border border-gray-200 p-1 mb-4">
+        <div className="flex bg-white rounded-xl border border-gray-200 p-1 mb-4 gap-1 overflow-x-auto">
           <button
             onClick={() => setTab('resumen')}
-            className={`flex-1 text-sm font-medium py-2 rounded-lg ${tab === 'resumen' ? 'bg-[#0f1787] text-white' : 'text-gray-500'}`}
+            className={`flex-1 whitespace-nowrap text-sm font-medium py-2 px-2 rounded-lg ${tab === 'resumen' ? 'bg-[#0f1787] text-white' : 'text-gray-500'}`}
           >
             Resumen
           </button>
           <button
             onClick={() => setTab('marcar')}
-            className={`flex-1 text-sm font-medium py-2 rounded-lg ${tab === 'marcar' ? 'bg-[#0f1787] text-white' : 'text-gray-500'}`}
+            className={`flex-1 whitespace-nowrap text-sm font-medium py-2 px-2 rounded-lg ${tab === 'marcar' ? 'bg-[#0f1787] text-white' : 'text-gray-500'}`}
           >
-            Marcar asistencia
+            Marcar
+          </button>
+          <button
+            onClick={() => setTab('alertas')}
+            className={`flex-1 whitespace-nowrap text-sm font-medium py-2 px-2 rounded-lg relative ${tab === 'alertas' ? 'bg-[#0f1787] text-white' : 'text-gray-500'}`}
+          >
+            Alertas
+            {alertas.length > 0 && (
+              <span className="ml-1 bg-red-600 text-white rounded-full text-[10px] px-1.5 py-0.5">
+                {alertas.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab('fotos')}
+            className={`flex-1 whitespace-nowrap text-sm font-medium py-2 px-2 rounded-lg ${tab === 'fotos' ? 'bg-[#0f1787] text-white' : 'text-gray-500'}`}
+          >
+            Fotos
           </button>
         </div>
 
-        <input
-          type="text"
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          placeholder="Buscar por nombre…"
-          className="w-full h-11 rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none focus:border-[#0f1787] mb-3"
-        />
+        {(tab === 'resumen' || tab === 'marcar') && (
+          <input
+            type="text"
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre…"
+            className="w-full h-11 rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none focus:border-[#0f1787] mb-3"
+          />
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-600 mb-4">
@@ -232,7 +306,7 @@ export default function AsistenciasServidoresPage() {
           </div>
         )}
 
-        {tab === 'resumen' ? (
+        {tab === 'resumen' && (
           <>
             <div className="flex gap-2 mb-4">
               <button
@@ -273,7 +347,9 @@ export default function AsistenciasServidoresPage() {
               </div>
             )}
           </>
-        ) : (
+        )}
+
+        {tab === 'marcar' && (
           <>
             {reuniones.length === 0 ? (
               <div className="text-center text-gray-400 text-sm py-16">
@@ -326,7 +402,111 @@ export default function AsistenciasServidoresPage() {
             )}
           </>
         )}
+
+        {tab === 'alertas' && (
+          alertas.length === 0 ? (
+            <div className="text-center text-gray-400 text-sm py-16">
+              ✅ No hay asistencias fuera de horario
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {alertas.map(a => (
+                <div key={a.id} className="bg-white rounded-2xl p-4 shadow-sm border-[1.5px] border-amber-300">
+                  <div className="mb-2">
+                    <span className="text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                      ⚠️ Fuera de horario
+                    </span>
+                    <p className="text-sm font-semibold text-gray-900 mt-1.5">
+                      👤 {a.servidor_inscripcion?.nombre || 'Servidor'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      📅 {a.reunion?.nombre || '—'} · {a.reunion?.fecha ? new Date(a.reunion.fecha + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'long' }) : '—'}
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      🕐 {fmtFecha(a.fecha_registro)}
+                    </p>
+                  </div>
+                  {a.motivo_alerta && (
+                    <div className="bg-amber-50 rounded-lg px-3 py-2 mb-3 text-xs text-amber-800">
+                      {a.motivo_alerta}
+                    </div>
+                  )}
+                  {a.foto_url && (
+                    <img
+                      src={a.foto_url}
+                      alt="foto asistencia"
+                      onClick={() => setImagenAmpliada(a)}
+                      className="w-full max-h-48 object-cover rounded-lg cursor-pointer"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {tab === 'fotos' && (
+          todas.length === 0 ? (
+            <div className="text-center text-gray-400 text-sm py-16">
+              Sin asistencias registradas aún
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {todas.map(a => (
+                <div key={a.id} className={`bg-white rounded-2xl px-4 py-3 border-[1.5px] flex items-center gap-3 ${a.fuera_de_horario ? 'border-amber-300' : 'border-gray-100'}`}>
+                  {a.foto_url ? (
+                    <img
+                      src={a.foto_url}
+                      alt="foto"
+                      onClick={() => setImagenAmpliada(a)}
+                      className="w-12 h-12 rounded-lg object-cover cursor-pointer flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-xl">
+                      📸
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-gray-900 truncate">
+                      {a.servidor_inscripcion?.nombre || 'Servidor'}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">{a.reunion?.nombre || '—'}</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">{fmtFecha(a.fecha_registro)}</div>
+                  </div>
+                  <div className="flex-shrink-0">
+                    {a.fuera_de_horario ? (
+                      <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">⚠️ Fuera</span>
+                    ) : (
+                      <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">✅ Normal</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
       </main>
+
+      {imagenAmpliada && (
+        <div
+          onClick={() => setImagenAmpliada(null)}
+          className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center p-5"
+        >
+          <img
+            src={imagenAmpliada.foto_url!}
+            alt="foto"
+            className="max-w-full max-h-[75vh] rounded-xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+          <div className="mt-3 text-center">
+            <p className="text-white text-sm font-semibold">{imagenAmpliada.servidor_inscripcion?.nombre}</p>
+            <p className="text-white/50 text-xs mt-1">
+              {imagenAmpliada.reunion?.nombre} · {fmtFecha(imagenAmpliada.fecha_registro)}
+            </p>
+          </div>
+          <p className="text-white/30 text-xs mt-4">Toca fuera para cerrar</p>
+        </div>
+      )}
     </div>
   )
 }

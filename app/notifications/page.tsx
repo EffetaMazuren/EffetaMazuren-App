@@ -128,7 +128,7 @@ export default function NotificationsPage() {
         titulo: 'Asistencia fuera de horario',
         descripcion: a.servidor_nombre ?? 'Servidor sin nombre',
         fecha: a.created_at,
-        href: '/dashboard/asistencias',
+        href: '/dashboard/servidores/asistencias',
         leida: false,
       })
     }
