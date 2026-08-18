@@ -1,0 +1,10 @@
+{
+  "name": "Effetá Mazuren",
+  "short_name": "Effetá",
+  "description": "Plataforma interna del grupo católico Effetá Mazuren",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1787",
+  "theme_color": "#0f1787",
+  "icons": []
+}

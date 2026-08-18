@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { RetiroProvider } from '@/lib/retiro-context'
 
@@ -6,8 +6,13 @@ export const metadata: Metadata = {
   title: 'Effetá Mazuren',
   description: 'Plataforma interna del grupo católico Effetá Mazuren',
   manifest: '/manifest.json',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
   themeColor: '#0f1787',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
