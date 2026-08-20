@@ -424,28 +424,30 @@ export default function AsistenciasServidoresPage() {
                   : 'Sin resultados para esa búsqueda.'}
               </div>
             ) : (
-              <div className="flex flex-col gap-2">
-                {filasFiltradas.map(f => (
-                  <button
-                    key={f.id}
-                    onClick={() => { const s = servidores.find(x => x.id === f.id); if (s) setServidorDetalle(s) }}
-                    className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between text-left w-full hover:shadow-md transition-shadow"
-                  >
-                    <p className="text-sm font-semibold text-gray-900">{f.nombre}</p>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-[10px] font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700">
-                        🔥 {f.racha}
-                      </span>
-                      <span className="text-[10px] font-medium px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
-                        {f.total} en total
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-              <p className="text-[11px] text-gray-400 text-center mt-3">
-                Toca un servidor para editar sus asistencias una por una.
-              </p>
+              <>
+                <div className="flex flex-col gap-2">
+                  {filasFiltradas.map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => { const s = servidores.find(x => x.id === f.id); if (s) setServidorDetalle(s) }}
+                      className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between text-left w-full hover:shadow-md transition-shadow"
+                    >
+                      <p className="text-sm font-semibold text-gray-900">{f.nombre}</p>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[10px] font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700">
+                          🔥 {f.racha}
+                        </span>
+                        <span className="text-[10px] font-medium px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
+                          {f.total} en total
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-gray-400 text-center mt-3">
+                  Toca un servidor para editar sus asistencias una por una.
+                </p>
+              </>
             )}
           </>
         )}
