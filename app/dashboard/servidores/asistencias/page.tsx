@@ -58,6 +58,9 @@ export default function AsistenciasServidoresPage() {
   const [todas, setTodas] = useState<Alerta[]>([])
   const [imagenAmpliada, setImagenAmpliada] = useState<Alerta | null>(null)
 
+  const [detalleMap, setDetalleMap] = useState<Map<string, Map<string, { asistio: boolean; fuera_de_horario: boolean }>>>(new Map())
+  const [servidorDetalle, setServidorDetalle] = useState<Servidor | null>(null)
+
   useEffect(() => {
     const verificar = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -140,6 +143,7 @@ export default function AsistenciasServidoresPage() {
       setServidores((servidoresData ?? []) as Servidor[])
       setReuniones((reunionesData ?? []) as Reunion[])
       setAsistenciaMap(mapaSimple)
+      setDetalleMap(mapaConteo)
       if (reunionesData && reunionesData.length > 0) setReunionSeleccionada(reunionesData[0].id)
 
       setFilasDesde(mapaConteo, (servidoresData ?? []) as Servidor[], (reunionesData ?? []) as Reunion[])
@@ -219,7 +223,7 @@ export default function AsistenciasServidoresPage() {
     setGuardando(null)
   }
 
-  async function clasificarAlerta(alerta: Alerta, valor: boolean) {
+  async function clasificarAlerta(alerta: Alerta, cambios: { asistio?: boolean; fueraDeHorario?: boolean }) {
     setGuardando(alerta.id)
 
     let fallo = false
@@ -227,7 +231,7 @@ export default function AsistenciasServidoresPage() {
       const res = await fetch('/api/lider/asistencias/clasificar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: alerta.id, asistio: valor }),
+        body: JSON.stringify({ id: alerta.id, ...cambios }),
       })
       if (!res.ok) fallo = true
     } catch {
@@ -238,10 +242,74 @@ export default function AsistenciasServidoresPage() {
       setError('No se pudo guardar. Intenta de nuevo.')
     } else {
       const actualizar = (lista: Alerta[]) =>
-        lista.map(a => a.id === alerta.id ? { ...a, asistio: valor } : a)
-      setAlertas(actualizar)
+        lista.map(a => a.id === alerta.id
+          ? { ...a, asistio: cambios.asistio ?? a.asistio, fuera_de_horario: cambios.fueraDeHorario ?? a.fuera_de_horario }
+          : a)
+      // Si se quitó la marca de fuera de horario, ya no pertenece a la
+      // lista de alertas (esa lista solo muestra fuera_de_horario === true).
+      if (cambios.fueraDeHorario === false) {
+        setAlertas(prev => prev.filter(a => a.id !== alerta.id))
+      } else {
+        setAlertas(actualizar)
+      }
       setTodas(actualizar)
     }
+    setGuardando(null)
+  }
+
+  async function editarDetalle(servidor: Servidor, reunionId: string, cambios: { asistio?: boolean; fueraDeHorario?: boolean }) {
+    const clave = `${servidor.id}-${reunionId}`
+    setGuardando(clave)
+
+    const actual = detalleMap.get(servidor.id)?.get(reunionId)
+    const asistioFinal = cambios.asistio ?? actual?.asistio ?? false
+    const fueraFinal = cambios.fueraDeHorario ?? actual?.fuera_de_horario ?? false
+
+    let fallo = false
+    try {
+      const res = await fetch('/api/lider/asistencias/marcar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          servidorInscripcionId: servidor.id,
+          usuarioId: servidor.usuario_id,
+          reunionId,
+          asistio: asistioFinal,
+          fueraDeHorario: fueraFinal,
+        }),
+      })
+      if (!res.ok) fallo = true
+    } catch {
+      fallo = true
+    }
+
+    if (fallo) {
+      setError('No se pudo guardar. Intenta de nuevo.')
+      setGuardando(null)
+      return
+    }
+
+    const nuevoInner = new Map(detalleMap.get(servidor.id) ?? [])
+    nuevoInner.set(reunionId, { asistio: asistioFinal, fuera_de_horario: fueraFinal })
+    const nuevoMapa = new Map(detalleMap)
+    nuevoMapa.set(servidor.id, nuevoInner)
+    setDetalleMap(nuevoMapa)
+
+    let total = 0
+    let racha = 0
+    let rachaActiva = true
+    for (const r of reuniones) {
+      if (r.cancelada) continue
+      const a = nuevoInner.get(r.id)
+      const cuenta = !!a && a.asistio === true && !a.fuera_de_horario
+      if (cuenta) total++
+      if (rachaActiva) {
+        if (cuenta) racha++
+        else rachaActiva = false
+      }
+    }
+    setFilas(prev => prev.map(f => f.id === servidor.id ? { ...f, total, racha } : f))
+
     setGuardando(null)
   }
 
@@ -358,7 +426,11 @@ export default function AsistenciasServidoresPage() {
             ) : (
               <div className="flex flex-col gap-2">
                 {filasFiltradas.map(f => (
-                  <div key={f.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+                  <button
+                    key={f.id}
+                    onClick={() => { const s = servidores.find(x => x.id === f.id); if (s) setServidorDetalle(s) }}
+                    className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between text-left w-full hover:shadow-md transition-shadow"
+                  >
                     <p className="text-sm font-semibold text-gray-900">{f.nombre}</p>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-[10px] font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700">
@@ -368,9 +440,12 @@ export default function AsistenciasServidoresPage() {
                         {f.total} en total
                       </span>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
+              <p className="text-[11px] text-gray-400 text-center mt-3">
+                Toca un servidor para editar sus asistencias una por una.
+              </p>
             )}
           </>
         )}
@@ -465,7 +540,7 @@ export default function AsistenciasServidoresPage() {
                       className="w-full max-h-48 object-cover rounded-lg cursor-pointer mb-3"
                     />
                   )}
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-xs text-gray-500">
                       {a.asistio === true && 'Clasificada: asistió'}
                       {a.asistio === false && 'Clasificada: no asistió'}
@@ -474,20 +549,27 @@ export default function AsistenciasServidoresPage() {
                     <div className="flex gap-2 flex-shrink-0">
                       <button
                         disabled={guardando === a.id}
-                        onClick={() => clasificarAlerta(a, true)}
+                        onClick={() => clasificarAlerta(a, { asistio: true })}
                         className={`text-xs font-medium px-3 py-1.5 rounded-full border ${a.asistio === true ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-500 border-gray-200'}`}
                       >
                         Asistió
                       </button>
                       <button
                         disabled={guardando === a.id}
-                        onClick={() => clasificarAlerta(a, false)}
+                        onClick={() => clasificarAlerta(a, { asistio: false })}
                         className={`text-xs font-medium px-3 py-1.5 rounded-full border ${a.asistio === false ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-500 border-gray-200'}`}
                       >
                         No asistió
                       </button>
                     </div>
                   </div>
+                  <button
+                    disabled={guardando === a.id}
+                    onClick={() => clasificarAlerta(a, { fueraDeHorario: false })}
+                    className="w-full text-xs font-medium px-3 py-1.5 rounded-lg border bg-white text-amber-700 border-amber-200"
+                  >
+                    Quitar marca de fuera de horario (que cuente en la racha)
+                  </button>
                 </div>
               ))}
             </div>
@@ -535,6 +617,69 @@ export default function AsistenciasServidoresPage() {
           )
         )}
       </main>
+
+      {servidorDetalle && (
+        <div
+          onClick={() => setServidorDetalle(null)}
+          className="fixed inset-0 bg-black/50 z-[100] flex items-end sm:items-center justify-center"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto p-5"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-semibold text-gray-900">{servidorDetalle.nombre}</h2>
+              <button onClick={() => setServidorDetalle(null)} className="text-gray-400 text-sm">Cerrar</button>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">Edita asistencia y horario reunión por reunión.</p>
+
+            <div className="flex flex-col gap-2">
+              {reuniones.filter(r => !r.cancelada).map(r => {
+                const estado = detalleMap.get(servidorDetalle.id)?.get(r.id)
+                const clave = `${servidorDetalle.id}-${r.id}`
+                const ocupado = guardando === clave
+                return (
+                  <div key={r.id} className="border border-gray-100 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-gray-900">
+                        {r.nombre} · {new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}
+                      </p>
+                      {estado?.fuera_de_horario && (
+                        <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full flex-shrink-0">⚠️ Fuera</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        disabled={ocupado}
+                        onClick={() => editarDetalle(servidorDetalle, r.id, { asistio: true })}
+                        className={`text-xs font-medium px-3 py-1.5 rounded-full border ${estado?.asistio === true ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-500 border-gray-200'}`}
+                      >
+                        Asistió
+                      </button>
+                      <button
+                        disabled={ocupado}
+                        onClick={() => editarDetalle(servidorDetalle, r.id, { asistio: false })}
+                        className={`text-xs font-medium px-3 py-1.5 rounded-full border ${estado?.asistio === false ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-500 border-gray-200'}`}
+                      >
+                        No asistió
+                      </button>
+                      {estado && (
+                        <button
+                          disabled={ocupado}
+                          onClick={() => editarDetalle(servidorDetalle, r.id, { fueraDeHorario: !estado.fuera_de_horario })}
+                          className="text-xs font-medium px-3 py-1.5 rounded-full border bg-white text-amber-700 border-amber-200"
+                        >
+                          {estado.fuera_de_horario ? 'Quitar fuera de horario' : 'Marcar fuera de horario'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {imagenAmpliada && (
         <div

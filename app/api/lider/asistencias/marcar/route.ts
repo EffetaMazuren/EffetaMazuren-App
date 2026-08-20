@@ -12,7 +12,7 @@ const supabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
-  const { servidorInscripcionId, usuarioId, reunionId, asistio } = await req.json()
+  const { servidorInscripcionId, usuarioId, reunionId, asistio, fueraDeHorario } = await req.json()
 
   if (!servidorInscripcionId || !reunionId || typeof asistio !== 'boolean') {
     return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 })
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   // sin depender de eso.
   const { data: existente, error: errBuscar } = await supabase
     .from('asistencias')
-    .select('id')
+    .select('id, fuera_de_horario')
     .eq('servidor_inscripcion_id', servidorInscripcionId)
     .eq('reunion_id', reunionId)
     .maybeSingle()
@@ -34,13 +34,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: errBuscar.message }, { status: 500 })
   }
 
+  // fueraDeHorario explícito manda; si no se manda, se preserva el valor
+  // que ya tenía la fila (o false si es una fila nueva) -- así "Asistió" /
+  // "No asistió" no borra sin querer una marca de fuera de horario que el
+  // líder no estaba tratando de tocar.
   const ahora = new Date().toISOString()
   const fila = {
     servidor_inscripcion_id: servidorInscripcionId,
     usuario_id: usuarioId ?? null,
     reunion_id: reunionId,
     asistio,
-    fuera_de_horario: false,
+    fuera_de_horario: typeof fueraDeHorario === 'boolean' ? fueraDeHorario : (existente?.fuera_de_horario ?? false),
     fecha_registro: ahora,
     fecha_hora: ahora,
   }
