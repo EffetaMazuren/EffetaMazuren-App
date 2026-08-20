@@ -31,7 +31,7 @@ interface Alerta {
   fecha_registro: string
   motivo_alerta: string
   fuera_de_horario: boolean
-  asistio?: boolean
+  asistio: boolean | null
   servidor_inscripcion: { nombre: string } | null
   reunion: { nombre: string; fecha: string } | null
 }
@@ -81,7 +81,7 @@ export default function AsistenciasServidoresPage() {
       supabase
         .from('asistencias')
         .select(`
-          id, foto_url, fecha_registro, motivo_alerta, fuera_de_horario,
+          id, foto_url, fecha_registro, motivo_alerta, fuera_de_horario, asistio,
           servidor_inscripcion:servidor_inscripcion_id(nombre),
           reunion:reunion_id!inner(nombre, fecha, retiro_id)
         `)
@@ -215,6 +215,32 @@ export default function AsistenciasServidoresPage() {
         next.set(servidor.id, inner)
         return next
       })
+    }
+    setGuardando(null)
+  }
+
+  async function clasificarAlerta(alerta: Alerta, valor: boolean) {
+    setGuardando(alerta.id)
+
+    let fallo = false
+    try {
+      const res = await fetch('/api/lider/asistencias/clasificar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: alerta.id, asistio: valor }),
+      })
+      if (!res.ok) fallo = true
+    } catch {
+      fallo = true
+    }
+
+    if (fallo) {
+      setError('No se pudo guardar. Intenta de nuevo.')
+    } else {
+      const actualizar = (lista: Alerta[]) =>
+        lista.map(a => a.id === alerta.id ? { ...a, asistio: valor } : a)
+      setAlertas(actualizar)
+      setTodas(actualizar)
     }
     setGuardando(null)
   }
@@ -436,9 +462,32 @@ export default function AsistenciasServidoresPage() {
                       src={a.foto_url}
                       alt="foto asistencia"
                       onClick={() => setImagenAmpliada(a)}
-                      className="w-full max-h-48 object-cover rounded-lg cursor-pointer"
+                      className="w-full max-h-48 object-cover rounded-lg cursor-pointer mb-3"
                     />
                   )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500">
+                      {a.asistio === true && 'Clasificada: asistió'}
+                      {a.asistio === false && 'Clasificada: no asistió'}
+                      {a.asistio === null && 'Sin clasificar'}
+                    </span>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        disabled={guardando === a.id}
+                        onClick={() => clasificarAlerta(a, true)}
+                        className={`text-xs font-medium px-3 py-1.5 rounded-full border ${a.asistio === true ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-500 border-gray-200'}`}
+                      >
+                        Asistió
+                      </button>
+                      <button
+                        disabled={guardando === a.id}
+                        onClick={() => clasificarAlerta(a, false)}
+                        className={`text-xs font-medium px-3 py-1.5 rounded-full border ${a.asistio === false ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-500 border-gray-200'}`}
+                      >
+                        No asistió
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

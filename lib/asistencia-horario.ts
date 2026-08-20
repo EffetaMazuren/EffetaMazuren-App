@@ -19,7 +19,7 @@ function fechaYYYYMMDD(colombia: Date): string {
 
 /**
  * Ventana válida de asistencia. Reuniones regulares (tipo !== 'especial'):
- * fija, martes 9:00-9:20pm hora Colombia. Eventos especiales: la ventana
+ * fija, martes 8:30pm-9:15pm hora Colombia. Eventos especiales: la ventana
  * que el líder configuró al crearlos (hora_inicio/hora_fin), solo el
  * mismo día de `fecha` -- sin horario configurado, nunca cuenta.
  */
@@ -37,5 +37,5 @@ export function estaDentroDeVentana(reunion: ReunionParaVentana, ahora: Date): b
 
   const esMartes = colombia.getUTCDay() === 2
   if (!esMartes) return false
-  return minutosAhora >= 21 * 60 && minutosAhora < 21 * 60 + 20
+  return minutosAhora >= 20 * 60 + 30 && minutosAhora < 21 * 60 + 15
 }
