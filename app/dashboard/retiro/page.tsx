@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
+import { formatearFechasRetiro } from '@/lib/formato-fecha'
 
 const CAMINANTES_POR_MESA = 6
 const APPS_SCRIPT_MESAS = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
@@ -154,7 +155,7 @@ const CATEGORIAS_COLOR: Record<string, { border: string; badge: string; text: st
 
 export default function RetiroDashboard() {
   const router = useRouter()
-  const { id: RETIRO_ID } = useRetiroActual()
+  const { id: RETIRO_ID, nombre: NOMBRE_RETIRO, fecha_inicio: FECHA_INICIO_RETIRO, fecha_fin: FECHA_FIN_RETIRO, link_manual: LINK_MANUAL } = useRetiroActual()
   const [tab, setTab] = useState<Tab>('minutominuto')
   const [diaActivo, setDiaActivo] = useState<Dia>('viernes')
   const [expandido, setExpandido] = useState<string|null>(null)
@@ -658,8 +659,8 @@ export default function RetiroDashboard() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}}>
         <div>
-          <h1 style={{fontSize:20,fontWeight:700,color:'#111827',margin:'0 0 4px'}}>IX Retiro Effeta Mazuren</h1>
-          <p style={{fontSize:13,color:'#6b7280',margin:0}}>3, 4 y 5 de julio de 2026</p>
+          <h1 style={{fontSize:20,fontWeight:700,color:'#111827',margin:'0 0 4px'}}>{NOMBRE_RETIRO}</h1>
+          <p style={{fontSize:13,color:'#6b7280',margin:0}}>{formatearFechasRetiro(FECHA_INICIO_RETIRO, FECHA_FIN_RETIRO)}</p>
         </div>
         <button onClick={()=>router.push('/dashboard')} style={{background:'#f3f4f6',border:'none',borderRadius:8,padding:'8px 14px',fontSize:13,cursor:'pointer',color:'#374151'}}>← Dashboard</button>
       </div>
@@ -1240,7 +1241,7 @@ export default function RetiroDashboard() {
                 <p style={{fontSize:13,color:'#6b7280',margin:0}}>Documento oficial con todas las instrucciones, actividades, guiones y protocolos.</p>
               </div>
             </div>
-            <button onClick={()=>window.open('https://docs.google.com/document/d/1lB2M0-FyRe6Eu-2HjcLcnI96jfEqgikC71TWzuhNUR4/edit','_blank')} style={{width:'100%',padding:'12px',background:'#0f1787',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:600,cursor:'pointer'}}>Abrir Manual</button>
+            <button onClick={()=>window.open(LINK_MANUAL,'_blank')} style={{width:'100%',padding:'12px',background:'#0f1787',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:600,cursor:'pointer'}}>Abrir Manual</button>
           </div>
         </div>
       )}

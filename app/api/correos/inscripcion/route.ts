@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
+import { formatearFechasRetiro } from '@/lib/formato-fecha'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const supabase = createClient(
@@ -19,6 +20,15 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (!cam) return NextResponse.json({ error: 'No encontrado' }, { status: 404 })
+
+    const { data: retiro } = await supabase
+      .from('retiros')
+      .select('fecha_inicio, fecha_fin, costo_caminante')
+      .eq('id', cam.retiro_id)
+      .maybeSingle()
+
+    const fechasRetiro = retiro ? formatearFechasRetiro(retiro.fecha_inicio, retiro.fecha_fin) : '3, 4 y 5 de julio de 2026'
+    const costoCaminante = retiro?.costo_caminante ?? 500000
 
     const { data: contactos } = await supabase
       .from('contactos_emergencia')
@@ -72,7 +82,7 @@ export async function POST(req: NextRequest) {
             <table style="width:100%;border-collapse:collapse">
               <tr>
                 <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Valor total</td>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:15px;font-weight:600;color:#0d0d14;text-align:right">$500.000</td>
+                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:15px;font-weight:600;color:#0d0d14;text-align:right">$${costoCaminante.toLocaleString('es-CO')}</td>
               </tr>
               <tr>
                 <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Tipo de cuenta</td>
@@ -103,7 +113,7 @@ export async function POST(req: NextRequest) {
 
           <div style="background:#0f1787;border-radius:14px;padding:20px;text-align:center;margin-bottom:28px">
             <p style="color:rgba(255,255,255,0.7);font-size:12px;margin:0 0 4px;letter-spacing:1px;text-transform:uppercase">9° Retiro Espiritual</p>
-            <p style="color:#fff;font-size:20px;font-weight:500;margin:0">3, 4 y 5 de julio de 2026</p>
+            <p style="color:#fff;font-size:20px;font-weight:500;margin:0">${fechasRetiro}</p>
           </div>
 
           <p style="font-size:15px;color:#374151;margin-bottom:4px">¡Te esperamos en nuestro retiro!</p>

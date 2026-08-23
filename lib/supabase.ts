@@ -16,6 +16,9 @@ export type Retiro = {
   capacidad_servidores: number
   costo_caminante: number
   costo_servidor: number
+  lugar: string
+  link_formulario: string
+  link_manual: string
   estado: 'activo' | 'archivado'
 }
 

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
+import { formatearFechasRetiro } from '@/lib/formato-fecha'
 import BottomNav from '@/components/BottomNav'
 import {
   User, Bell, Shield, Download, RefreshCw,
@@ -98,7 +99,7 @@ function Modal({ titulo, mensaje, confirmLabel, onConfirm, onCancel, peligro }: 
 
 export default function ConfigPage() {
   const router = useRouter()
-  const { id: RETIRO_ID } = useRetiroActual()
+  const { id: RETIRO_ID, nombre: NOMBRE_RETIRO, fecha_inicio: FECHA_INICIO_RETIRO, fecha_fin: FECHA_FIN_RETIRO, link_formulario: LINK_FORMULARIO } = useRetiroActual()
   const [notifPagos, setNotifPagos] = useState(true)
   const [notifInscritos, setNotifInscritos] = useState(true)
   const [modal, setModal] = useState<'cerrar_sesion' | 'sync' | null>(null)
@@ -234,7 +235,7 @@ export default function ConfigPage() {
 
       <div style={{ padding: '18px 20px 20px' }}>
         <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>Configuración</div>
-        <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>IX Retiro Effetá Mazuren · 3–5 julio 2026</div>
+        <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>{NOMBRE_RETIRO} · {formatearFechasRetiro(FECHA_INICIO_RETIRO, FECHA_FIN_RETIRO)}</div>
       </div>
 
       <div style={{ margin: '0 20px 20px', background: 'linear-gradient(135deg, #0f1787 0%, #1a23b8 100%)', borderRadius: 18, padding: '20px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -443,7 +444,7 @@ export default function ConfigPage() {
 
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Aplicación">
-        <Fila icon={Globe} label="Abrir formulario de inscripción" color="#0f1787" sublabel="Link público del Google Form" onClick={() => window.open('https://docs.google.com/forms/d/1jLFD4BZingfwg_-OKGY0DYokFqMH-9eQr8GqlSAGuTM', '_blank')} />
+        <Fila icon={Globe} label="Abrir formulario de inscripción" color="#0f1787" sublabel="Link público del Google Form" onClick={() => window.open(LINK_FORMULARIO, '_blank')} />
         <Fila icon={Moon} label="Modo oscuro" color="#0f1787" sublabel="Próximamente" onClick={() => mostrarToast('Próximamente disponible', 'ok')} />
         <Fila icon={Shield} label="Privacidad y permisos" color="#0f1787" sublabel="Datos almacenados en Supabase · Colombia" onClick={() => mostrarToast('Todos los datos se almacenan de forma segura en Supabase', 'ok')} ultimo />
       </Seccion>

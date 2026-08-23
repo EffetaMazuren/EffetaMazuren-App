@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
+import { formatearFechasRetiro } from '@/lib/formato-fecha'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
@@ -10,6 +11,15 @@ export async function POST(req: NextRequest) {
     const { caminante_id } = await req.json()
     const { data: cam } = await supabase.from('caminantes').select('*').eq('id', caminante_id).single()
     if (!cam) return NextResponse.json({ error: 'No encontrado' }, { status: 404 })
+
+    const { data: retiro } = await supabase
+      .from('retiros')
+      .select('fecha_inicio, fecha_fin, costo_caminante')
+      .eq('id', cam.retiro_id)
+      .maybeSingle()
+
+    const fechasRetiro = retiro ? formatearFechasRetiro(retiro.fecha_inicio, retiro.fecha_fin) : '3, 4 y 5 de julio de 2026'
+    const costoCaminante = retiro?.costo_caminante ?? 500000
 
     await resend.emails.send({
       from: 'Effetá Mazuren <effetamazuren@gmail.com>',
@@ -26,12 +36,12 @@ export async function POST(req: NextRequest) {
           </div>
           <h2 style="font-size:20px;font-weight:500;color:#0d0d14;margin-bottom:8px">Hola, ${cam.nombre} 🎉</h2>
           <p style="color:#6b7280;font-size:15px;line-height:1.6;margin-bottom:24px">
-            Tu pago de <strong>$500.000 COP</strong> ha sido completado. Tu cupo en el Retiro Espiritual Effetá Mazuren está <strong>100% confirmado</strong>.
+            Tu pago de <strong>$${costoCaminante.toLocaleString('es-CO')} COP</strong> ha sido completado. Tu cupo en el Retiro Espiritual Effetá Mazuren está <strong>100% confirmado</strong>.
           </p>
           <div style="background:#0f1787;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
             <p style="color:rgba(255,255,255,0.7);font-size:13px;margin:0 0 4px">Te esperamos en el</p>
             <p style="color:#fff;font-size:20px;font-weight:500;margin:0">Retiro Espiritual Effetá</p>
-            <p style="color:rgba(255,255,255,0.7);font-size:14px;margin:8px 0 0">3, 4 y 5 de julio de 2026</p>
+            <p style="color:rgba(255,255,255,0.7);font-size:14px;margin:8px 0 0">${fechasRetiro}</p>
           </div>
           <p style="color:#9ca3af;font-size:12px;text-align:center;margin:0">Grupo Effetá Mazuren · Bogotá, Colombia</p>
         </div>`,
