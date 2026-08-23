@@ -7,7 +7,6 @@ import { useRetiroActual } from '@/lib/retiro-context'
 import { estaDentroDeVentana } from '@/lib/asistencia-horario'
 
 const BUCKET = 'comprobantes-pagos'
-const FECHA_INICIO_ASISTENCIAS = '2026-06-16'
 
 interface Reunion {
   id: string
@@ -70,7 +69,6 @@ export default function AsistenciasServidor() {
       .from('reuniones')
       .select('id, nombre, fecha, tipo, cancelada, hora_inicio, hora_fin')
       .eq('retiro_id', RETIRO_ID)
-      .gte('fecha', FECHA_INICIO_ASISTENCIAS)
       .lte('fecha', hoy)
       .order('fecha', { ascending: false })
 

@@ -76,7 +76,14 @@ export async function POST(request: NextRequest) {
     }
 
     const totalPagado = pagos?.reduce((sum, p) => sum + Number(p.valor), 0) || 0
-    const valorTotal = 500000
+
+    const { data: retiro } = await supabase
+      .from('retiros')
+      .select('costo_caminante')
+      .eq('id', retiroId)
+      .maybeSingle()
+
+    const valorTotal = retiro?.costo_caminante ?? 500000
     const faltaPorPagar = Math.max(0, valorTotal - totalPagado)
     const inscritoOficialmente = totalPagado >= valorTotal
 

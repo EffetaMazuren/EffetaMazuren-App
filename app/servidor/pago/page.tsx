@@ -25,7 +25,7 @@ interface PagoResumen {
 
 export default function PagoServidor() {
   const router = useRouter()
-  const { id: RETIRO_ID } = useRetiroActual()
+  const { id: RETIRO_ID, costo_servidor: COSTO_SERVIDOR } = useRetiroActual()
   const fileRef = useRef<HTMLInputElement>(null)
   const [comprobantes, setComprobantes] = useState<Comprobante[]>([])
   const [resumen, setResumen] = useState<PagoResumen | null>(null)
@@ -103,7 +103,7 @@ export default function PagoServidor() {
         .eq('tipo_persona', 'servidor')
         .eq('retiro_id', RETIRO_ID)
 
-      const costo = 380000
+      const costo = COSTO_SERVIDOR
       const pagado: number = pagosData
         ?.filter(p => p.estado === 'confirmado')
         .reduce((sum, p) => sum + (p.valor || 0), 0) ?? 0

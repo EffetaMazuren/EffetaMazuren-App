@@ -31,50 +31,6 @@ interface CaminanteConContactos extends Caminante {
 
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_QYfs6yiwRH1aQRt2smJoQIgRQ-bzFzWK3fgDFrbD6ApiaUygGIEYJUVcxp7Mf00oOw/exec';
 
-const SERVIDORES_PALANCAS_IDS = [
-  '87a34a20-e973-4b76-92a0-4817f01e6778',
-  'fc5f960c-70cc-4c85-be11-14484abb70ff',
-  'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d',
-  'b201c88d-d651-4889-abac-c74ac8a2ffda',
-  '2852cef9-b8df-4ac1-9f21-e0c6226c63a2',
-  'c3ece132-f88e-4432-b6dd-5c6b879a1860',
-  'f22ec19a-079b-46cb-bbac-3f75804d008a',
-  '1b4de35a-1165-4364-a0f5-31d5938dabbd',
-  '56bf1b6c-965c-4b55-937b-d6df8bb05cd8',
-];
-
-const APODOS: Record<string, string> = {
-  '87a34a20-e973-4b76-92a0-4817f01e6778': 'Ale',
-  'fc5f960c-70cc-4c85-be11-14484abb70ff': 'David',
-  'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d': 'Andrés',
-  'b201c88d-d651-4889-abac-c74ac8a2ffda': 'Pau Rodriguez',
-  '2852cef9-b8df-4ac1-9f21-e0c6226c63a2': 'Santi',
-  'c3ece132-f88e-4432-b6dd-5c6b879a1860': 'Pau Agudelo',
-  'f22ec19a-079b-46cb-bbac-3f75804d008a': 'Mapis',
-  '1b4de35a-1165-4364-a0f5-31d5938dabbd': 'Lu Cuellar',
-  '56bf1b6c-965c-4b55-937b-d6df8bb05cd8': 'Diego',
-};
-
-const PALANCAS_NOMBRE_A_ID: Record<string, string> = {
-  'alejandra arcila cantor':          '87a34a20-e973-4b76-92a0-4817f01e6778',
-  'david martinez rincon':            'fc5f960c-70cc-4c85-be11-14484abb70ff',
-  'andres muñoz':                     'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d',
-  'andrés muñoz':                     'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d',
-  'maria paula rodriguez zuñiga':     'b201c88d-d651-4889-abac-c74ac8a2ffda',
-  'maría paula rodríguez zúñiga':     'b201c88d-d651-4889-abac-c74ac8a2ffda',
-  'santiago ruiz cardozo':            '2852cef9-b8df-4ac1-9f21-e0c6226c63a2',
-  'paula agudelo':                    'c3ece132-f88e-4432-b6dd-5c6b879a1860',
-  'maria paula diaz wittingham':      'f22ec19a-079b-46cb-bbac-3f75804d008a',
-  'maría paula díaz wittingham':      'f22ec19a-079b-46cb-bbac-3f75804d008a',
-  'lucia cuellar':                    '1b4de35a-1165-4364-a0f5-31d5938dabbd',
-  'lucía cuéllar':                    '1b4de35a-1165-4364-a0f5-31d5938dabbd',
-  'diego urrego fonseca':             '56bf1b6c-965c-4b55-937b-d6df8bb05cd8',
-};
-
-function norm(s: string) {
-  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-}
-
 export default function PalancasServidorPage() {
   const { id: RETIRO_ID } = useRetiroActual();
   const [modo, setModo] = useState<'cargando' | 'servidor' | 'lider' | 'error'>('cargando');
@@ -90,6 +46,7 @@ export default function PalancasServidorPage() {
 
   // Estado líder
   const [seguimientoLider, setSeguimientoLider] = useState<Caminante[]>([]);
+  const [servidores, setServidores] = useState<Record<string, string>>({});
   const [filtroServidor, setFiltroServidor] = useState('todos');
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [busqueda, setBusqueda] = useState('');
@@ -137,18 +94,9 @@ export default function PalancasServidorPage() {
 
     // Verificar si es del grupo palancas
     if (srv.grupo !== 'palancas') {
-      const srvIdPorNombre = PALANCAS_NOMBRE_A_ID[norm(srv.nombre)];
-      if (!srvIdPorNombre) {
-        setError('No tienes acceso a esta sección.');
-        setModo('error');
-        return;
-      }
-      await supabase
-        .from('servidores_inscripcion')
-        .update({ grupo: 'palancas', usuario_id: user.id })
-        .eq('id', srvIdPorNombre)
-        .is('usuario_id', null);
-      srv = { ...srv, id: srvIdPorNombre, grupo: 'palancas' };
+      setError('No tienes acceso a esta sección.');
+      setModo('error');
+      return;
     }
 
     setServidorId(srv.id);
@@ -199,6 +147,19 @@ export default function PalancasServidorPage() {
   }
 
   async function cargarDatosLider() {
+    const { data: srvData } = await supabase
+      .from('servidores_inscripcion')
+      .select('id, nombre')
+      .eq('retiro_id', RETIRO_ID)
+      .eq('grupo', 'palancas')
+      .order('nombre');
+
+    const mapaServidores: Record<string, string> = {};
+    (srvData || []).forEach((s: { id: string; nombre: string }) => {
+      mapaServidores[s.id] = s.nombre;
+    });
+    setServidores(mapaServidores);
+
     const { data } = await supabase
       .from('palancas_seguimiento')
       .select('*')
@@ -257,7 +218,7 @@ export default function PalancasServidorPage() {
           body: JSON.stringify({
             type: 'sync_palanca',
             caminante_nombre: caminanteNombre,
-            servidor_nombre: APODOS[nuevoServidorId] || '',
+            servidor_nombre: servidores[nuevoServidorId] || '',
             servidor_inscripcion_id: nuevoServidorId,
             es_sorpresa: actual.es_sorpresa,
             llamo: actual.llamo,
@@ -310,7 +271,7 @@ export default function PalancasServidorPage() {
         || (filtroEstado === 'pendientes' && (!s.llamo || !s.envio_cartas || !s.envio_fotos))
         || (filtroEstado === 'sorpresas' && s.es_sorpresa)
         || (filtroEstado === 'sin_llamar' && !s.llamo);
-      const pasaBusqueda = busqueda === '' || s.caminante_nombre.toLowerCase().includes(busqueda.toLowerCase()) || (APODOS[s.servidor_inscripcion_id] || '').toLowerCase().includes(busqueda.toLowerCase());
+      const pasaBusqueda = busqueda === '' || s.caminante_nombre.toLowerCase().includes(busqueda.toLowerCase()) || (servidores[s.servidor_inscripcion_id] || '').toLowerCase().includes(busqueda.toLowerCase());
       return pasaServidor && pasaEstado && pasaBusqueda;
     });
 
@@ -359,7 +320,7 @@ export default function PalancasServidorPage() {
             <div style={{ display: 'flex', gap: 6, width: 'max-content' }}>
               <button onClick={() => setFiltroServidor('todos')} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '0.5px solid', whiteSpace: 'nowrap' as const, background: filtroServidor === 'todos' ? '#0f1787' : '#fff', color: filtroServidor === 'todos' ? '#fff' : '#374151', borderColor: filtroServidor === 'todos' ? '#0f1787' : '#e8eaf0' }}>Todos</button>
               {servidoresUnicos.map(id => (
-                <button key={id} onClick={() => setFiltroServidor(id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '0.5px solid', whiteSpace: 'nowrap' as const, background: filtroServidor === id ? '#0f1787' : '#fff', color: filtroServidor === id ? '#fff' : '#374151', borderColor: filtroServidor === id ? '#0f1787' : '#e8eaf0' }}>{APODOS[id] || id}</button>
+                <button key={id} onClick={() => setFiltroServidor(id)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '0.5px solid', whiteSpace: 'nowrap' as const, background: filtroServidor === id ? '#0f1787' : '#fff', color: filtroServidor === id ? '#fff' : '#374151', borderColor: filtroServidor === id ? '#0f1787' : '#e8eaf0' }}>{servidores[id] || id}</button>
               ))}
             </div>
           </div>
@@ -385,7 +346,7 @@ export default function PalancasServidorPage() {
           {filtrados.map(s => {
             const completo = s.llamo && s.envio_cartas && s.envio_fotos;
             const abierto = expandidoLider === s.id;
-            const apodoServidor = APODOS[s.servidor_inscripcion_id] || '—';
+            const apodoServidor = servidores[s.servidor_inscripcion_id] || '—';
             return (
               <div key={s.id} style={{ background: '#fff', borderRadius: 14, border: `0.5px solid ${completo ? '#bbf7d0' : '#e8eaf0'}`, overflow: 'hidden' }}>
                 <button onClick={() => setExpandidoLider(abierto ? null : s.id)} style={{ width: '100%', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' as const }}>
@@ -415,8 +376,8 @@ export default function PalancasServidorPage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <select defaultValue={s.servidor_inscripcion_id} onChange={e => reasignarServidor(s.id, e.target.value, s.caminante_nombre)} disabled={guardandoReasig === s.id}
                             style={{ padding: '8px 10px', borderRadius: 8, border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827', background: '#f9fafb' }}>
-                            {SERVIDORES_PALANCAS_IDS.filter(id => id !== '56bf1b6c-965c-4b55-937b-d6df8bb05cd8').map(id => (
-                              <option key={id} value={id}>{APODOS[id] || id}</option>
+                            {Object.entries(servidores).map(([id, nombre]) => (
+                              <option key={id} value={id}>{nombre}</option>
                             ))}
                           </select>
                           <button onClick={() => setReasignando(null)} style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' as const }}>Cancelar</button>
@@ -562,15 +523,9 @@ export default function PalancasServidorPage() {
 
                   <div style={{ marginBottom: 10 }}>
                     <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 4px' }}>¿Dónde dejaron las palancas?</p>
-                    <select value={c.donde_palancas || ''} onChange={e => actualizarCampo(c.id, 'donde_palancas', e.target.value)}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid #e5e7eb', fontSize: 13, color: c.donde_palancas ? '#111827' : '#9ca3af', background: '#f9fafb', boxSizing: 'border-box' as const, outline: 'none' }}>
-                      <option value="">Seleccionar...</option>
-                      <option value="CASA DANI CUELLAR">Casa Dani Cuéllar</option>
-                      <option value="CASA ANTO RIVERA">Casa Anto Rivera</option>
-                      <option value="CASA ANDRES MUÑOZ">Casa Andrés Muñoz</option>
-                      <option value="CASA SANTI CARDOZO">Casa Santi Cardozo</option>
-                      <option value="Correo">Correo</option>
-                    </select>
+                    <input type="text" value={c.donde_palancas || ''} onChange={e => actualizarCampo(c.id, 'donde_palancas', e.target.value)}
+                      placeholder="Ej: Casa de..., Correo"
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827', background: '#f9fafb', boxSizing: 'border-box' as const, outline: 'none' }} />
                   </div>
 
                   {[

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useRetiroActual } from '@/lib/retiro-context'
 import { ChevronLeft, Plus, Trash2, Upload, X, Check } from 'lucide-react'
 
 type Servidor = {
@@ -25,8 +26,6 @@ function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
 function iniciales(nombre: string) {
   return nombre.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
 }
-
-const VALOR_TOTAL = 380000
 
 function BadgeTipo({ id, esInterno }: { id: string; esInterno: boolean }) {
   const [actual, setActual] = useState(esInterno)
@@ -87,6 +86,7 @@ function BadgeTipo({ id, esInterno }: { id: string; esInterno: boolean }) {
 export default function ServidorPage() {
   const router = useRouter()
   const { id } = useParams<{ id: string }>()
+  const { costo_servidor: VALOR_TOTAL } = useRetiroActual()
 
   const [servidor, setServidor] = useState<Servidor | null>(null)
   const [pagos, setPagos] = useState<Pago[]>([])
@@ -323,7 +323,7 @@ export default function ServidorPage() {
             <div style={{ background: '#f7f8fc', borderRadius: 12, padding: '14px', marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6 }}>Valor del abono</div>
-                <input type="number" placeholder="380000" value={valorPago} onChange={e => setValorPago(e.target.value)}
+                <input type="number" placeholder={String(VALOR_TOTAL)} value={valorPago} onChange={e => setValorPago(e.target.value)}
                   style={{ width: '100%', border: '0.5px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', fontSize: 15, fontWeight: 600, color: '#0d0d14', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
                 {valorPago && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{fmt(Number(valorPago))}</div>}
               </div>
@@ -412,7 +412,7 @@ export default function ServidorPage() {
                             <div style={{ fontSize: 11, color: '#92400e', fontWeight: 600 }}>¿Cuánto pagó realmente?</div>
                             <div style={{ display: 'flex', gap: 8 }}>
                               <input type="number" value={valorConfirmar} onChange={e => setValorConfirmar(e.target.value)}
-                                placeholder="Ej: 380000" autoFocus
+                                placeholder={`Ej: ${VALOR_TOTAL}`} autoFocus
                                 style={{ flex: 1, border: '0.5px solid #fde68a', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontWeight: 600, color: '#0d0d14', outline: 'none', background: '#fff', boxSizing: 'border-box' }} />
                               <button onClick={() => confirmarPago(p.id)} disabled={!valorConfirmar || guardandoConfirm}
                                 style={{ background: !valorConfirmar ? '#e5e7eb' : '#16a34a', color: !valorConfirmar ? '#9ca3af' : '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: !valorConfirmar ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>

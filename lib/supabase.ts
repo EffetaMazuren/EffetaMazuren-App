@@ -13,6 +13,9 @@ export type Retiro = {
   fecha_fin: string
   meta_financiera: number
   capacidad_caminantes: number
+  capacidad_servidores: number
+  costo_caminante: number
+  costo_servidor: number
   estado: 'activo' | 'archivado'
 }
 

@@ -28,6 +28,7 @@ interface DashboardData {
   fechaInicio: string
   fechaFin: string
   diasRestantes: number
+  caminantesAsignadosPalancas: number
   reembolsosPendientes: number
   alertasAsistencia: number
 }
@@ -49,7 +50,16 @@ function formatCOPFull(value: number): string {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { id: RETIRO_ID, meta_financiera: META_RECAUDO, capacidad_caminantes: CUPO_MAXIMO } = useRetiroActual()
+  const {
+    id: RETIRO_ID,
+    nombre: NOMBRE_RETIRO,
+    fecha_inicio: FECHA_INICIO_RETIRO,
+    fecha_fin: FECHA_FIN_RETIRO,
+    meta_financiera: META_RECAUDO,
+    capacidad_caminantes: CUPO_MAXIMO,
+    capacidad_servidores: CUPO_SERVIDORES,
+    costo_servidor: COSTO_SERVIDOR,
+  } = useRetiroActual()
   const pathname = usePathname()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -59,14 +69,8 @@ export default function DashboardPage() {
 
   async function fetchDashboard() {
     try {
-      const { data: retiro } = await supabase
-        .from('retiros')
-        .select('nombre, fecha_inicio, fecha_fin')
-        .eq('id', RETIRO_ID)
-        .single()
-
-      const fechaInicio = retiro?.fecha_inicio ? new Date(retiro.fecha_inicio) : new Date('2026-07-03')
-      const fechaFin = retiro?.fecha_fin ? new Date(retiro.fecha_fin) : new Date('2026-07-05')
+      const fechaInicio = new Date(FECHA_INICIO_RETIRO)
+      const fechaFin = new Date(FECHA_FIN_RETIRO)
       const hoy = new Date()
       const diasRestantes = Math.max(0, Math.ceil((fechaInicio.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24)))
 
@@ -122,6 +126,11 @@ export default function DashboardPage() {
         .select('id')
         .eq('fuera_de_horario', true)
 
+      const { count: caminantesAsignadosPalancas } = await supabase
+        .from('palancas_seguimiento')
+        .select('id', { count: 'exact', head: true })
+        .eq('retiro_id', RETIRO_ID)
+
       const totalCuentaParroquia = pagos?.reduce((acc, p) => acc + (p.valor ?? 0), 0) ?? 0
       const totalNequiEffeta = ingresosNequi?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
       const totalEgresosNequi = egresosNequi?.reduce((acc, t) => acc + (t.valor ?? 0), 0) ?? 0
@@ -142,10 +151,11 @@ export default function DashboardPage() {
         totalCuentaParroquia,
         totalNequiEffeta,
         balanceNequiEffeta,
-        nombreRetiro: retiro?.nombre ?? 'Effetá Mazuren · Julio 2026',
+        nombreRetiro: NOMBRE_RETIRO,
         fechaInicio: fechaInicio.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         fechaFin: fechaFin.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }),
         diasRestantes,
+        caminantesAsignadosPalancas: caminantesAsignadosPalancas ?? 0,
         reembolsosPendientes: reembolsos?.length ?? 0,
         alertasAsistencia: alertas?.length ?? 0,
       })
@@ -187,7 +197,7 @@ export default function DashboardPage() {
 
   const porcentajeMeta = data ? Math.min(100, (data.totalRecaudado / META_RECAUDO) * 100) : 0
   const porcentajeCupos = data ? Math.min(100, (data.caminantesConAbono / CUPO_MAXIMO) * 100) : 0
-  const metaServidores = data ? Math.min(100, ((data.servidoresPagoCompleto * 380_000) / (CUPO_MAXIMO * 380_000)) * 100) : 0
+  const metaServidores = data ? Math.min(100, (data.servidoresPagoCompleto / CUPO_SERVIDORES) * 100) : 0
 
   const getHora = () => {
     const h = new Date().getHours()
@@ -411,7 +421,7 @@ export default function DashboardPage() {
                 <div className="h-full bg-violet-400 rounded-full transition-all duration-700" style={{ width: `${metaServidores}%` }} />
               </div>
               <div className="flex justify-between mt-1">
-                <span className="text-[10px] text-gray-400">Meta: {data?.servidoresPagoCompleto ?? 0} / {CUPO_MAXIMO} pagos completos</span>
+                <span className="text-[10px] text-gray-400">Meta: {data?.servidoresPagoCompleto ?? 0} / {CUPO_SERVIDORES} pagos completos</span>
                 <span className="text-[10px] text-gray-400">{metaServidores.toFixed(0)}%</span>
               </div>
             </div>
@@ -419,13 +429,13 @@ export default function DashboardPage() {
           {expandedCard === 'servidores' && (
             <div className="border-t border-gray-50 px-5 pb-5 pt-4">
               <div className="grid grid-cols-2 gap-3">
-                <StatMini label="Pago completo" value={data?.servidoresPagoCompleto ?? 0} sub={`de ${CUPO_MAXIMO} × $380K`} color="text-violet-700" badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }} onClick={() => router.push('/dashboard/servidores')} />
+                <StatMini label="Pago completo" value={data?.servidoresPagoCompleto ?? 0} sub={`de ${CUPO_SERVIDORES} × ${formatCOP(COSTO_SERVIDOR)}`} color="text-violet-700" badge={{ text: `${metaServidores.toFixed(0)}%`, color: 'bg-violet-50 text-violet-700' }} onClick={() => router.push('/dashboard/servidores')} />
                 <StatMini label="Con abono" value={data?.servidoresConAbono ?? 0} sub="han pagado algo" color="text-amber-700" onClick={() => router.push('/dashboard/servidores')} />
                 <div className="col-span-2 bg-violet-50/60 rounded-xl p-3 flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold text-violet-800">Meta de recolección servidores</p>
                     <p className="text-[11px] text-violet-500 mt-0.5">
-                      {formatCOPFull((data?.servidoresPagoCompleto ?? 0) * 380_000)} de {formatCOPFull(CUPO_MAXIMO * 380_000)}
+                      {formatCOPFull((data?.servidoresPagoCompleto ?? 0) * COSTO_SERVIDOR)} de {formatCOPFull(CUPO_SERVIDORES * COSTO_SERVIDOR)}
                     </p>
                   </div>
                   <div className="text-right">
@@ -504,7 +514,7 @@ export default function DashboardPage() {
               </div>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
-            <p className="text-sm text-gray-600 leading-tight">Seguimiento de contacto con familias · {data ? 44 : '—'} caminantes asignados</p>
+            <p className="text-sm text-gray-600 leading-tight">Seguimiento de contacto con familias · {data ? data.caminantesAsignadosPalancas : '—'} caminantes asignados</p>
           </button>
 
           <button onClick={() => router.push('/dashboard/mensajes')} className="col-span-2 bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">

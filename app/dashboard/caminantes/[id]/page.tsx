@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useRetiroActual } from '@/lib/retiro-context'
 import { ArrowLeft, Download, MoreHorizontal, Plus, Mail, CheckCircle, EyeOff, ChevronDown, Upload, X, ExternalLink, Loader, Trash2, Pencil, MessageSquare } from 'lucide-react'
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
@@ -118,6 +119,7 @@ function SeccionObservaciones({ caminanteId, observacionInicial }: { caminanteId
 export default function FichaCaminante() {
   const router = useRouter()
   const { id } = useParams()
+  const { costo_caminante: COSTO_CAMINANTE } = useRetiroActual()
   const [cam, setCam] = useState<any>(null)
   const [detalle, setDetalle] = useState<any>(null)
   const [pagos, setPagos] = useState<any[]>([])
@@ -240,7 +242,7 @@ export default function FichaCaminante() {
       const { error } = await supabase.from('pagos').delete().eq('id', pago.id)
       if (error) throw error
       const totalRestante = pagos.filter(p => p.id !== pago.id).reduce((sum, p) => sum + Number(p.valor), 0)
-      if (totalRestante < 500000) await supabase.from('caminantes').update({ inscrito_oficialmente: false }).eq('id', id)
+      if (totalRestante < COSTO_CAMINANTE) await supabase.from('caminantes').update({ inscrito_oficialmente: false }).eq('id', id)
       window.location.reload()
     } catch (err: any) { alert('Error eliminando: ' + err.message) }
   }
@@ -251,7 +253,7 @@ export default function FichaCaminante() {
     const { error } = await supabase.from('pagos').update({ valor }).eq('id', pagoEditando.id)
     if (error) return alert('Error: ' + error.message)
     const totalNuevo = pagos.filter(p => p.id !== pagoEditando.id).reduce((sum, p) => sum + Number(p.valor), 0) + valor
-    await supabase.from('caminantes').update({ inscrito_oficialmente: totalNuevo >= 500000 }).eq('id', id)
+    await supabase.from('caminantes').update({ inscrito_oficialmente: totalNuevo >= COSTO_CAMINANTE }).eq('id', id)
     setModalEditar(false); setPagoEditando(null); setValorEditar('')
     window.location.reload()
   }
@@ -274,7 +276,7 @@ export default function FichaCaminante() {
     </div>
   )
 
-  const pct = Math.min(Math.round((cam.total_pagado / 500000) * 100), 100)
+  const pct = Math.min(Math.round((cam.total_pagado / COSTO_CAMINANTE) * 100), 100)
   const sacramentos = detalle.sacramentos?.join(', ') || '—'
 
   return (
@@ -366,7 +368,7 @@ export default function FichaCaminante() {
         </div>
         <div style={{ padding: '14px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px solid #f1f2f6', fontSize: 13 }}>
-            <span style={{ color: '#6b7280' }}>Total requerido</span><span style={{ fontWeight: 500 }}>{fmt(500000)}</span>
+            <span style={{ color: '#6b7280' }}>Total requerido</span><span style={{ fontWeight: 500 }}>{fmt(COSTO_CAMINANTE)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px solid #f1f2f6', fontSize: 13 }}>
             <span style={{ color: '#6b7280' }}>Total pagado</span><span style={{ fontWeight: 500, color: '#166534' }}>{fmt(cam.total_pagado)}</span>

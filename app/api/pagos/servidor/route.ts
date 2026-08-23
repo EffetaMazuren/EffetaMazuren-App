@@ -6,24 +6,24 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
  
-const VALOR_TOTAL = 380000
- 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { servidorId, valor, comprovanteUrl, comprobanteName } = body
- 
+
     if (!servidorId || !valor) {
       return NextResponse.json({ error: 'Faltan datos requeridos' }, { status: 400 })
     }
- 
+
     // Obtener retiro activo
     const { data: retiro } = await supabase
       .from('retiros')
-      .select('id')
+      .select('id, costo_servidor')
       .eq('estado', 'activo')
       .single()
- 
+
+    const VALOR_TOTAL = retiro?.costo_servidor ?? 380000
+
     // Registrar el pago
     const { error: errorPago } = await supabase.from('pagos').insert({
       persona_id: servidorId,

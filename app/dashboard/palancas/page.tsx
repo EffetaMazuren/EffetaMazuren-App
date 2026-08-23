@@ -20,30 +20,6 @@ interface Seguimiento {
 
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_QYfs6yiwRH1aQRt2smJoQIgRQ-bzFzWK3fgDFrbD6ApiaUygGIEYJUVcxp7Mf00oOw/exec';
 
-const SERVIDORES_PALANCAS_IDS = [
-  '87a34a20-e973-4b76-92a0-4817f01e6778',
-  'fc5f960c-70cc-4c85-be11-14484abb70ff',
-  'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d',
-  'b201c88d-d651-4889-abac-c74ac8a2ffda',
-  '2852cef9-b8df-4ac1-9f21-e0c6226c63a2',
-  'c3ece132-f88e-4432-b6dd-5c6b879a1860',
-  'f22ec19a-079b-46cb-bbac-3f75804d008a',
-  '1b4de35a-1165-4364-a0f5-31d5938dabbd',
-  '56bf1b6c-965c-4b55-937b-d6df8bb05cd8',
-];
-
-const APODOS: Record<string, string> = {
-  '87a34a20-e973-4b76-92a0-4817f01e6778': 'Ale',
-  'fc5f960c-70cc-4c85-be11-14484abb70ff': 'David',
-  'ebc59dbf-b3e1-4d5d-8c89-d8facf50680d': 'Andrés',
-  'b201c88d-d651-4889-abac-c74ac8a2ffda': 'Pau Rodriguez',
-  '2852cef9-b8df-4ac1-9f21-e0c6226c63a2': 'Santi',
-  'c3ece132-f88e-4432-b6dd-5c6b879a1860': 'Pau Agudelo',
-  'f22ec19a-079b-46cb-bbac-3f75804d008a': 'Mapis',
-  '1b4de35a-1165-4364-a0f5-31d5938dabbd': 'Lu Cuellar',
-  '56bf1b6c-965c-4b55-937b-d6df8bb05cd8': 'Diego',
-};
-
 export default function DashboardPalancasPage() {
   const { id: RETIRO_ID } = useRetiroActual();
   const [seguimiento, setSeguimiento] = useState<Seguimiento[]>([]);
@@ -91,12 +67,13 @@ export default function DashboardPalancasPage() {
     const { data: srvData } = await supabase
       .from('servidores_inscripcion')
       .select('id, nombre')
-      .in('id', SERVIDORES_PALANCAS_IDS)
+      .eq('retiro_id', RETIRO_ID)
+      .eq('grupo', 'palancas')
       .order('nombre');
 
     const mapaServidores: Record<string, string> = {};
     (srvData || []).forEach((s: { id: string; nombre: string }) => {
-      mapaServidores[s.id] = APODOS[s.id] || s.nombre;
+      mapaServidores[s.id] = s.nombre;
     });
     setServidores(mapaServidores);
 
@@ -127,7 +104,7 @@ export default function DashboardPalancasPage() {
             body: JSON.stringify({
               type: 'sync_palanca',
               caminante_nombre: caminanteNombre,
-              servidor_nombre: APODOS[nuevoServidorId] || '',
+              servidor_nombre: servidores[nuevoServidorId] || '',
               servidor_inscripcion_id: nuevoServidorId,
               es_sorpresa: actual.es_sorpresa,
               llamo: actual.llamo,
@@ -167,7 +144,7 @@ export default function DashboardPalancasPage() {
       || (filtroEstado === 'sin_llamar' && !s.llamo);
     const pasaBusqueda = busqueda === '' ||
       s.caminante_nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (APODOS[s.servidor_inscripcion_id] || '').toLowerCase().includes(busqueda.toLowerCase());
+      (servidores[s.servidor_inscripcion_id] || '').toLowerCase().includes(busqueda.toLowerCase());
     return pasaServidor && pasaEstado && pasaBusqueda;
   });
 
@@ -252,7 +229,7 @@ export default function DashboardPalancasPage() {
                 background: filtroServidor === id ? '#0f1787' : '#fff',
                 color: filtroServidor === id ? '#fff' : '#374151',
                 borderColor: filtroServidor === id ? '#0f1787' : '#e8eaf0',
-              }}>{APODOS[id] || id}</button>
+              }}>{servidores[id] || id}</button>
             ))}
           </div>
         </div>
@@ -284,7 +261,7 @@ export default function DashboardPalancasPage() {
         {filtrados.map(s => {
           const completo = s.llamo && s.envio_cartas && s.envio_fotos;
           const abierto = expandido === s.id;
-          const apodoServidor = APODOS[s.servidor_inscripcion_id] || servidores[s.servidor_inscripcion_id] || '—';
+          const apodoServidor = servidores[s.servidor_inscripcion_id] || '—';
 
           return (
             <div key={s.id} style={{ background: '#fff', borderRadius: 14, border: `0.5px solid ${completo ? '#bbf7d0' : '#e8eaf0'}`, overflow: 'hidden' }}>
@@ -332,8 +309,8 @@ export default function DashboardPalancasPage() {
                           disabled={guardandoReasignacion === s.id}
                           style={{ padding: '8px 10px', borderRadius: 8, border: '0.5px solid #e5e7eb', fontSize: 13, color: '#111827', background: '#f9fafb' }}
                         >
-                          {SERVIDORES_PALANCAS_IDS.filter(id => id !== '56bf1b6c-965c-4b55-937b-d6df8bb05cd8').map(id => (
-                            <option key={id} value={id}>{APODOS[id] || id}</option>
+                          {Object.entries(servidores).map(([id, nombre]) => (
+                            <option key={id} value={id}>{nombre}</option>
                           ))}
                         </select>
                         <button onClick={() => setReasignando(null)} style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>Cancelar</button>
