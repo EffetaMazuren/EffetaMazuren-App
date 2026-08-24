@@ -10,6 +10,12 @@ interface RolRetiro {
   encargados: string[]
 }
 
+interface RolPreRetiro {
+  id: string
+  nombre: string
+  instrucciones: string | null
+}
+
 interface MesaDB {
   numero: number
   adulto: string
@@ -204,19 +210,29 @@ function CampoEditable({
 }
 
 export default function RetiroPage() {
-  const { id: RETIRO_ID } = useRetiroActual()
+  const { id: RETIRO_ID, nombre: NOMBRE_RETIRO, lugar: LUGAR_RETIRO } = useRetiroActual()
   const [info, setInfo] = useState<ServidorInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [nombreServidor, setNombreServidor] = useState('')
   const [actualizado, setActualizado] = useState(false)
   const [panelAbierto, setPanelAbierto] = useState<string | null>(null)
   const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
+  const [srvId, setSrvId] = useState('')
+  const [rolesPreRetiro, setRolesPreRetiro] = useState<RolPreRetiro[]>([])
 
-  const cargarDatos = useCallback(async (nombre: string) => {
-    const [rolesRes, mesasRes] = await Promise.all([
+  const cargarDatos = useCallback(async (nombre: string, servidorId: string) => {
+    const [rolesRes, mesasRes, preRolesRes] = await Promise.all([
       supabase.from('roles_retiro').select('rol, categoria, encargados').eq('retiro_id', RETIRO_ID).order('orden'),
       supabase.from('mesas').select('numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero'),
+      servidorId
+        ? supabase.from('roles_pre_retiro_asignaciones').select('roles_pre_retiro(id, nombre, instrucciones)').eq('servidor_inscripcion_id', servidorId)
+        : Promise.resolve({ data: [] as any[] }),
     ])
+
+    const misRolesPreRetiro: RolPreRetiro[] = (preRolesRes.data || [])
+      .map((a: any) => a.roles_pre_retiro)
+      .filter(Boolean)
+    setRolesPreRetiro(misRolesPreRetiro)
 
     const misRoles: RolRetiro[] = (rolesRes.data || []).filter(r => nombreEnLista(nombre, r.encargados || []))
     const todasMesas: MesaDB[] = mesasRes.data ?? []
@@ -285,17 +301,21 @@ export default function RetiroPage() {
       const inscripcionId = session.user.user_metadata?.servidor_inscripcion_id
 
       let csvNombre = ''
+      let idReal = ''
       if (inscripcionId) {
-        const { data: srv } = await supabase.from('servidores_inscripcion').select('nombre').eq('id', inscripcionId).single()
+        const { data: srv } = await supabase.from('servidores_inscripcion').select('id, nombre').eq('id', inscripcionId).single()
         csvNombre = srv?.nombre ?? ''
+        idReal = srv?.id ?? ''
       } else {
-        const { data: srv } = await supabase.from('servidores_inscripcion').select('nombre').eq('usuario_id', userId).eq('retiro_id', RETIRO_ID).single()
+        const { data: srv } = await supabase.from('servidores_inscripcion').select('id, nombre').eq('usuario_id', userId).eq('retiro_id', RETIRO_ID).single()
         csvNombre = srv?.nombre ?? ''
+        idReal = srv?.id ?? ''
       }
 
       if (!csvNombre) { setLoading(false); return }
       setNombreServidor(csvNombre)
-      await cargarDatos(csvNombre)
+      setSrvId(idReal)
+      await cargarDatos(csvNombre, idReal)
       setLoading(false)
     }
     init()
@@ -304,12 +324,14 @@ export default function RetiroPage() {
   useEffect(() => {
     if (!nombreServidor) return
     const channel = supabase.channel('retiro-cambios')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'asignaciones_mesa' }, () => { cargarDatos(nombreServidor); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'asignaciones_mesa' }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roles_pre_retiro_asignaciones', filter: `servidor_inscripcion_id=eq.${srvId}` }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_pre_retiro' }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [nombreServidor, cargarDatos])
+  }, [nombreServidor, srvId, cargarDatos])
 
   const toggleSeguimiento = async (asignacionMesaId: string, campo: 'llamado' | 'contesto') => {
     const actual = seguimientos[asignacionMesaId] ?? { llamado: false, contesto: false }
@@ -608,6 +630,35 @@ export default function RetiroPage() {
         </div>
       )}
 
+      {/* ── ROLES PRE-RETIRO ── */}
+      {rolesPreRetiro.length > 0 && (
+        <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '20px 22px', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 36, height: 36, background: '#fef3c7', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8 }}>Antes del retiro</p>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111827' }}>
+                {rolesPreRetiro.length === 1 ? 'Tu rol asignado' : 'Tus roles asignados'}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {rolesPreRetiro.map(r => (
+              <div key={r.id} style={{ padding: '12px 14px', background: '#fffbeb', borderRadius: 10, border: '0.5px solid #fde68a' }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#92400e' }}>{r.nombre}</p>
+                {r.instrucciones && (
+                  <p style={{ margin: '6px 0 0', fontSize: 13, color: '#78350f', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{r.instrucciones}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── ROLES ── */}
       {info && info.roles.length > 0 && (
         <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '20px 22px', marginBottom: 14 }}>
@@ -643,7 +694,7 @@ export default function RetiroPage() {
         </div>
       )}
 
-      {(!info || (info.roles.length === 0 && !info.mesa)) && (
+      {(!info || (info.roles.length === 0 && !info.mesa && rolesPreRetiro.length === 0)) && (
         <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '32px 24px', textAlign: 'center', marginBottom: 14 }}>
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 14px', display: 'block' }}>
             <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -657,8 +708,8 @@ export default function RetiroPage() {
       <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '18px 22px' }}>
         <p style={{ margin: '0 0 12px', fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 600 }}>Información del retiro</p>
         {[
-          { label: 'Retiro', value: 'IX Effetá Mazuren' },
-          { label: 'Comunidad', value: 'Mazuren, Bogotá' },
+          { label: 'Retiro', value: NOMBRE_RETIRO },
+          { label: 'Lugar', value: LUGAR_RETIRO },
           { label: 'Carácter', value: 'Servidor' },
         ].map((item, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: i < 2 ? 10 : 0, marginBottom: i < 2 ? 10 : 0, borderBottom: i < 2 ? '0.5px solid #f3f4f6' : 'none' }}>

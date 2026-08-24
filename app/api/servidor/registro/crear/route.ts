@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
     const password = String(form.get('password') || '')
     const ideaRecaudo = String(form.get('idea_recaudo') || '').trim()
     const ideaReunion = String(form.get('idea_reunion') || '').trim()
+    const tipoSolicitadoRaw = String(form.get('tipo_solicitado') || '')
+    const tipoSolicitado = tipoSolicitadoRaw === 'angelito' || tipoSolicitadoRaw === 'interno' ? tipoSolicitadoRaw : null
     const foto = form.get('foto') as File | null
 
     const faltantes: string[] = []
@@ -171,6 +173,7 @@ export async function POST(request: NextRequest) {
       numero_documento: numeroDocumento,
       idea_recaudo: ideaRecaudo || null,
       idea_reunion: ideaReunion || null,
+      tipo_solicitado: tipoSolicitado,
     }
 
     if (filaPrecargada) {

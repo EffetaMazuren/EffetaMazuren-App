@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
-import { Search, Plus, ChevronDown, ChevronUp } from 'lucide-react'
+import { Search, Plus, ChevronDown, ChevronUp, ClipboardList } from 'lucide-react'
 
 type Servidor = {
   id: string
@@ -211,11 +211,17 @@ export default function ServidoresPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 14px' }}>
         <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>Servidores</div>
-        {totalConPendiente > 0 && (
-          <div style={{ background: '#d97706', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '4px 12px' }}>
-            {totalConPendiente} por verificar
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {totalConPendiente > 0 && (
+            <div style={{ background: '#d97706', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '4px 12px' }}>
+              {totalConPendiente} por verificar
+            </div>
+          )}
+          <button onClick={() => router.push('/dashboard/servidores/roles')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, border: '0.5px solid #e5e7eb', background: '#fff', color: '#0f1787', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            <ClipboardList size={14} /> Roles pre-retiro
+          </button>
+        </div>
       </div>
 
       {/* Buscador */}

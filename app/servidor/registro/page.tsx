@@ -41,6 +41,7 @@ export default function RegistroServidor() {
   const [password2, setPassword2] = useState('')
   const [ideaRecaudo, setIdeaRecaudo] = useState('')
   const [ideaReunion, setIdeaReunion] = useState('')
+  const [tipoSolicitado, setTipoSolicitado] = useState<'angelito' | 'interno'>('angelito')
 
   const [camaraActiva, setCamaraActiva] = useState(false)
   const [fotoBlob, setFotoBlob] = useState<Blob | null>(null)
@@ -185,6 +186,7 @@ export default function RegistroServidor() {
       form.append('password', password)
       form.append('idea_recaudo', ideaRecaudo.trim())
       form.append('idea_reunion', ideaReunion.trim())
+      form.append('tipo_solicitado', tipoSolicitado)
       if (fotoBlob) form.append('foto', fotoBlob, 'foto.jpg')
 
       const res = await fetch('/api/servidor/registro/crear', { method: 'POST', body: form })
@@ -306,6 +308,29 @@ export default function RegistroServidor() {
           <div>
             <label style={labelStyle}>Repetir contraseña</label>
             <input type="password" value={password2} onChange={e => setPassword2(e.target.value)} style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>¿Cómo quieres servir en este retiro?</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { valor: 'angelito' as const, titulo: 'Ángel', desc: 'Apoyo externo, sin vivir en la casa de retiros' },
+                { valor: 'interno' as const, titulo: 'Quiero intentar ser interno', desc: 'El equipo de líderes confirma después quién queda como interno' },
+              ].map(op => (
+                <button
+                  key={op.valor}
+                  type="button"
+                  onClick={() => setTipoSolicitado(op.valor)}
+                  style={{
+                    textAlign: 'left', padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+                    border: tipoSolicitado === op.valor ? '1.5px solid #0f1787' : '1.5px solid #e2e4f0',
+                    background: tipoSolicitado === op.valor ? '#eef0ff' : '#fff',
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{op.titulo}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{op.desc}</div>
+                </button>
+              ))}
+            </div>
           </div>
           <div>
             <label style={labelStyle}>¿Qué idea tienes para el recaudo de fondos?</label>

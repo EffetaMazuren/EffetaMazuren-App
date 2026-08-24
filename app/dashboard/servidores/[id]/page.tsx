@@ -14,6 +14,7 @@ type Servidor = {
   total_pagado: number; saldo_pendiente: number
   estado_pago: 'completo' | 'parcial' | 'sin_pago'; numero_abonos: number
   es_interno: boolean
+  tipo_solicitado: 'angelito' | 'interno' | null
 }
 
 type Pago = {
@@ -248,6 +249,11 @@ export default function ServidorPage() {
                   {estadoColor.label}
                 </span>
                 <BadgeTipo id={servidor.id} esInterno={servidor.es_interno} />
+                {servidor.tipo_solicitado && (
+                  <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: '#fef3c7', color: '#92400e' }}>
+                    Solicitó: {servidor.tipo_solicitado === 'interno' ? 'Interno' : 'Ángel'}
+                  </span>
+                )}
               </div>
             </div>
           </div>

@@ -5,9 +5,10 @@ import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
 
-// Rutas visibles/permitidas del portal de servidor mientras se rediseña el
-// resto -- reversar es agregar la ruta de vuelta a esta lista, nada más.
-const RUTAS_ACTIVAS = ['/servidor', '/servidor/asistencias', '/servidor/registro', '/servidor/versiculo']
+const RUTAS_ACTIVAS = [
+  '/servidor', '/servidor/asistencias', '/servidor/registro', '/servidor/versiculo',
+  '/servidor/pago', '/servidor/retiro', '/servidor/reembolso', '/servidor/palancas',
+]
 
 export default function ServidorLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
