@@ -8,10 +8,11 @@ const COLORES: Record<EstadoNumero, { bg: string; color: string; border: string 
   confirmado: { bg: '#f3f4f6', color: '#9ca3af', border: '#e5e7eb' },
 }
 
-export default function RifaGrid({ estados, onSelect, seleccionado }: {
+export default function RifaGrid({ estados, onSelect, seleccionado, onClickTomado }: {
   estados: Record<number, EstadoNumero>
   onSelect?: (n: number) => void
   seleccionado?: number | null
+  onClickTomado?: (n: number) => void
 }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: 4 }}>
@@ -20,13 +21,13 @@ export default function RifaGrid({ estados, onSelect, seleccionado }: {
         const c = COLORES[estado]
         const tomado = estado !== 'disponible'
         const isSel = seleccionado === n
-        const clickable = !tomado && !!onSelect
+        const clickable = tomado ? !!onClickTomado : !!onSelect
         return (
           <button
             key={n}
             disabled={!clickable}
-            onClick={() => onSelect?.(n)}
-            title={estado === 'pendiente' ? 'Pendiente de revisión' : estado === 'confirmado' ? 'Vendido' : 'Disponible'}
+            onClick={() => tomado ? onClickTomado?.(n) : onSelect?.(n)}
+            title={estado === 'pendiente' ? 'Pendiente de revisión — toca para ver detalle' : estado === 'confirmado' ? 'Vendido — toca para ver detalle' : 'Disponible'}
             style={{
               aspectRatio: '1', borderRadius: 6, border: `1.5px solid ${isSel ? '#0f1787' : c.border}`,
               background: isSel ? '#eef0ff' : c.bg, color: isSel ? '#0f1787' : c.color,

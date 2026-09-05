@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
       retiroId, numero,
       compradorNombre, compradorDocumento, compradorTelefono,
       vendedorNombre, comprobanteUrl, comprobanteNombre, registradoPor,
+      estado,
     } = body
 
     const faltantes: string[] = []
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
         comprobante_url: comprobanteUrl,
         comprobante_nombre: comprobanteNombre || null,
         registrado_por: registradoPor || null,
+        estado: estado === 'confirmado' ? 'confirmado' : 'pendiente',
       })
       .select()
       .single()

@@ -157,9 +157,9 @@ export default function FinanzasPage() {
     }
     const { data: tx } = await supabase.from('transacciones').select('*, categorias_financieras(nombre)').eq('retiro_id', r.id).eq('estado', 'aprobado').order('fecha', { ascending: false })
     if (tx) setTransacciones(tx as Transaccion[])
-    const { data: pagCam } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'caminante')
+    const { data: pagCam } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'caminante').eq('retiro_id', r.id)
     setTotalPagadoCaminantes(pagCam?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
-    const { data: pagSer } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'servidor')
+    const { data: pagSer } = await supabase.from('pagos').select('valor').eq('tipo_persona', 'servidor').eq('retiro_id', r.id)
     setTotalPagadoServidores(pagSer?.reduce((s, p) => s + Number(p.valor), 0) ?? 0)
     setLoading(false)
   }
