@@ -305,7 +305,7 @@ export default function RetiroDashboard() {
     setLoadingCam(true)
     const { data: md } = await supabase.from('mesas').select('id,numero,adulto,lider,colider').eq('retiro_id',RETIRO_ID).order('numero')
     setMesasDisponibles(md??[])
-    const { data: ad } = await supabase.from('asignaciones_mesa').select('id,caminante_id,mesa_id,mesa_numero,confirmado_por_lider,caminantes(id,nombre,celular,edad,es_dificil,motivo_dificil)').order('mesa_numero')
+    const { data: ad } = await supabase.from('asignaciones_mesa').select('id,caminante_id,mesa_id,mesa_numero,confirmado_por_lider,caminantes(id,nombre,celular,edad,es_dificil,motivo_dificil),mesa:mesa_id!inner(retiro_id)').eq('mesa.retiro_id',RETIRO_ID).order('mesa_numero')
     const asigs: Asignacion[] = (ad??[]).map((a:any)=>({id:a.id,caminante_id:a.caminante_id,mesa_id:a.mesa_id,mesa_numero:a.mesa_numero,confirmado_por_lider:a.confirmado_por_lider,caminante:a.caminantes})).filter((a:Asignacion)=>a.caminante)
     setAsignaciones(asigs)
     if (asigs.length>0) {
@@ -349,7 +349,7 @@ export default function RetiroDashboard() {
 
   const syncMesas = async () => {
     try {
-      const { data: ad } = await supabase.from('asignaciones_mesa').select('mesa_numero,mesa_id,caminantes(nombre,celular,edad)').order('mesa_numero')
+      const { data: ad } = await supabase.from('asignaciones_mesa').select('mesa_numero,mesa_id,caminantes(nombre,celular,edad),mesa:mesa_id!inner(retiro_id)').eq('mesa.retiro_id',RETIRO_ID).order('mesa_numero')
       const { data: md } = await supabase.from('mesas').select('id,numero,adulto,lider,colider').eq('retiro_id',RETIRO_ID).order('numero')
       const mm: Record<string,Mesa> = {}; (md??[]).forEach((m:Mesa)=>{mm[m.id]=m})
       const pm: Record<number,{mesa:Mesa;caminantes:{nombre:string;celular:string;edad:number|null}[]}> = {}
@@ -368,7 +368,7 @@ export default function RetiroDashboard() {
     const ids = [...new Set((pd??[]).map((p:any)=>p.persona_id))]
     let caminantes: Caminante[] = []
     if (ids.length>0) { const { data: cd } = await supabase.from('caminantes').select('id,nombre,celular,edad').in('id',ids).eq('retiro_id',RETIRO_ID).order('nombre'); caminantes = cd??[] }
-    const { data: amd } = await supabase.from('asignaciones_mesa').select('id,caminante_id,mesa_id,mesa_numero')
+    const { data: amd } = await supabase.from('asignaciones_mesa').select('id,caminante_id,mesa_id,mesa_numero,mesa:mesa_id!inner(retiro_id)').eq('mesa.retiro_id',RETIRO_ID)
     const mesaPorCam: Record<string,{asigId:string;mesaId:string;mesaNumero:number}> = {}
     ;(amd??[]).forEach((a:any)=>{ mesaPorCam[a.caminante_id]={asigId:a.id,mesaId:a.mesa_id,mesaNumero:a.mesa_numero} })
     const { data: ahd } = await supabase.from('asignaciones_habitacion').select('id,habitacion_id,persona_id').eq('retiro_id',RETIRO_ID).eq('tipo_persona','caminante')
@@ -492,8 +492,9 @@ export default function RetiroDashboard() {
 
       const { data: amData } = await supabase
         .from('asignaciones_mesa')
-        .select('mesa_id,caminantes(id,nombre)')
+        .select('mesa_id,caminantes(id,nombre),mesa:mesa_id!inner(retiro_id)')
         .eq('confirmado_por_lider', true)
+        .eq('mesa.retiro_id', RETIRO_ID)
 
       const { data: ahData } = await supabase
         .from('asignaciones_habitacion')

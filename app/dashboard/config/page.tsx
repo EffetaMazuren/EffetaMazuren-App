@@ -8,7 +8,7 @@ import BottomNav from '@/components/BottomNav'
 import {
   User, Bell, Shield, Download, RefreshCw,
   ChevronRight, LogOut, Info, Database, Moon, Globe,
-  AlertTriangle, Check, Users, Lock
+  AlertTriangle, Check, Users, Lock, Calendar
 } from 'lucide-react'
 
 type Toast = { msg: string; tipo: 'ok' | 'error' } | null
@@ -249,6 +249,11 @@ export default function ConfigPage() {
         <div style={{ fontSize: 10, fontWeight: 600, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.15)', color: '#fff', letterSpacing: '0.05em' }}>LÍDER</div>
       </div>
 
+      <Seccion titulo="Retiro">
+        <Fila icon={Calendar} label="Crear nuevo retiro" color="#0f1787" sublabel="Archiva el retiro actual y activa uno nuevo" onClick={() => router.push('/dashboard/config/nuevo-retiro')} ultimo />
+      </Seccion>
+
+      <div style={{ marginTop: 20 }} />
       <Seccion titulo="Notificaciones">
         <Fila icon={Bell} label="Nuevos pagos" color="#0f1787" sublabel="Alerta cuando un caminante paga" toggle toggleValue={notifPagos} onClick={() => setNotifPagos(v => !v)} chevron={false} />
         <Fila icon={Bell} label="Nuevos inscritos" color="#0f1787" sublabel="Alerta cuando alguien llena el formulario" toggle toggleValue={notifInscritos} onClick={() => setNotifInscritos(v => !v)} chevron={false} ultimo />

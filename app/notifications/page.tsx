@@ -116,8 +116,9 @@ export default function NotificationsPage() {
     // 3. Alertas de asistencia fuera de horario
     const { data: alertas } = await supabase
       .from('asistencias')
-      .select('id, servidor_nombre, created_at')
+      .select('id, servidor_nombre, created_at, reunion:reunion_id!inner(retiro_id)')
       .eq('fuera_de_horario', true)
+      .eq('reunion.retiro_id', RETIRO_ID)
       .order('created_at', { ascending: false })
       .limit(10)
 

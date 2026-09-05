@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
-import { ChevronLeft, Plus, Trash2, Upload, X, Check } from 'lucide-react'
+import { ChevronLeft, Plus, Trash2, Upload, X, Check, MoreHorizontal, Loader } from 'lucide-react'
 
 type Servidor = {
   id: string; nombre: string; numero_documento: string; tipo_documento: string
@@ -101,8 +101,35 @@ export default function ServidorPage() {
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
   const [valorConfirmar, setValorConfirmar] = useState('')
   const [guardandoConfirm, setGuardandoConfirm] = useState(false)
+  const [menuAbierto, setMenuAbierto] = useState(false)
+  const [eliminandoServidor, setEliminandoServidor] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { cargar() }, [id])
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuAbierto(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  async function eliminarServidor() {
+    setMenuAbierto(false)
+    if (!servidor) return
+    if (!confirm(`¿Eliminar a ${servidor.nombre} de este retiro? Se borrará su inscripción, asistencias y asignación de cuarto. Su cuenta de acceso no se borra. Esta acción no se puede deshacer.`)) return
+    setEliminandoServidor(true)
+    try {
+      const res = await fetch(`/api/servidores/${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Error al eliminar')
+      router.push('/dashboard/servidores')
+    } catch (err: any) {
+      alert('Error: ' + err.message)
+      setEliminandoServidor(false)
+    }
+  }
 
   async function cargar() {
     const { data: s } = await supabase
@@ -189,6 +216,14 @@ export default function ServidorPage() {
     </div>
   )
 
+  if (eliminandoServidor) return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 12 }}>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <Loader size={28} color="#0f1787" style={{ animation: 'spin 1s linear infinite' }} />
+      <div style={{ fontSize: 14, color: '#374151', fontWeight: 500 }}>Eliminando servidor...</div>
+    </div>
+  )
+
   const totalConfirmado = pagos.filter(p => p.estado === 'confirmado').reduce((s, p) => s + (p.valor || 0), 0)
   const pagosPendientes = pagos.filter(p => p.estado === 'pendiente')
   const pct = Math.min((totalConfirmado / VALOR_TOTAL) * 100, 100)
@@ -215,10 +250,22 @@ export default function ServidorPage() {
         </button>
         <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>Ficha servidor</div>
         {pagosPendientes.length > 0 && (
-          <span style={{ marginLeft: 'auto', background: '#d97706', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '3px 10px' }}>
+          <span style={{ marginLeft: 8, background: '#d97706', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '3px 10px' }}>
             {pagosPendientes.length} pago{pagosPendientes.length > 1 ? 's' : ''} pendiente{pagosPendientes.length > 1 ? 's' : ''}
           </span>
         )}
+        <div style={{ marginLeft: 'auto', position: 'relative' }} ref={menuRef}>
+          <button onClick={() => setMenuAbierto(v => !v)} style={{ width: 34, height: 34, borderRadius: '50%', background: '#fff', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <MoreHorizontal size={16} color="#6b7280" />
+          </button>
+          {menuAbierto && (
+            <div style={{ position: 'absolute', top: 40, right: 0, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.08)', zIndex: 100, minWidth: 180, overflow: 'hidden' }}>
+              <button onClick={eliminarServidor} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#dc2626', textAlign: 'left' }}>
+                <Trash2 size={14} color="#dc2626" /> Eliminar servidor
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
