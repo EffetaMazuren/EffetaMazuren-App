@@ -5,7 +5,7 @@ import { useRetiroActual } from '@/lib/retiro-context';
 import RifaGrid, { EstadoNumero } from '@/components/RifaGrid';
 
 const PRECIO_BOLETA = 20000;
-const RIFA_SHEET_URL = process.env.NEXT_PUBLIC_RIFA_SHEET_URL;
+const RIFA_SHEET_URL = 'https://docs.google.com/spreadsheets/d/19mMBsI9PH8FzKvgS7fYLwblLEuVyI6kab86U7Dl8WqA/edit?usp=sharing';
 
 type Boleto = {
   id: string;
