@@ -651,7 +651,16 @@ export default function RetiroDashboard() {
   const filasFiltradas=busquedaTabla.length>1?filasTabla.filter(f=>f.nombre.toLowerCase().includes(bTL)):filasTabla
 
   const tabs: {id:Tab;label:string}[] = [{id:'minutominuto',label:'Minuto a Minuto'},{id:'roles',label:'Roles'},{id:'mesas',label:'Mesas'},{id:'caminantes',label:'Caminantes'},{id:'cuartos',label:'Cuartos'},{id:'tabla',label:'Tabla'},{id:'manual',label:'Manual'}]
-  const dias: {id:Dia;label:string;fecha:string}[] = [{id:'viernes',label:'Viernes',fecha:'3 Jul'},{id:'sabado',label:'Sábado',fecha:'4 Jul'},{id:'domingo',label:'Domingo',fecha:'5 Jul'}]
+  // Asume retiro de 3 días viernes-sábado-domingo, como hasta ahora -- si algún
+  // retiro futuro dura otra cantidad de días o empieza en otro día de la
+  // semana, esta pestaña necesita un rediseño aparte, no solo un cambio de fecha.
+  const inicioMM = new Date(FECHA_INICIO_RETIRO + 'T00:00:00')
+  const fechaCortaMM = (offset: number) => {
+    const d = new Date(inicioMM)
+    d.setDate(d.getDate() + offset)
+    return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+  }
+  const dias: {id:Dia;label:string;fecha:string}[] = [{id:'viernes',label:'Viernes',fecha:fechaCortaMM(0)},{id:'sabado',label:'Sábado',fecha:fechaCortaMM(1)},{id:'domingo',label:'Domingo',fecha:fechaCortaMM(2)}]
 
   const Spinner = () => <div style={{display:'flex',justifyContent:'center',padding:40}}><div style={{width:28,height:28,border:'3px solid #e2e4f0',borderTopColor:'#0f1787',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/></div>
 
