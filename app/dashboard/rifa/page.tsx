@@ -79,6 +79,21 @@ export default function RifaLiderPage() {
     setProcesando(null);
   }
 
+  async function eliminar(id: string, numero: number) {
+    if (!confirm(`¿Eliminar por completo la boleta № ${String(numero).padStart(2, '0')}? Esto no se puede deshacer y el número quedará disponible de nuevo.`)) return;
+    setProcesando(id);
+    try {
+      const res = await fetch(`/api/rifa/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Error al eliminar');
+      await cargar();
+      setNumeroInfo(null);
+    } catch (e: any) {
+      alert('Error: ' + e.message);
+    }
+    setProcesando(null);
+  }
+
   async function enviarVenta() {
     setErrorRifa(''); setExitoRifa('');
     if (numeroSeleccionado === null || !compradorNombre || !compradorDocumento || !compradorTelefono || !vendedorNombre || !archivoRifa) {
@@ -301,12 +316,21 @@ export default function RifaLiderPage() {
                   </span>
                 </div>
 
-                <button
-                  onClick={() => window.open(b.comprobante_url, '_blank')}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#0f1787', background: '#eef2ff', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', marginBottom: 16, fontWeight: 500 }}
-                >
-                  📄 Ver comprobante {b.comprobante_nombre ? `(${b.comprobante_nombre})` : ''}
-                </button>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => window.open(b.comprobante_url, '_blank')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#0f1787', background: '#eef2ff', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    📄 Ver comprobante {b.comprobante_nombre ? `(${b.comprobante_nombre})` : ''}
+                  </button>
+                  <button
+                    onClick={() => eliminar(b.id, b.numero)}
+                    disabled={procesando === b.id}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#dc2626', background: '#fef2f2', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: procesando === b.id ? 'not-allowed' : 'pointer', fontWeight: 500 }}
+                  >
+                    🗑️ Eliminar
+                  </button>
+                </div>
 
                 {b.estado === 'pendiente' && (
                   <div style={{ display: 'flex', gap: 10, borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
@@ -373,6 +397,14 @@ export default function RifaLiderPage() {
                 </button>
               </div>
             )}
+
+            <button
+              onClick={() => eliminar(numeroInfo.id, numeroInfo.numero)}
+              disabled={procesando === numeroInfo.id}
+              style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, fontSize: 13, color: '#dc2626', background: '#fef2f2', border: 'none', borderRadius: 8, padding: '10px 14px', cursor: procesando === numeroInfo.id ? 'not-allowed' : 'pointer', fontWeight: 500, marginTop: 10 }}
+            >
+              🗑️ Eliminar boleta
+            </button>
 
             <button
               onClick={() => setNumeroInfo(null)}
