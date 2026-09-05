@@ -123,8 +123,9 @@ export default function DashboardPage() {
 
       const { data: alertas } = await supabase
         .from('asistencias')
-        .select('id')
+        .select('id, reunion:reunion_id!inner(retiro_id)')
         .eq('fuera_de_horario', true)
+        .eq('reunion.retiro_id', RETIRO_ID)
 
       const { count: caminantesAsignadosPalancas } = await supabase
         .from('palancas_seguimiento')
@@ -474,6 +475,16 @@ export default function DashboardPage() {
               <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Reuniones</span>
             </div>
             <p className="text-sm text-gray-600 leading-tight">Martes y días especiales</p>
+          </button>
+
+          <button onClick={() => router.push('/dashboard/rifa')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Rifa</span>
+            </div>
+            <p className="text-sm text-gray-600 leading-tight">Boletas vendidas y comprobantes</p>
           </button>
 
           <button onClick={() => router.push('/dashboard/tareas')} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow">

@@ -2,9 +2,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRetiroActual } from '@/lib/retiro-context';
+import RifaGrid, { EstadoNumero } from '@/components/RifaGrid';
+
+const PRECIO_BOLETA = 20000;
 
 export default function ReembolsoPage() {
   const { id: RETIRO_ID } = useRetiroActual();
+  const [tab, setTab] = useState<'reembolsos' | 'rifa'>('reembolsos');
   const [servidorId, setServidorId] = useState<string | null>(null);
   const [usuarioId, setUsuarioId] = useState<string | null>(null);
   const [categorias, setCategorias] = useState<any[]>([]);
@@ -19,6 +23,19 @@ export default function ReembolsoPage() {
   const [historial, setHistorial] = useState<any[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Rifa
+  const [rifaEstados, setRifaEstados] = useState<Record<number, EstadoNumero>>({});
+  const [numeroSeleccionado, setNumeroSeleccionado] = useState<number | null>(null);
+  const [compradorNombre, setCompradorNombre] = useState('');
+  const [compradorDocumento, setCompradorDocumento] = useState('');
+  const [compradorTelefono, setCompradorTelefono] = useState('');
+  const [vendedorNombre, setVendedorNombre] = useState('');
+  const [archivoRifa, setArchivoRifa] = useState<File | null>(null);
+  const [enviandoRifa, setEnviandoRifa] = useState(false);
+  const [errorRifa, setErrorRifa] = useState('');
+  const [exitoRifa, setExitoRifa] = useState('');
+  const fileRifaRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) return;
@@ -28,7 +45,68 @@ export default function ReembolsoPage() {
       if (data.user.id) cargarHistorial(data.user.id);
     });
     cargarCategorias();
+    cargarRifa();
+
+    const channel = supabase
+      .channel('rifa-servidor')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rifa_boletos', filter: `retiro_id=eq.${RETIRO_ID}` }, () => cargarRifa())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
+
+  async function cargarRifa() {
+    const { data } = await supabase
+      .from('rifa_boletos')
+      .select('numero, estado')
+      .eq('retiro_id', RETIRO_ID)
+      .in('estado', ['pendiente', 'confirmado']);
+    const mapa: Record<number, EstadoNumero> = {};
+    (data || []).forEach((b: any) => { mapa[b.numero] = b.estado; });
+    setRifaEstados(mapa);
+  }
+
+  async function enviarRifa() {
+    setErrorRifa(''); setExitoRifa('');
+    if (numeroSeleccionado === null || !compradorNombre || !compradorDocumento || !compradorTelefono || !vendedorNombre || !archivoRifa) {
+      setErrorRifa('Elige un número, completa los datos del comprador, quién vendió, y adjunta el comprobante.');
+      return;
+    }
+    setEnviandoRifa(true);
+    try {
+      const ext = archivoRifa.name.split('.').pop();
+      const path = `rifa/${RETIRO_ID}/boleta_${numeroSeleccionado}_${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('comprobantes-pagos')
+        .upload(path, archivoRifa, { upsert: true });
+      if (uploadErr) throw new Error('Error subiendo el comprobante: ' + uploadErr.message);
+
+      const { data: urlData } = supabase.storage.from('comprobantes-pagos').getPublicUrl(path);
+
+      const res = await fetch('/api/rifa/registrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          retiroId: RETIRO_ID,
+          numero: numeroSeleccionado,
+          compradorNombre, compradorDocumento, compradorTelefono, vendedorNombre,
+          comprobanteUrl: urlData.publicUrl,
+          comprobanteNombre: archivoRifa.name,
+          registradoPor: usuarioId,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Error registrando la boleta');
+
+      setExitoRifa(`¡Boleta ${String(numeroSeleccionado).padStart(2, '0')} registrada! Un líder confirmará el pago.`);
+      setNumeroSeleccionado(null); setCompradorNombre(''); setCompradorDocumento(''); setCompradorTelefono(''); setVendedorNombre(''); setArchivoRifa(null);
+      if (fileRifaRef.current) fileRifaRef.current.value = '';
+      cargarRifa();
+    } catch (e: any) {
+      setErrorRifa(e.message);
+    } finally {
+      setEnviandoRifa(false);
+    }
+  }
 
   async function cargarCategorias() {
     const { data } = await supabase
@@ -109,10 +187,21 @@ export default function ReembolsoPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#f7f8fc', paddingBottom: 100 }}>
       <div style={{ maxWidth: 480, margin: '0 auto', padding: '24px 16px' }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f1787', marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f1787', marginBottom: 16 }}>
           Facturas y reembolsos
         </h1>
 
+        <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+          <button onClick={() => setTab('reembolsos')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, background: tab === 'reembolsos' ? '#0f1787' : '#f1f5f9', color: tab === 'reembolsos' ? '#fff' : '#64748b' }}>
+            Reembolsos
+          </button>
+          <button onClick={() => setTab('rifa')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, background: tab === 'rifa' ? '#0f1787' : '#f1f5f9', color: tab === 'rifa' ? '#fff' : '#64748b' }}>
+            Rifa
+          </button>
+        </div>
+
+        {tab === 'reembolsos' && (
+        <>
         <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 24, border: '0.5px solid #e8eaf0' }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1e293b', marginBottom: 20 }}>
             Nueva solicitud
@@ -250,6 +339,88 @@ export default function ReembolsoPage() {
               </div>
             ))}
           </div>
+        )}
+        </>
+        )}
+
+        {tab === 'rifa' && (
+        <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '0.5px solid #e8eaf0' }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1e293b', marginBottom: 4 }}>
+            Vender un número
+          </h2>
+          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
+            Boleta: ${PRECIO_BOLETA.toLocaleString('es-CO')} COP · Toca un número disponible para vender ese
+          </p>
+
+          <div style={{ marginBottom: 20 }}>
+            <RifaGrid estados={rifaEstados} seleccionado={numeroSeleccionado} onSelect={setNumeroSeleccionado} />
+          </div>
+
+          {numeroSeleccionado !== null && (
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#0f1787', marginBottom: 14 }}>
+                Número {String(numeroSeleccionado).padStart(2, '0')}
+              </p>
+
+              <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
+                Nombre de quien pagó
+              </label>
+              <input value={compradorNombre} onChange={e => setCompradorNombre(e.target.value)}
+                style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 15, marginBottom: 14, boxSizing: 'border-box' }} />
+
+              <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
+                Cédula
+              </label>
+              <input value={compradorDocumento} onChange={e => setCompradorDocumento(e.target.value)}
+                style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 15, marginBottom: 14, boxSizing: 'border-box' }} />
+
+              <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
+                Teléfono
+              </label>
+              <input value={compradorTelefono} onChange={e => setCompradorTelefono(e.target.value)}
+                style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 15, marginBottom: 14, boxSizing: 'border-box' }} />
+
+              <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
+                ¿Quién vendió la boleta?
+              </label>
+              <input value={vendedorNombre} onChange={e => setVendedorNombre(e.target.value)} placeholder="Nombre del servidor"
+                style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 15, marginBottom: 14, boxSizing: 'border-box' }} />
+
+              <label style={{ fontSize: 13, color: '#64748b', fontWeight: 500, display: 'block', marginBottom: 6 }}>
+                Comprobante de pago
+              </label>
+              <div
+                onClick={() => fileRifaRef.current?.click()}
+                style={{ border: '2px dashed #c7d2fe', borderRadius: 10, padding: '16px', textAlign: 'center', cursor: 'pointer', marginBottom: 16, background: archivoRifa ? '#f0fdf4' : '#f8fafc' }}
+              >
+                {archivoRifa
+                  ? <span style={{ color: '#16a34a', fontSize: 14 }}>📎 {archivoRifa.name}</span>
+                  : <span style={{ color: '#94a3b8', fontSize: 14 }}>Toca para adjuntar imagen o PDF</span>
+                }
+              </div>
+              <input ref={fileRifaRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={e => setArchivoRifa(e.target.files?.[0] || null)} />
+
+              {errorRifa && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>
+                  {errorRifa}
+                </div>
+              )}
+              {exitoRifa && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>
+                  {exitoRifa}
+                </div>
+              )}
+
+              <button
+                onClick={enviarRifa}
+                disabled={enviandoRifa}
+                style={{ width: '100%', background: enviandoRifa ? '#94a3b8' : '#0f1787', color: '#fff', border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 600, cursor: enviandoRifa ? 'not-allowed' : 'pointer' }}
+              >
+                {enviandoRifa ? 'Registrando...' : `Registrar boleta ${String(numeroSeleccionado).padStart(2, '0')}`}
+              </button>
+            </div>
+          )}
+        </div>
         )}
       </div>
     </div>
