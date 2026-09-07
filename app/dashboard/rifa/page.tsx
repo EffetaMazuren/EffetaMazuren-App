@@ -64,9 +64,19 @@ export default function RifaLiderPage() {
 
   async function aprobar(id: string) {
     setProcesando(id);
-    const { error } = await supabase.from('rifa_boletos').update({ estado: 'confirmado' }).eq('id', id);
-    if (error) alert('Error: ' + error.message);
-    else { await cargar(); setNumeroInfo(null); }
+    try {
+      const res = await fetch(`/api/rifa/${id}/aprobar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuarioId }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Error al confirmar');
+      await cargar();
+      setNumeroInfo(null);
+    } catch (e: any) {
+      alert('Error: ' + e.message);
+    }
     setProcesando(null);
   }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { registrarIngresoRifa } from '@/lib/rifa-finanzas'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,6 +58,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `El número ${String(numeroInt).padStart(2, '0')} ya fue vendido o está pendiente de revisión.` }, { status: 409 })
       }
       return NextResponse.json({ error: errInsert.message }, { status: 500 })
+    }
+
+    // Si ya queda confirmada (venta registrada directamente por un líder),
+    // que la plata recolectada y el comprobante se vean también en Finanzas
+    if (boleto.estado === 'confirmado') {
+      try {
+        await registrarIngresoRifa(supabase, boleto, registradoPor || null)
+      } catch (err) {
+        console.error('Error registrando ingreso de rifa en Finanzas:', err)
+      }
     }
 
     // Espejo hacia el Google Sheet (dispara y olvida, no bloquea el registro si falla)
