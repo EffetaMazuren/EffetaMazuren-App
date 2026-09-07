@@ -46,12 +46,27 @@ export default function AsistenciasServidor() {
 
       setUsuarioId(session.user.id)
 
-      const { data: srv } = await supabase
+      // Primero busca la inscripción del retiro activo. Si la cuenta todavía
+      // no tiene una para este retiro (p. ej. servidor del retiro pasado que
+      // aún no ha sido re-inscrito formalmente para el nuevo), usa cualquier
+      // inscripción que ya tenga con esta cuenta -- así puede seguir
+      // registrando su asistencia a las reuniones nuevas sin esperar a que
+      // el líder complete la reinscripción.
+      let { data: srv } = await supabase
         .from('servidores_inscripcion')
         .select('id')
         .eq('usuario_id', session.user.id)
         .eq('retiro_id', RETIRO_ID)
-        .single()
+        .maybeSingle()
+
+      if (!srv) {
+        const { data: srvAnterior } = await supabase
+          .from('servidores_inscripcion')
+          .select('id')
+          .eq('usuario_id', session.user.id)
+          .maybeSingle()
+        srv = srvAnterior
+      }
 
       if (!srv) { setLoading(false); return }
       setInscripcionId(srv.id)

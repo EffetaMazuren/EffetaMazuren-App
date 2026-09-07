@@ -43,6 +43,8 @@ export default function AsistenciasServidoresPage() {
   const router = useRouter()
   const { id: RETIRO_ID } = useRetiroActual()
   const [tab, setTab] = useState<Tab>('resumen')
+  const [retiros, setRetiros] = useState<{ id: string; nombre: string; estado: string }[]>([])
+  const [retiroVerId, setRetiroVerId] = useState('')
   const [servidores, setServidores] = useState<Servidor[]>([])
   const [reuniones, setReuniones] = useState<Reunion[]>([])
   const [asistenciaMap, setAsistenciaMap] = useState<Map<string, Map<string, boolean>>>(new Map())
@@ -74,12 +76,23 @@ export default function AsistenciasServidoresPage() {
 
       if (usuario?.rol !== 'lider') { router.push('/servidor'); return }
 
-      await Promise.all([cargar(), cargarFotos()])
+      const { data: retirosData } = await supabase
+        .from('retiros')
+        .select('id, nombre, estado')
+        .order('fecha_inicio', { ascending: false })
+      setRetiros(retirosData ?? [])
+      setRetiroVerId(RETIRO_ID)
     }
     verificar()
   }, [])
 
-  async function cargarFotos() {
+  useEffect(() => {
+    if (!retiroVerId) return
+    cargar(retiroVerId)
+    cargarFotos(retiroVerId)
+  }, [retiroVerId])
+
+  async function cargarFotos(verId: string) {
     const [{ data: alts }, { data: tod }] = await Promise.all([
       supabase
         .from('asistencias')
@@ -89,7 +102,7 @@ export default function AsistenciasServidoresPage() {
           reunion:reunion_id!inner(nombre, fecha, retiro_id)
         `)
         .eq('fuera_de_horario', true)
-        .eq('reunion.retiro_id', RETIRO_ID)
+        .eq('reunion.retiro_id', verId)
         .order('fecha_registro', { ascending: false }),
       supabase
         .from('asistencias')
@@ -98,7 +111,7 @@ export default function AsistenciasServidoresPage() {
           servidor_inscripcion:servidor_inscripcion_id(nombre),
           reunion:reunion_id!inner(nombre, fecha, retiro_id)
         `)
-        .eq('reunion.retiro_id', RETIRO_ID)
+        .eq('reunion.retiro_id', verId)
         .order('fecha_registro', { ascending: false })
         .limit(100),
     ])
@@ -109,14 +122,14 @@ export default function AsistenciasServidoresPage() {
   const fmtFecha = (iso: string) =>
     new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
-  async function cargar() {
+  async function cargar(verId: string) {
     setLoading(true)
     setError('')
     try {
       const hoy = new Date().toISOString().split('T')[0]
       const [{ data: servidoresData, error: errServidores }, { data: reunionesData, error: errReuniones }] = await Promise.all([
-        supabase.from('servidores_inscripcion').select('id, nombre, usuario_id').eq('retiro_id', RETIRO_ID).order('nombre', { ascending: true }),
-        supabase.from('reuniones').select('id, nombre, fecha, cancelada').eq('retiro_id', RETIRO_ID).lte('fecha', hoy).order('fecha', { ascending: false }),
+        supabase.from('servidores_inscripcion').select('id, nombre, usuario_id').eq('retiro_id', verId).order('nombre', { ascending: true }),
+        supabase.from('reuniones').select('id, nombre, fecha, cancelada').eq('retiro_id', verId).lte('fecha', hoy).order('fecha', { ascending: false }),
       ])
 
       if (errServidores) throw errServidores
@@ -130,6 +143,21 @@ export default function AsistenciasServidoresPage() {
 
       if (errAsistencias) throw errAsistencias
 
+      // Puede haber gente marcando asistencia en las reuniones de este
+      // retiro sin tener todavía una inscripción formal para él (p. ej. un
+      // servidor del retiro pasado que ya está viniendo pero el líder aún
+      // no lo ha vuelto a inscribir). Se agregan a la lista para que
+      // también aparezcan en Resumen y Marcar, no solo en Fotos/Alertas.
+      let servidoresCompletos = (servidoresData ?? []) as Servidor[]
+      const idsConocidos = new Set(servidoresCompletos.map(s => s.id))
+      const idsExtra = [...new Set((asistencias ?? []).map(a => a.servidor_inscripcion_id))].filter(id => id && !idsConocidos.has(id))
+      if (idsExtra.length > 0) {
+        const { data: extra } = await supabase.from('servidores_inscripcion').select('id, nombre, usuario_id').in('id', idsExtra)
+        if (extra) {
+          servidoresCompletos = [...servidoresCompletos, ...extra].sort((a, b) => a.nombre.localeCompare(b.nombre))
+        }
+      }
+
       const mapaConteo = new Map<string, Map<string, { asistio: boolean; fuera_de_horario: boolean }>>()
       const mapaSimple = new Map<string, Map<string, boolean>>()
       for (const a of asistencias ?? []) {
@@ -140,13 +168,13 @@ export default function AsistenciasServidoresPage() {
         mapaSimple.get(a.servidor_inscripcion_id)!.set(a.reunion_id, a.asistio)
       }
 
-      setServidores((servidoresData ?? []) as Servidor[])
+      setServidores(servidoresCompletos)
       setReuniones((reunionesData ?? []) as Reunion[])
       setAsistenciaMap(mapaSimple)
       setDetalleMap(mapaConteo)
       if (reunionesData && reunionesData.length > 0) setReunionSeleccionada(reunionesData[0].id)
 
-      setFilasDesde(mapaConteo, (servidoresData ?? []) as Servidor[], (reunionesData ?? []) as Reunion[])
+      setFilasDesde(mapaConteo, servidoresCompletos, (reunionesData ?? []) as Reunion[])
     } catch (err) {
       console.error('Error cargando asistencias:', err)
       setError('No se pudieron cargar las asistencias.')
@@ -351,6 +379,25 @@ export default function AsistenciasServidoresPage() {
         <p className="text-sm text-gray-400 mb-4">
           Solo cuentan las tomadas dentro de la ventana de horario válida.
         </p>
+
+        {retiros.length > 1 && (
+          <div className="mb-4">
+            <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">
+              Retiro
+            </label>
+            <select
+              value={retiroVerId}
+              onChange={e => setRetiroVerId(e.target.value)}
+              className="w-full h-11 rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none focus:border-[#0f1787]"
+            >
+              {retiros.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.nombre}{r.estado === 'activo' ? ' (actual)' : ' (archivado)'}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex bg-white rounded-xl border border-gray-200 p-1 mb-4 gap-1 overflow-x-auto">
           <button
