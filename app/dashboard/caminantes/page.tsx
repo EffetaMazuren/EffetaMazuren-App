@@ -89,43 +89,76 @@ function CaminantesContent() {
   const [mostrarOrden, setMostrarOrden] = useState(false)
   const [cupos, setCupos] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [enviandoMasivo, setEnviandoMasivo] = useState(false)
+  const [resultadoEnvioMasivo, setResultadoEnvioMasivo] = useState('')
 
-  useEffect(() => {
-    async function cargar() {
-      const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
-      if (!r) return
+  async function cargar() {
+    const { data: r } = await supabase.from('retiros').select('id').eq('estado', 'activo').single()
+    if (!r) return
 
-      const { data } = await supabase
-        .from('vista_pagos_caminantes')
-        .select('*')
-        .eq('retiro_id', r.id)
-        .order('fecha_inscripcion', { ascending: false })
-      if (data) setCaminantes(data as Caminante[])
+    const { data } = await supabase
+      .from('vista_pagos_caminantes')
+      .select('*')
+      .eq('retiro_id', r.id)
+      .order('fecha_inscripcion', { ascending: false })
+    if (data) setCaminantes(data as Caminante[])
 
-      const { data: c } = await supabase.from('vista_cupos').select('*').eq('retiro_id', r.id).single()
-      setCupos(c)
+    const { data: c } = await supabase.from('vista_cupos').select('*').eq('retiro_id', r.id).single()
+    setCupos(c)
 
-      const { data: salud } = await supabase
-        .from('caminantes')
-        .select('id, nombre, edad, alergias, restricciones_alimentarias, medicamentos, eps')
-        .eq('retiro_id', r.id)
-        .or('alergias.not.is.null,restricciones_alimentarias.not.is.null,medicamentos.not.is.null')
-        .order('nombre')
-      if (salud) setCaminantesSalud(salud as CaminanteSalud[])
+    const { data: salud } = await supabase
+      .from('caminantes')
+      .select('id, nombre, edad, alergias, restricciones_alimentarias, medicamentos, eps')
+      .eq('retiro_id', r.id)
+      .or('alergias.not.is.null,restricciones_alimentarias.not.is.null,medicamentos.not.is.null')
+      .order('nombre')
+    if (salud) setCaminantesSalud(salud as CaminanteSalud[])
 
-      const { data: notas } = await supabase
-        .from('caminantes')
-        .select('id, nombre, edad, observaciones')
-        .eq('retiro_id', r.id)
-        .not('observaciones', 'is', null)
-        .neq('observaciones', '')
-        .order('nombre')
-      if (notas) setCaminantesNotas(notas as CaminanteNota[])
+    const { data: notas } = await supabase
+      .from('caminantes')
+      .select('id, nombre, edad, observaciones')
+      .eq('retiro_id', r.id)
+      .not('observaciones', 'is', null)
+      .neq('observaciones', '')
+      .order('nombre')
+    if (notas) setCaminantesNotas(notas as CaminanteNota[])
 
-      setLoading(false)
+    setLoading(false)
+  }
+
+  useEffect(() => { cargar() }, [])
+
+  async function enviarCorreosPendientes() {
+    const pendientes = caminantes.filter(c => c.estado_correo === 'sin_enviar')
+    if (pendientes.length === 0) return
+    if (!confirm(`¿Enviar el correo de pre-inscripción a los ${pendientes.length} caminantes que todavía no lo han recibido?`)) return
+
+    setEnviandoMasivo(true)
+    setResultadoEnvioMasivo('')
+    let enviados = 0
+    let fallidos = 0
+
+    for (const c of pendientes) {
+      try {
+        const res = await fetch('/api/correos/inscripcion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caminante_id: c.id }),
+        })
+        const data = await res.json()
+        if (data.ok) enviados++
+        else fallidos++
+      } catch {
+        fallidos++
+      }
+      // Pequeña pausa entre envíos para no saturar el servicio de correo
+      await new Promise(resolve => setTimeout(resolve, 400))
     }
-    cargar()
-  }, [])
+
+    setResultadoEnvioMasivo(`Enviados: ${enviados}${fallidos > 0 ? ` · Fallaron: ${fallidos}` : ''}`)
+    setEnviandoMasivo(false)
+    await cargar()
+  }
 
   useEffect(() => {
     if (!mostrarOrden) return
@@ -234,6 +267,27 @@ function CaminantesContent() {
               {cupos.cupo_lleno ? '🔒 Cupo lleno' : `${cupos.cupos_disponibles} disponibles`}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Envío masivo del correo de pre-inscripción pendiente */}
+      {filtro === 'sin_enviar' && (
+        <div style={{ margin: '0 20px 16px' }}>
+          <button
+            onClick={enviarCorreosPendientes}
+            disabled={enviandoMasivo || caminantes.filter(c => c.estado_correo === 'sin_enviar').length === 0}
+            style={{
+              width: '100%', padding: '12px', borderRadius: 12, border: 'none',
+              background: enviandoMasivo ? '#9ca3af' : '#0f1787', color: '#fff',
+              fontSize: 14, fontWeight: 600,
+              cursor: enviandoMasivo ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {enviandoMasivo ? 'Enviando…' : `📧 Enviar correo a los ${caminantes.filter(c => c.estado_correo === 'sin_enviar').length} pendientes`}
+          </button>
+          {resultadoEnvioMasivo && (
+            <p style={{ fontSize: 12, color: '#6b7280', textAlign: 'center', margin: '8px 0 0' }}>{resultadoEnvioMasivo}</p>
+          )}
         </div>
       )}
 
