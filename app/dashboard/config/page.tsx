@@ -8,7 +8,7 @@ import BottomNav from '@/components/BottomNav'
 import {
   User, Bell, Shield, Download, RefreshCw,
   ChevronRight, LogOut, Info, Database, Moon, Globe,
-  AlertTriangle, Check, Users, Lock, Calendar
+  AlertTriangle, Check, Users, Lock, Calendar, Pencil
 } from 'lucide-react'
 
 type Toast = { msg: string; tipo: 'ok' | 'error' } | null
@@ -250,6 +250,7 @@ export default function ConfigPage() {
       </div>
 
       <Seccion titulo="Retiro">
+        <Fila icon={Pencil} label="Editar retiro actual" color="#0f1787" sublabel="Link del formulario, fechas, costos, etc. — sin archivar nada" onClick={() => router.push('/dashboard/config/editar-retiro')} />
         <Fila icon={Calendar} label="Crear nuevo retiro" color="#0f1787" sublabel="Archiva el retiro actual y activa uno nuevo" onClick={() => router.push('/dashboard/config/nuevo-retiro')} ultimo />
       </Seccion>
 

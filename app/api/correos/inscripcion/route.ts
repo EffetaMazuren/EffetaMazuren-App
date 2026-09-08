@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     await resend.emails.send({
       from: 'Effetá Mazuren <onboarding@resend.dev>',
       to: cam.correo,
-      subject: 'Pre Inscripción 9 Retiro Effetá PJR',
+      subject: 'Pre Inscripción 10 Retiro Effetá PJR',
       html: `
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#0d0d14">
           
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
           </p>
 
           <div style="background:#0f1787;border-radius:14px;padding:20px;text-align:center;margin-bottom:28px">
-            <p style="color:rgba(255,255,255,0.7);font-size:12px;margin:0 0 4px;letter-spacing:1px;text-transform:uppercase">9° Retiro Espiritual</p>
+            <p style="color:rgba(255,255,255,0.7);font-size:12px;margin:0 0 4px;letter-spacing:1px;text-transform:uppercase">10° Retiro Espiritual</p>
             <p style="color:#fff;font-size:20px;font-weight:500;margin:0">${fechasRetiro}</p>
           </div>
 
