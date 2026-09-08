@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       .eq('id', cam.retiro_id)
       .maybeSingle()
 
-    const fechasRetiro = retiro ? formatearFechasRetiro(retiro.fecha_inicio, retiro.fecha_fin) : '3, 4 y 5 de julio de 2026'
+    const fechasRetiro = retiro ? formatearFechasRetiro(retiro.fecha_inicio, retiro.fecha_fin) : '4, 5 y 6 de diciembre de 2026'
     const costoCaminante = retiro?.costo_caminante ?? 500000
 
     await resend.emails.send({
