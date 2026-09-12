@@ -136,7 +136,7 @@ function CaminantesContent() {
     setEnviandoMasivo(true)
     setResultadoEnvioMasivo('')
     let enviados = 0
-    let fallidos = 0
+    const fallidos: { nombre: string; motivo: string }[] = []
 
     for (const c of pendientes) {
       try {
@@ -147,15 +147,17 @@ function CaminantesContent() {
         })
         const data = await res.json()
         if (data.ok) enviados++
-        else fallidos++
-      } catch {
-        fallidos++
+        else fallidos.push({ nombre: c.nombre, motivo: data.error || 'Error desconocido' })
+      } catch (err: any) {
+        fallidos.push({ nombre: c.nombre, motivo: err?.message || 'Error de red' })
       }
       // Pequeña pausa entre envíos para no saturar el servicio de correo
       await new Promise(resolve => setTimeout(resolve, 400))
     }
 
-    setResultadoEnvioMasivo(`Enviados: ${enviados}${fallidos > 0 ? ` · Fallaron: ${fallidos}` : ''}`)
+    const resumen = `Enviados: ${enviados}${fallidos.length > 0 ? ` · Fallaron: ${fallidos.length}` : ''}`
+    const detalle = fallidos.length > 0 ? '\n' + fallidos.map(f => `• ${f.nombre}: ${f.motivo}`).join('\n') : ''
+    setResultadoEnvioMasivo(resumen + detalle)
     setEnviandoMasivo(false)
     await cargar()
   }
@@ -286,7 +288,7 @@ function CaminantesContent() {
             {enviandoMasivo ? 'Enviando…' : `📧 Enviar correo a los ${caminantes.filter(c => c.estado_correo === 'sin_enviar').length} pendientes`}
           </button>
           {resultadoEnvioMasivo && (
-            <p style={{ fontSize: 12, color: '#6b7280', textAlign: 'center', margin: '8px 0 0' }}>{resultadoEnvioMasivo}</p>
+            <p style={{ fontSize: 12, color: '#6b7280', textAlign: 'left', margin: '8px 0 0', whiteSpace: 'pre-line' }}>{resultadoEnvioMasivo}</p>
           )}
         </div>
       )}
