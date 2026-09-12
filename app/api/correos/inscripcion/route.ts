@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 import { formatearFechasRetiro } from '@/lib/formato-fecha'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -56,82 +54,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'El caminante no tiene correo registrado' }, { status: 400 })
     }
 
-    const envio = await resend.emails.send({
-      from: 'Effetá Mazuren <onboarding@resend.dev>',
-      to: cam.correo,
-      subject: 'Pre Inscripción 10 Retiro Effetá PJR',
-      html: `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#0d0d14">
-          
-          <div style="text-align:center;margin-bottom:36px">
-            <h1 style="font-size:28px;font-weight:500;color:#0f1787;letter-spacing:4px;margin:0">EFFETÁ</h1>
-            <p style="font-size:11px;color:#9ca3af;letter-spacing:3px;margin:6px 0 0;text-transform:uppercase">Jesucristo Redentor</p>
-          </div>
+    const appsScriptUrl = process.env.APPS_SCRIPT_CORREOS_URL
+    if (!appsScriptUrl) {
+      return NextResponse.json({ error: 'Falta configurar APPS_SCRIPT_CORREOS_URL' }, { status: 500 })
+    }
 
-          <p style="font-size:15px;line-height:1.7;color:#374151;margin-bottom:16px">
-            Te saludamos desde <strong>Effetá Jesucristo Redentor</strong>.
-          </p>
-
-          <p style="font-size:15px;line-height:1.7;color:#374151;margin-bottom:24px">
-            Hemos recibido tu pre-inscripción de forma satisfactoria. Te informamos que para completar el proceso de inscripción debes cancelar y enviar el comprobante de pago a este mismo correo, de lo contrario tu cupo será asignado a otro caminante que se encuentra en la lista de espera.
-          </p>
-
-          <div style="background:#f7f8fc;border-radius:14px;padding:24px;margin-bottom:24px;border:1px solid #e5e7eb">
-            <p style="font-size:13px;font-weight:600;color:#0f1787;letter-spacing:1px;text-transform:uppercase;margin:0 0 16px">Datos de pago</p>
-            
-            <table style="width:100%;border-collapse:collapse">
-              <tr>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Valor total</td>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:15px;font-weight:600;color:#0d0d14;text-align:right">$${costoCaminante.toLocaleString('es-CO')}</td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Tipo de cuenta</td>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:500;color:#0d0d14;text-align:right">Cuenta de Ahorros</td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Banco</td>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:500;color:#0d0d14;text-align:right">Banco Caja Social</td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Número de cuenta</td>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:15px;font-weight:600;color:#0f1787;text-align:right">24091748063</td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">A nombre de</td>
-                <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:500;color:#0d0d14;text-align:right">Parroquia Jesucristo Redentor</td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;font-size:13px;color:#6b7280">NIT</td>
-                <td style="padding:8px 0;font-size:13px;font-weight:500;color:#0d0d14;text-align:right">830.023.101-6</td>
-              </tr>
-            </table>
-          </div>
-
-          <p style="font-size:14px;line-height:1.7;color:#374151;margin-bottom:24px">
-            Una vez realizado el pago, por favor envíanos pantallazo de la transacción o comprobante de pago donde se vea el número de aprobación, respondiendo este correo o a cualquiera de los números de contacto que se encuentran en el link de inscripciones.
-          </p>
-
-          <div style="background:#0f1787;border-radius:14px;padding:20px;text-align:center;margin-bottom:28px">
-            <p style="color:rgba(255,255,255,0.7);font-size:12px;margin:0 0 4px;letter-spacing:1px;text-transform:uppercase">10° Retiro Espiritual</p>
-            <p style="color:#fff;font-size:20px;font-weight:500;margin:0">${fechasRetiro}</p>
-          </div>
-
-          <p style="font-size:15px;color:#374151;margin-bottom:4px">¡Te esperamos en nuestro retiro!</p>
-          <p style="font-size:15px;color:#374151;margin-bottom:24px">Que Dios te bendiga.</p>
-          <p style="font-size:15px;font-weight:500;color:#0f1787;margin:0">Effetá Jesucristo Redentor</p>
-
-          <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0">
-          <p style="font-size:11px;color:#9ca3af;text-align:center;margin:0">Grupo Effetá Mazuren · Parroquia Jesucristo Redentor · Bogotá, Colombia</p>
-        </div>
-      `,
+    // El envío real lo hace el Apps Script vía Gmail -- Resend con el dominio
+    // de pruebas onboarding@resend.dev solo puede entregar al correo del
+    // propio dueño de la cuenta Resend, nunca a los caminantes reales.
+    const envioRes = await fetch(appsScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tipo: 'pre_inscripcion',
+        correo: cam.correo,
+        nombre: cam.nombre,
+        costo_caminante: costoCaminante,
+        fechas_retiro: fechasRetiro,
+      }),
     })
-
-    // Resend no lanza una excepción cuando falla -- devuelve { error } en la
-    // respuesta. Si no se revisa esto, el correo puede fallar en silencio y
-    // la app igual marca "enviado" sin que nada haya llegado de verdad.
-    if (envio.error) {
-      console.error('Error enviando correo (Resend):', envio.error)
-      return NextResponse.json({ error: envio.error.message || 'Error enviando el correo' }, { status: 500 })
+    const envioData = await envioRes.json().catch(() => ({}))
+    if (!envioData.success) {
+      console.error('Error enviando correo (Apps Script):', envioData.error)
+      return NextResponse.json({ error: envioData.error || 'Error enviando el correo' }, { status: 500 })
     }
 
     await supabase
