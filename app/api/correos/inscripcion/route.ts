@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'El caminante no tiene correo registrado' }, { status: 400 })
     }
 
-    await resend.emails.send({
+    const envio = await resend.emails.send({
       from: 'Effetá Mazuren <onboarding@resend.dev>',
       to: cam.correo,
       subject: 'Pre Inscripción 10 Retiro Effetá PJR',
@@ -125,6 +125,14 @@ export async function POST(req: NextRequest) {
         </div>
       `,
     })
+
+    // Resend no lanza una excepción cuando falla -- devuelve { error } en la
+    // respuesta. Si no se revisa esto, el correo puede fallar en silencio y
+    // la app igual marca "enviado" sin que nada haya llegado de verdad.
+    if (envio.error) {
+      console.error('Error enviando correo (Resend):', envio.error)
+      return NextResponse.json({ error: envio.error.message || 'Error enviando el correo' }, { status: 500 })
+    }
 
     await supabase
       .from('caminantes')

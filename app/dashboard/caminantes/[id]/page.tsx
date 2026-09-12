@@ -262,8 +262,9 @@ export default function FichaCaminante() {
     if (!cam) return
     setEnviandoCorreo(true)
     const res = await fetch('/api/correos/inscripcion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caminante_id: cam.id }) })
-    if (res.ok) { alert('✅ Correo enviado'); window.location.reload() }
-    else alert('Error enviando correo')
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data.ok) { alert('✅ Correo enviado'); window.location.reload() }
+    else alert('Error enviando correo: ' + (data.error || 'Error desconocido'))
     setEnviandoCorreo(false)
   }
 

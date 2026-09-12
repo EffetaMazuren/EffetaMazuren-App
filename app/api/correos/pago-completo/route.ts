@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const fechasRetiro = retiro ? formatearFechasRetiro(retiro.fecha_inicio, retiro.fecha_fin) : '4, 5 y 6 de diciembre de 2026'
     const costoCaminante = retiro?.costo_caminante ?? 500000
 
-    await resend.emails.send({
+    const envio = await resend.emails.send({
       from: 'Effetá Mazuren <effetamazuren@gmail.com>',
       to: cam.correo,
       subject: '🎉 ¡Tu pago está completo! Retiro Effetá Mazuren',
@@ -46,6 +46,11 @@ export async function POST(req: NextRequest) {
           <p style="color:#9ca3af;font-size:12px;text-align:center;margin:0">Grupo Effetá Mazuren · Bogotá, Colombia</p>
         </div>`,
     })
+
+    if (envio.error) {
+      console.error('Error enviando correo (Resend):', envio.error)
+      return NextResponse.json({ error: envio.error.message || 'Error enviando el correo' }, { status: 500 })
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {
