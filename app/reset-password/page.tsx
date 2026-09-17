@@ -10,10 +10,40 @@ export default function ResetPasswordPage() {
   const [mensaje, setMensaje] = useState('')
   const [loading, setLoading] = useState(false)
   const [sesionLista, setSesionLista] = useState(false)
+  const [enlaceInvalido, setEnlaceInvalido] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    // Supabase maneja el token de recuperación automáticamente desde la URL
+    // El SDK de Supabase solo detecta automáticamente el formato viejo de
+    // enlace (#access_token=...&type=recovery). Los enlaces actuales llegan
+    // como ?code=... o ?token_hash=...&type=recovery, así que hay que
+    // revisar la URL nosotros mismos y completar la verificación a mano.
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const tokenHash = params.get('token_hash')
+    const type = params.get('type')
+    const errorDescription = params.get('error_description')
+
+    if (errorDescription) {
+      setEnlaceInvalido(true)
+      return
+    }
+
+    async function verificarEnlace() {
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) setEnlaceInvalido(true)
+        else setSesionLista(true)
+      } else if (tokenHash && type === 'recovery') {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' })
+        if (error) setEnlaceInvalido(true)
+        else setSesionLista(true)
+      }
+    }
+    verificarEnlace()
+
+    // Respaldo: formato viejo de enlace (#access_token=...), que sí detecta
+    // el SDK automáticamente y dispara este evento.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setSesionLista(true)
@@ -85,7 +115,9 @@ export default function ResetPasswordPage() {
           {!sesionLista ? (
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>
-                Verificando enlace de recuperación...
+                {enlaceInvalido
+                  ? 'Este enlace de recuperación ya no es válido.'
+                  : 'Verificando enlace de recuperación...'}
               </div>
               <div style={{ fontSize: 13, color: '#9ca3af' }}>
                 Si este enlace expiró, solicita uno nuevo desde la página de inicio.
