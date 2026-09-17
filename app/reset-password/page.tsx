@@ -34,18 +34,30 @@ export default function ResetPasswordPage() {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (error) setEnlaceInvalido(true)
         else setSesionLista(true)
-      } else if (tokenHash && type === 'recovery') {
+        return
+      }
+      if (tokenHash && type === 'recovery') {
         const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' })
         if (error) setEnlaceInvalido(true)
         else setSesionLista(true)
+        return
       }
+
+      // Enlace con el formato viejo (#access_token=...&type=recovery): el
+      // SDK ya lo procesó automáticamente antes de que este componente
+      // terminara de montarse, y "limpió" el hash de la URL. El aviso
+      // PASSWORD_RECOVERY del listener de abajo ya se disparó y se perdió
+      // porque nadie estaba escuchando todavía, así que revisamos
+      // directamente si ya quedó una sesión activa.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) setSesionLista(true)
     }
     verificarEnlace()
 
-    // Respaldo: formato viejo de enlace (#access_token=...), que sí detecta
-    // el SDK automáticamente y dispara este evento.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+    // Respaldo por si el evento llega DESPUÉS de montar este componente
+    // (o de que getSession() ya haya revisado, en un enlace más lento).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'INITIAL_SESSION' && session)) {
         setSesionLista(true)
       }
     })
