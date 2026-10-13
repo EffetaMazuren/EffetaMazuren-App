@@ -21,6 +21,10 @@ type RolPreRetiro = {
 type Props = {
   // Opcional: si se pasa, solo muestra el rol de ese retiro.
   retiroId?: string
+  // Si es true, no muestra nada cuando la persona no tiene rol asignado.
+  ocultarSiVacio?: boolean
+  // Avisa a la página cuántos roles tiene la persona (0 si ninguno).
+  onCargado?: (cantidad: number) => void
 }
 
 const AZUL = '#0f1787'
@@ -39,7 +43,7 @@ function formatearNombre(nombre: string) {
     .join(' ')
 }
 
-export default function MiRolPreRetiro({ retiroId }: Props) {
+export default function MiRolPreRetiro({ retiroId, ocultarSiVacio = false, onCargado }: Props) {
   const [roles, setRoles] = useState<RolPreRetiro[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,9 +58,12 @@ export default function MiRolPreRetiro({ retiroId }: Props) {
         console.error('Error cargando rol pre-retiro:', error)
         setError('No se pudo cargar tu rol. Recarga la página; si sigue igual, avísale a un líder.')
         setRoles([])
+        onCargado?.(0)
         return
       }
-      setRoles((data as RolPreRetiro[]) ?? [])
+      const lista = (data as RolPreRetiro[]) ?? []
+      setRoles(lista)
+      onCargado?.(lista.length)
     }
     cargar()
     return () => {
@@ -65,6 +72,7 @@ export default function MiRolPreRetiro({ retiroId }: Props) {
   }, [retiroId])
 
   if (roles === null) {
+    if (ocultarSiVacio) return null
     return (
       <section style={tarjeta}>
         <p style={{ margin: 0, color: GRIS, fontSize: 14 }}>Cargando tu rol…</p>
@@ -81,6 +89,7 @@ export default function MiRolPreRetiro({ retiroId }: Props) {
   }
 
   if (roles.length === 0) {
+    if (ocultarSiVacio) return null
     return (
       <section style={tarjeta}>
         <h2 style={titulo}>Tu rol en el retiro</h2>
