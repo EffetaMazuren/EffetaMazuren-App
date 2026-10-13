@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
+import MiRolPreRetiro from '@/components/MiRolPreRetiro'
 
 interface RolRetiro {
   rol: string
@@ -219,6 +220,7 @@ export default function RetiroPage() {
   const [seguimientos, setSeguimientos] = useState<Record<string, Seguimiento>>({})
   const [srvId, setSrvId] = useState('')
   const [rolesPreRetiro, setRolesPreRetiro] = useState<RolPreRetiro[]>([])
+  const [tieneEquipo, setTieneEquipo] = useState(false)
 
   const cargarDatos = useCallback(async (nombre: string, servidorId: string) => {
     const [rolesRes, mesasRes, preRolesRes] = await Promise.all([
@@ -533,12 +535,12 @@ export default function RetiroPage() {
 
                       {/* Celular */}
                       {cam.celular && (
-                        <a href={`tel:${cam.celular}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#0f1787', fontWeight: 700, textDecoration: 'none', background: '#eef0fb', borderRadius: 9, padding: '7px 12px', width: 'fit-content' }}>
+                        <button onClick={() => { window.location.href = `tel:${cam.celular}` }} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#0f1787', fontWeight: 700, textDecoration: 'none', background: '#eef0fb', borderRadius: 9, padding: '7px 12px', width: 'fit-content', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0f1787" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                             <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.01 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92v2z"/>
                           </svg>
                           {cam.celular}
-                        </a>
+                        </button>
                       )}
 
                       {/* Campos editables */}
@@ -630,6 +632,9 @@ export default function RetiroPage() {
         </div>
       )}
 
+      {/* ── EQUIPO PRE-RETIRO (rol, líderes, equipo y adulto responsable) ── */}
+      <MiRolPreRetiro retiroId={RETIRO_ID} ocultarSiVacio onCargado={n => setTieneEquipo(n > 0)} />
+
       {/* ── ROLES PRE-RETIRO ── */}
       {rolesPreRetiro.length > 0 && (
         <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '20px 22px', marginBottom: 14 }}>
@@ -694,7 +699,7 @@ export default function RetiroPage() {
         </div>
       )}
 
-      {(!info || (info.roles.length === 0 && !info.mesa && rolesPreRetiro.length === 0)) && (
+      {(!info || (info.roles.length === 0 && !info.mesa && rolesPreRetiro.length === 0 && !tieneEquipo)) && (
         <div style={{ background: 'white', borderRadius: 16, border: '0.5px solid #e8eaf0', padding: '32px 24px', textAlign: 'center', marginBottom: 14 }}>
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 14px', display: 'block' }}>
             <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
