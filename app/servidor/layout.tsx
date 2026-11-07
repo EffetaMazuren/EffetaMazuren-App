@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
+import { buscarInscripcionActual } from '@/lib/servidor-actual'
 
 const RUTAS_ACTIVAS = [
   '/servidor', '/servidor/asistencias', '/servidor/registro', '/servidor/versiculo',
@@ -47,35 +48,12 @@ export default function ServidorLayout({ children }: { children: React.ReactNode
           return
         }
 
-        const inscripcionId = userMeta?.servidor_inscripcion_id
-        if (inscripcionId) {
-          const { data: srv } = await supabase
-            .from('servidores_inscripcion')
-            .select('id, usuario_id, nombre, grupo')
-            .eq('id', inscripcionId)
-            .maybeSingle()
-
-          if (srv && !srv.usuario_id) {
-            await supabase
-              .from('servidores_inscripcion')
-              .update({ usuario_id: userId })
-              .eq('id', inscripcionId)
-            setNombre(srv.nombre)
-          } else if (srv?.nombre) {
-            setNombre(srv.nombre)
-          }
-          if (srv?.grupo === 'palancas') setEsPalancas(true)
-        } else {
-          const { data: srv } = await supabase
-            .from('servidores_inscripcion')
-            .select('nombre, grupo')
-            .eq('usuario_id', userId)
-            .eq('retiro_id', RETIRO_ID)
-            .maybeSingle()
-
-          if (srv?.nombre) setNombre(srv.nombre)
-          if (srv?.grupo === 'palancas') setEsPalancas(true)
-        }
+        // Siempre la fila del retiro ACTIVO (ver lib/servidor-actual.ts)
+        const srv = await buscarInscripcionActual<{ id: string; nombre: string; grupo: string | null }>(
+          userId, userMeta?.servidor_inscripcion_id, RETIRO_ID, 'id, nombre, grupo'
+        )
+        if (srv?.nombre) setNombre(srv.nombre)
+        if (srv?.grupo === 'palancas') setEsPalancas(true)
       }
 
       setLoading(false)

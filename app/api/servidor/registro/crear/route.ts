@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { puntajeNombre } from '@/lib/nombres'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -165,6 +166,23 @@ export async function POST(request: NextRequest) {
 
     if (errPrecargada) throw new Error(`servidores_inscripcion (búsqueda): ${errPrecargada.message}`)
 
+    // Si no hubo match por cédula: buscar una fila precargada SOLO con el
+    // nombre (p. ej. desde "Cargar internos" en el dashboard, sin cédula).
+    // Solo se reclama si hay exactamente una con el mismo nombre exacto
+    // (ignorando tildes/mayúsculas) para no quedarse con la de otra persona.
+    let filaParaReclamar: { id: string } | null = filaPrecargada
+    if (!filaParaReclamar) {
+      const { data: sinCedula } = await supabase
+        .from('servidores_inscripcion')
+        .select('id, nombre, numero_documento')
+        .eq('retiro_id', retiro.id)
+        .is('usuario_id', null)
+      const coincidencias = (sinCedula || []).filter(f =>
+        !String(f.numero_documento || '').trim() && puntajeNombre(f.nombre, nombre) === 100
+      )
+      if (coincidencias.length === 1) filaParaReclamar = { id: coincidencias[0].id }
+    }
+
     const camposInscripcion = {
       id_persona: personaId,
       usuario_id: nuevoUsuarioId,
@@ -176,11 +194,11 @@ export async function POST(request: NextRequest) {
       tipo_solicitado: tipoSolicitado,
     }
 
-    if (filaPrecargada) {
+    if (filaParaReclamar) {
       const { error: errUpdate } = await supabase
         .from('servidores_inscripcion')
         .update(camposInscripcion)
-        .eq('id', filaPrecargada.id)
+        .eq('id', filaParaReclamar.id)
 
       if (errUpdate) throw new Error(`servidores_inscripcion (update): ${errUpdate.message}`)
     } else {

@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
-import { Search, Plus, ChevronDown, ChevronUp, ClipboardList } from 'lucide-react'
+import { Search, Plus, ChevronDown, ChevronUp, ClipboardList, ListPlus } from 'lucide-react'
+import { useRetiroActual } from '@/lib/retiro-context'
 
 type Servidor = {
   id: string
@@ -95,6 +96,7 @@ function BadgeTipo({ id, esInterno, onChange }: { id: string; esInterno: boolean
 
 export default function ServidoresPage() {
   const router = useRouter()
+  const { costo_servidor: COSTO_SERVIDOR } = useRetiroActual()
   const [servidores, setServidores] = useState<Servidor[]>([])
   const [idsConPendiente, setIdsConPendiente] = useState<Set<string>>(new Set())
   const [filtro, setFiltro] = useState('todos')
@@ -211,7 +213,7 @@ export default function ServidoresPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 14px' }}>
         <div style={{ fontSize: 17, fontWeight: 500, color: '#0d0d14' }}>Servidores</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {totalConPendiente > 0 && (
             <div style={{ background: '#d97706', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '4px 12px' }}>
               {totalConPendiente} por verificar
@@ -220,6 +222,10 @@ export default function ServidoresPage() {
           <button onClick={() => router.push('/dashboard/servidores/roles')}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, border: '0.5px solid #e5e7eb', background: '#fff', color: '#0f1787', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
             <ClipboardList size={14} /> Roles pre-retiro
+          </button>
+          <button onClick={() => router.push('/dashboard/servidores/internos')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, border: '0.5px solid #e5e7eb', background: '#fff', color: '#0f1787', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            <ListPlus size={14} /> Cargar internos
           </button>
         </div>
       </div>
@@ -265,7 +271,7 @@ export default function ServidoresPage() {
       <div style={{ margin: '0 20px 16px', background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d14' }}>Servidores internos</div>
-          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Pago $380.000</div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Pago ${Number(COSTO_SERVIDOR || 0).toLocaleString('es-CO')}</div>
           <div style={{ height: 4, background: '#f3f4f6', borderRadius: 2, marginTop: 8 }}>
             <div style={{ height: 4, borderRadius: 2, background: '#0f1787', width: `${Math.min((pagadosInternos / (totalInternos || 1)) * 100, 100)}%` }} />
           </div>

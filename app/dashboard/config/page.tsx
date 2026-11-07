@@ -8,7 +8,7 @@ import BottomNav from '@/components/BottomNav'
 import {
   User, Bell, Shield, Download, RefreshCw,
   ChevronRight, LogOut, Info, Database, Moon, Globe,
-  AlertTriangle, Check, Users, Lock, Calendar, Pencil
+  AlertTriangle, Check, Users, Lock, Calendar, Pencil, DollarSign
 } from 'lucide-react'
 
 type Toast = { msg: string; tipo: 'ok' | 'error' } | null
@@ -99,12 +99,18 @@ function Modal({ titulo, mensaje, confirmLabel, onConfirm, onCancel, peligro }: 
 
 export default function ConfigPage() {
   const router = useRouter()
-  const { id: RETIRO_ID, nombre: NOMBRE_RETIRO, fecha_inicio: FECHA_INICIO_RETIRO, fecha_fin: FECHA_FIN_RETIRO, link_formulario: LINK_FORMULARIO } = useRetiroActual()
+  const { id: RETIRO_ID, nombre: NOMBRE_RETIRO, fecha_inicio: FECHA_INICIO_RETIRO, fecha_fin: FECHA_FIN_RETIRO, link_formulario: LINK_FORMULARIO, costo_servidor: COSTO_SERVIDOR } = useRetiroActual()
   const [notifPagos, setNotifPagos] = useState(true)
   const [notifInscritos, setNotifInscritos] = useState(true)
   const [modal, setModal] = useState<'cerrar_sesion' | 'sync' | null>(null)
   const [toast, setToast] = useState<Toast>(null)
   const [sincronizando, setSincronizando] = useState(false)
+
+  // Precio para servidores internos
+  const [editandoPrecio, setEditandoPrecio] = useState(false)
+  const [precioDraft, setPrecioDraft] = useState('')
+  const [guardandoPrecio, setGuardandoPrecio] = useState(false)
+  const [errorPrecio, setErrorPrecio] = useState('')
 
   // Palancas
   const [mostrarPalancas, setMostrarPalancas] = useState(false)
@@ -141,6 +147,37 @@ export default function ConfigPage() {
       mostrarToast('Error al sincronizar', 'error')
     } finally {
       setSincronizando(false)
+    }
+  }
+
+  function abrirPrecio() {
+    setPrecioDraft(String(COSTO_SERVIDOR ?? ''))
+    setErrorPrecio('')
+    setEditandoPrecio(true)
+  }
+
+  async function guardarPrecio() {
+    const limpio = precioDraft.replace(/\D/g, '')
+    if (!limpio) {
+      setErrorPrecio('Escribe un valor válido, solo números (ej. 380000).')
+      return
+    }
+    setGuardandoPrecio(true)
+    setErrorPrecio('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/retiros/actual', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
+        body: JSON.stringify({ costo_servidor: Number(limpio) }),
+      })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Error guardando el precio')
+      // Recarga completa para que toda la app lea el precio nuevo
+      window.location.reload()
+    } catch (err: any) {
+      setErrorPrecio(err.message || 'Error guardando el precio')
+      setGuardandoPrecio(false)
     }
   }
 
@@ -251,6 +288,7 @@ export default function ConfigPage() {
 
       <Seccion titulo="Retiro">
         <Fila icon={Pencil} label="Editar retiro actual" color="#0f1787" sublabel="Link del formulario, fechas, costos, etc. — sin archivar nada" onClick={() => router.push('/dashboard/config/editar-retiro')} />
+        <Fila icon={DollarSign} label="Precio para servidores internos" color="#0f1787" sublabel={`Lo que deben pagar: $${Number(COSTO_SERVIDOR || 0).toLocaleString('es-CO')}`} onClick={abrirPrecio} />
         <Fila icon={Calendar} label="Crear nuevo retiro" color="#0f1787" sublabel="Archiva el retiro actual y activa uno nuevo" onClick={() => router.push('/dashboard/config/nuevo-retiro')} ultimo />
       </Seccion>
 
@@ -457,7 +495,7 @@ export default function ConfigPage() {
 
       <div style={{ marginTop: 20 }} />
       <Seccion titulo="Acerca de">
-        <Fila icon={Info} label="Versión de la app" color="#6b7280" sublabel="v1.0 · IX Retiro Effetá Mazuren 2026" chevron={false} />
+        <Fila icon={Info} label="Versión de la app" color="#6b7280" sublabel={`v1.0 · ${NOMBRE_RETIRO}`} chevron={false} />
         <Fila icon={Globe} label="Effetá Mazuren en Instagram" color="#6b7280" sublabel="@effetamazuren" onClick={() => window.open('https://instagram.com/effetamazuren', '_blank')} ultimo />
       </Seccion>
 
@@ -473,6 +511,37 @@ export default function ConfigPage() {
       )}
       {modal === 'sync' && (
         <Modal titulo="Sincronizar datos" mensaje="Esto forzará una actualización de los datos desde Supabase. Úsalo si ves información desactualizada en el dashboard." confirmLabel="Sincronizar ahora" onConfirm={sincronizarDatos} onCancel={() => setModal(null)} />
+      )}
+
+      {editandoPrecio && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'flex-end', padding: '0 0 20px' }}>
+          <div style={{ background: '#fff', borderRadius: 20, margin: '0 16px', width: 'calc(100% - 32px)', padding: 24, boxSizing: 'border-box' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#0d0d14', marginBottom: 6 }}>Precio para servidores internos</div>
+            <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.5, marginBottom: 16 }}>
+              Es el valor total que cada servidor interno debe pagar en {NOMBRE_RETIRO}. Les aparece actualizado en su pestaña “Mi pago”.
+            </div>
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 15, color: '#6b7280' }}>$</span>
+              <input
+                inputMode="numeric"
+                autoFocus
+                value={precioDraft ? Number(precioDraft).toLocaleString('es-CO') : ''}
+                onChange={e => setPrecioDraft(e.target.value.replace(/\D/g, ''))}
+                placeholder="380.000"
+                style={{ width: '100%', padding: '12px 14px 12px 28px', borderRadius: 10, border: '1.5px solid #e2e4f0', fontSize: 16, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+              />
+            </div>
+            {errorPrecio && <div style={{ fontSize: 13, color: '#dc2626', marginBottom: 8 }}>{errorPrecio}</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+              <button onClick={guardarPrecio} disabled={guardandoPrecio} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: guardandoPrecio ? '#9ca3af' : '#0f1787', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
+                {guardandoPrecio ? 'Guardando…' : 'Guardar precio'}
+              </button>
+              <button onClick={() => setEditandoPrecio(false)} disabled={guardandoPrecio} style={{ width: '100%', padding: 14, borderRadius: 12, border: '0.5px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 15, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (

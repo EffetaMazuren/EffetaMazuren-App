@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRetiroActual } from '@/lib/retiro-context'
+import { supabase } from '@/lib/supabase'
 import { ChevronLeft, Info } from 'lucide-react'
 
 const inputStyle: React.CSSProperties = {
@@ -41,9 +42,10 @@ export default function EditarRetiroPage() {
 
     setGuardando(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/retiros/actual', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? ''}` },
         body: JSON.stringify({
           nombre, fecha_inicio: fechaInicio, fecha_fin: fechaFin, lugar,
           meta_financiera: metaFinanciera, capacidad_caminantes: capacidadCaminantes, capacidad_servidores: capacidadServidores,
@@ -123,7 +125,7 @@ export default function EditarRetiroPage() {
             <input type="number" value={costoCaminante} onChange={e => setCostoCaminante(e.target.value)} style={inputStyle} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Costo servidor (COP)</label>
+            <label style={labelStyle}>Costo servidor interno (COP)</label>
             <input type="number" value={costoServidor} onChange={e => setCostoServidor(e.target.value)} style={inputStyle} />
           </div>
         </div>

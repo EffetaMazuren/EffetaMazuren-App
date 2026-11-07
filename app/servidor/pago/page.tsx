@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
+import { buscarInscripcionActual } from '@/lib/servidor-actual'
 
 const BUCKET = 'comprobantes-pagos'
 
@@ -25,7 +26,7 @@ interface PagoResumen {
 
 export default function PagoServidor() {
   const router = useRouter()
-  const { id: RETIRO_ID, costo_servidor: COSTO_SERVIDOR } = useRetiroActual()
+  const { id: RETIRO_ID, nombre: NOMBRE_RETIRO, costo_servidor: COSTO_SERVIDOR } = useRetiroActual()
   const fileRef = useRef<HTMLInputElement>(null)
   const [comprobantes, setComprobantes] = useState<Comprobante[]>([])
   const [resumen, setResumen] = useState<PagoResumen | null>(null)
@@ -45,46 +46,14 @@ export default function PagoServidor() {
       const userEmail = session.user.email ?? ''
       const userMeta = session.user.user_metadata
 
-      let { data: srv } = await supabase
-        .from('servidores_inscripcion')
-        .select('id, es_interno, nombre')
-        .eq('usuario_id', userId)
-        .eq('retiro_id', RETIRO_ID)
-        .single()
+      // Siempre la fila del retiro ACTIVO (ver lib/servidor-actual.ts)
+      const srv = await buscarInscripcionActual<{ id: string; es_interno: boolean; nombre: string }>(
+        userId, userMeta?.servidor_inscripcion_id, RETIRO_ID, 'id, es_interno, nombre'
+      )
 
       if (!srv) {
-        const inscripcionIdMeta = userMeta?.servidor_inscripcion_id
-        if (inscripcionIdMeta) {
-          const { data: srvPendiente } = await supabase
-            .from('servidores_inscripcion')
-            .select('id, es_interno, nombre')
-            .eq('id', inscripcionIdMeta)
-            .single()
-
-          if (srvPendiente) {
-            await supabase
-              .from('usuarios')
-              .upsert({
-                id: userId,
-                nombre: srvPendiente.nombre,
-                correo: userEmail,
-                rol: 'servidor'
-              }, { onConflict: 'id' })
-
-            await supabase
-              .from('servidores_inscripcion')
-              .update({ usuario_id: userId })
-              .eq('id', inscripcionIdMeta)
-              .is('usuario_id', null)
-
-            srv = srvPendiente
-          }
-        }
-
-        if (!srv) {
-          setLoading(false)
-          return
-        }
+        setLoading(false)
+        return
       }
 
       setInscripcionId(srv.id)
@@ -228,7 +197,7 @@ export default function PagoServidor() {
             No tienes costo de retiro
           </p>
           <p style={{ fontSize: 14, color: '#6b7280', margin: 0, lineHeight: 1.6 }}>
-            Como servidor externo, tu participación en el IX Retiro Effetá Mazuren es completamente gratuita.
+            Como servidor externo, tu participación en {NOMBRE_RETIRO} es completamente gratuita.
           </p>
         </div>
       </div>
