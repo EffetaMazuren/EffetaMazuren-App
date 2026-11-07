@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
 import { formatearFechasRetiro } from '@/lib/formato-fecha'
+import MiRolPreRetiro from '@/components/MiRolPreRetiro'
 
 const CAMINANTES_POR_MESA = 6
 const APPS_SCRIPT_MESAS = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
@@ -674,7 +675,9 @@ export default function RetiroDashboard() {
         </div>
         <button onClick={()=>router.push('/dashboard')} style={{background:'#f3f4f6',border:'none',borderRadius:8,padding:'8px 14px',fontSize:13,cursor:'pointer',color:'#374151'}}>← Dashboard</button>
       </div>
-
+      
+      <MiRolPreRetiro retiroId={RETIRO_ID} />
+      
       <div style={{display:'flex',gap:4,marginBottom:24,background:'#f3f4f6',borderRadius:10,padding:4,overflowX:'auto'}}>
         {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,minWidth:60,padding:'8px 4px',border:'none',borderRadius:8,fontSize:10,fontWeight:600,cursor:'pointer',background:tab===t.id?'#0f1787':'transparent',color:tab===t.id?'white':'#6b7280',whiteSpace:'nowrap'}}>{t.label}</button>)}
       </div>
