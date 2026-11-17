@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
 import { formatearFechasRetiro } from '@/lib/formato-fecha'
 import MiRolPreRetiro from '@/components/MiRolPreRetiro'
+import CargarRolesRetiro from '@/components/lider/CargarRolesRetiro'
 
 const CAMINANTES_POR_MESA = 6
 const APPS_SCRIPT_MESAS = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
@@ -152,6 +153,7 @@ const CATEGORIAS_COLOR: Record<string, { border: string; badge: string; text: st
   'General':               { border: '#0f1787', badge: '#f0f2ff', text: '#0f1787' },
   'Actividades Generales': { border: '#7c3aed', badge: '#faf5ff', text: '#7c3aed' },
   'Muro y Nudo':           { border: '#dc2626', badge: '#fef2f2', text: '#dc2626' },
+  'Mesas':                 { border: '#0891b2', badge: '#ecfeff', text: '#0e7490' },
 }
 
 export default function RetiroDashboard() {
@@ -780,6 +782,7 @@ export default function RetiroDashboard() {
       {/* ══ ROLES ══ */}
       {tab==='roles' && (
         <div>
+          <CargarRolesRetiro rolesActuales={roles.length} onSincronizado={cargarRoles}/>
           {exito&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ {exito}</div>}
           {!creandoRol&&<button onClick={()=>setCreandoRol(true)} style={{width:'100%',padding:'10px',background:'#f0f2ff',color:'#0f1787',border:'1.5px dashed #c7d0ff',borderRadius:10,fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16}}>+ Nuevo rol</button>}
           {creandoRol&&(

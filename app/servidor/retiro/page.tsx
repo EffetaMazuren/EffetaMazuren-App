@@ -112,8 +112,10 @@ function nombreMatch(a: string, b: string): boolean {
   return false
 }
 
+// Las anotaciones entre paréntesis del líder, ej. "Juan Pablo Cardona (líder)",
+// no cuentan para el match: se comparan solo los nombres.
 function nombreEnLista(nombreServidor: string, encargados: string[]): boolean {
-  return encargados.some(enc => nombreMatch(nombreServidor, enc))
+  return encargados.some(enc => nombreMatch(nombreServidor, (enc || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()))
 }
 
 function buscarMesaParaServidor(nombre: string, mesas: MesaDB[]): { mesa: MesaDB; esLider: boolean } | null {
@@ -224,12 +226,14 @@ export default function RetiroPage() {
   const [tieneEquipo, setTieneEquipo] = useState(false)
 
   const cargarDatos = useCallback(async (nombre: string, servidorId: string) => {
-    const [rolesRes, mesasRes, preRolesRes] = await Promise.all([
+    const [rolesRes, mesasRes, preRolesRes, visRes] = await Promise.all([
       supabase.from('roles_retiro').select('rol, categoria, encargados').eq('retiro_id', RETIRO_ID).order('orden'),
       supabase.from('mesas').select('numero, adulto, lider, colider').eq('retiro_id', RETIRO_ID).order('numero'),
       servidorId
         ? supabase.from('roles_pre_retiro_asignaciones').select('roles_pre_retiro(id, nombre, instrucciones)').eq('servidor_inscripcion_id', servidorId)
         : Promise.resolve({ data: [] as any[] }),
+      // El líder decide cuándo se publican los roles del fin de semana
+      supabase.from('retiros').select('roles_visibles').eq('id', RETIRO_ID).maybeSingle(),
     ])
 
     const misRolesPreRetiro: RolPreRetiro[] = (preRolesRes.data || [])
@@ -237,7 +241,10 @@ export default function RetiroPage() {
       .filter(Boolean)
     setRolesPreRetiro(misRolesPreRetiro)
 
-    const misRoles: RolRetiro[] = (rolesRes.data || []).filter(r => nombreEnLista(nombre, r.encargados || []))
+    const rolesVisibles = !!(visRes.data as any)?.roles_visibles
+    const misRoles: RolRetiro[] = rolesVisibles
+      ? (rolesRes.data || []).filter(r => nombreEnLista(nombre, r.encargados || []))
+      : []
     const todasMesas: MesaDB[] = mesasRes.data ?? []
     const mesaEncontrada = buscarMesaParaServidor(nombre, todasMesas)
 
@@ -322,14 +329,24 @@ export default function RetiroPage() {
 
   useEffect(() => {
     if (!nombreServidor) return
+    // Una carga masiva de roles dispara un evento por fila: se agrupan en una
+    // sola recarga para no consultar la base decenas de veces seguidas.
+    let espera: ReturnType<typeof setTimeout> | undefined
+    const refrescar = () => {
+      if (espera) clearTimeout(espera)
+      espera = setTimeout(() => {
+        cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000)
+      }, 800)
+    }
     const channel = supabase.channel('retiro-cambios')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'asignaciones_mesa' }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'roles_pre_retiro_asignaciones', filter: `servidor_inscripcion_id=eq.${srvId}` }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_pre_retiro' }, () => { cargarDatos(nombreServidor, srvId); setActualizado(true); setTimeout(() => setActualizado(false), 3000) })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mesas', filter: `retiro_id=eq.${RETIRO_ID}` }, refrescar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roles_retiro', filter: `retiro_id=eq.${RETIRO_ID}` }, refrescar)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'retiros', filter: `id=eq.${RETIRO_ID}` }, refrescar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'asignaciones_mesa' }, refrescar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roles_pre_retiro_asignaciones', filter: `servidor_inscripcion_id=eq.${srvId}` }, refrescar)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'roles_pre_retiro' }, refrescar)
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    return () => { if (espera) clearTimeout(espera); supabase.removeChannel(channel) }
   }, [nombreServidor, srvId, cargarDatos])
 
   const toggleSeguimiento = async (asignacionMesaId: string, campo: 'llamado' | 'contesto') => {
