@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useRetiroActual } from '@/lib/retiro-context'
+import EditarCaminante from '@/components/caminantes/EditarCaminante'
 import { ArrowLeft, Download, MoreHorizontal, Plus, Mail, CheckCircle, EyeOff, ChevronDown, Upload, X, ExternalLink, Loader, Trash2, Pencil, MessageSquare } from 'lucide-react'
 
 function fmt(n: number) { return `$${Number(n).toLocaleString('es-CO')}` }
@@ -131,6 +132,7 @@ export default function FichaCaminante() {
   const [pagoEditando, setPagoEditando] = useState<any>(null)
   const [valorEditar, setValorEditar] = useState('')
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const [editandoDatos, setEditandoDatos] = useState(false)
   const [eliminandoCaminante, setEliminandoCaminante] = useState(false)
   const [esSorpresa, setEsSorpresa] = useState(false)
   const [togglingSorpresa, setTogglingSorpresa] = useState(false)
@@ -295,6 +297,9 @@ export default function FichaCaminante() {
           </button>
           {menuAbierto && (
             <div style={{ position: 'absolute', top: 40, right: 0, background: '#fff', border: '0.5px solid #e5e7eb', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.08)', zIndex: 100, minWidth: 180, overflow: 'hidden' }}>
+              <button onClick={() => { setMenuAbierto(false); setEditandoDatos(true) }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'none', border: 'none', borderBottom: '0.5px solid #f3f4f6', cursor: 'pointer', fontSize: 13, color: '#0d0d14', textAlign: 'left' }}>
+                <Pencil size={14} color="#6b7280" /> Editar datos
+              </button>
               <button onClick={eliminarCaminante} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#dc2626', textAlign: 'left' }}>
                 <Trash2 size={14} color="#dc2626" /> Eliminar caminante
               </button>
@@ -360,7 +365,19 @@ export default function FichaCaminante() {
         <button onClick={abrirModal} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: '0.5px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: '#fff', color: '#0d0d14' }}>
           <Plus size={14} /> Registrar pago
         </button>
+        <button onClick={() => setEditandoDatos(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: '0.5px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: '#fff', color: '#0d0d14' }}>
+          <Pencil size={14} /> Editar datos
+        </button>
       </div>
+
+      {editandoDatos && (
+        <EditarCaminante
+          caminante={detalle}
+          contactos={contactos}
+          onCerrar={() => setEditandoDatos(false)}
+          onGuardado={async () => { setEditandoDatos(false); await cargar() }}
+        />
+      )}
 
       {/* Estado de pago */}
       <div style={{ margin: '0 20px 12px', background: '#fff', borderRadius: 14, border: '0.5px solid #e5e7eb', overflow: 'hidden' }}>

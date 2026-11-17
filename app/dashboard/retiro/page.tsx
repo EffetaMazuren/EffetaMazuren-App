@@ -7,6 +7,7 @@ import { useRetiroActual } from '@/lib/retiro-context'
 import { formatearFechasRetiro } from '@/lib/formato-fecha'
 import MiRolPreRetiro from '@/components/MiRolPreRetiro'
 import CargarRolesRetiro from '@/components/lider/CargarRolesRetiro'
+import { CrearMesas, CrearHabitaciones, FormHabitacion, llamarLogistica } from '@/components/lider/GestionLogistica'
 
 const CAMINANTES_POR_MESA = 6
 const APPS_SCRIPT_MESAS = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
@@ -203,6 +204,9 @@ export default function RetiroDashboard() {
   const [guardandoMesa, setGuardandoMesa] = useState(false)
   const [exitoMesa, setExitoMesa] = useState('')
   const [generandoPDF, setGenerandoPDF] = useState(false)
+  const [servidoresNombres, setServidoresNombres] = useState<string[]>([])
+  const [camConfirmados, setCamConfirmados] = useState(0)
+  const [eliminandoMesa, setEliminandoMesa] = useState(false)
   const [errorPDF, setErrorPDF] = useState('')
 
   // Caminantes
@@ -237,6 +241,7 @@ export default function RetiroDashboard() {
   const [sinCuarto, setSinCuarto] = useState<{id:string;nombre:string;tipo:'caminante'|'servidor'}[]>([])
   const [agregandoAHab, setAgregandoAHab] = useState<string|null>(null)
   const [personaSel, setPersonaSel] = useState('')
+  const [editandoHabId, setEditandoHabId] = useState<string|null>(null)
 
   // Tabla editable
   const [filasTabla, setFilasTabla] = useState<FilaTabla[]>([])
@@ -300,7 +305,13 @@ export default function RetiroDashboard() {
 
   const cargarMesas = async () => {
     setLoadingMesas(true)
-    const { data } = await supabase.from('mesas').select('id,numero,adulto,lider,colider').eq('retiro_id',RETIRO_ID).order('numero')
+    const [{ data }, { data: srvs }, { data: pd }] = await Promise.all([
+      supabase.from('mesas').select('id,numero,adulto,lider,colider').eq('retiro_id',RETIRO_ID).order('numero'),
+      supabase.from('servidores_inscripcion').select('nombre').eq('retiro_id',RETIRO_ID).order('nombre'),
+      supabase.from('pagos').select('persona_id').eq('retiro_id',RETIRO_ID).eq('tipo_persona','caminante').eq('estado','confirmado'),
+    ])
+    setServidoresNombres((srvs??[]).map((s:any)=>(s.nombre||'').trim()).filter(Boolean))
+    setCamConfirmados(new Set((pd??[]).map((p:any)=>p.persona_id)).size)
     setMesas(data??[]); setLoadingMesas(false)
   }
 
@@ -426,8 +437,9 @@ export default function RetiroDashboard() {
     setAgregandoAHab(null); setPersonaSel(''); await cargarCuartos(); await syncHabitaciones()
   }
 
-  const confirmarTodas = async () => { setGuardandoCam(true); await supabase.from('asignaciones_mesa').update({confirmado_por_lider:true}).eq('confirmado_por_lider',false); await cargarCaminantes(); await syncMesas(); setExitoCam('Todas confirmadas'); setTimeout(()=>setExitoCam(''),2500); setGuardandoCam(false) }
-  const desconfirmarTodas = async () => { setGuardandoCam(true); await supabase.from('asignaciones_mesa').update({confirmado_por_lider:false}).eq('confirmado_por_lider',true); await cargarCaminantes(); setExitoCam('Desconfirmadas'); setTimeout(()=>setExitoCam(''),3000); setGuardandoCam(false) }
+  // Solo las asignaciones de ESTE retiro (antes tocaba las de todos los retiros)
+  const confirmarTodas = async () => { setGuardandoCam(true); const ids=asignaciones.filter(a=>!a.confirmado_por_lider).map(a=>a.id); if(ids.length>0) await supabase.from('asignaciones_mesa').update({confirmado_por_lider:true}).in('id',ids); await cargarCaminantes(); await syncMesas(); setExitoCam('Todas confirmadas'); setTimeout(()=>setExitoCam(''),2500); setGuardandoCam(false) }
+  const desconfirmarTodas = async () => { setGuardandoCam(true); const ids=asignaciones.filter(a=>a.confirmado_por_lider).map(a=>a.id); if(ids.length>0) await supabase.from('asignaciones_mesa').update({confirmado_por_lider:false}).in('id',ids); await cargarCaminantes(); setExitoCam('Desconfirmadas'); setTimeout(()=>setExitoCam(''),3000); setGuardandoCam(false) }
   const cambiarMesa = async (asigId:string,mesa:Mesa) => { setGuardandoCam(true); await supabase.from('asignaciones_mesa').update({mesa_id:mesa.id,mesa_numero:mesa.numero,confirmado_por_lider:true}).eq('id',asigId); setEditandoCamId(null); await cargarCaminantes(); await syncMesas(); setGuardandoCam(false) }
   const quitarCaminante = async (id:string) => { await supabase.from('asignaciones_mesa').delete().eq('id',id); await cargarCaminantes(); await syncMesas() }
   const toggleSeg = async (asigId:string,campo:'llamado'|'contesto') => {
@@ -486,6 +498,17 @@ export default function RetiroDashboard() {
     if(!error){setExitoMesa('Guardado');await cargarMesas();setEditandoMesaId(null);setTimeout(()=>setExitoMesa(''),2500)}
     setGuardandoMesa(false)
   }
+
+  const eliminarMesa = async (m:Mesa) => {
+    const {count}=await supabase.from('asignaciones_mesa').select('id',{count:'exact',head:true}).eq('mesa_id',m.id)
+    if(!confirm(`¿Eliminar la Mesa ${m.numero}?${count?` Sus ${count} caminantes quedan sin mesa.`:''}`)) return
+    setEliminandoMesa(true)
+    try { await llamarLogistica({accion:'eliminar_mesa',id:m.id}); setEditandoMesaId(null); await cargarMesas(); await syncMesas() }
+    catch(e:any){ alert(e.message) }
+    finally { setEliminandoMesa(false) }
+  }
+  // Un líder de mesa solo ve su mesa en la app si su nombre coincide con el de su inscripción
+  const esServidorInscrito = (n:string) => !n.trim() || servidoresNombres.some(s=>nombreMatch(s,n))
 
   const descargarPDFMesas = async () => {
     setGenerandoPDF(true)
@@ -919,6 +942,7 @@ export default function RetiroDashboard() {
         <div>
           {exitoMesa&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ Mesa actualizada correctamente</div>}
           {errorPDF&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#dc2626'}}>{errorPDF}</div>}
+          {!loadingMesas&&<CrearMesas key={mesas.length} totalMesas={mesas.length} caminantesConfirmados={camConfirmados} porMesa={CAMINANTES_POR_MESA} onCambio={cargarMesas}/>}
           {!loadingMesas && mesas.length>0 && (
             <button onClick={descargarPDFMesas} disabled={generandoPDF} style={{width:'100%',padding:'12px',background:generandoPDF?'#9ca3af':'#0f1787',color:'white',border:'none',borderRadius:12,fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
               {generandoPDF?'Generando PDF...':'📄 Descargar PDF por mesa (líderes, caminantes y cuartos)'}
@@ -933,12 +957,15 @@ export default function RetiroDashboard() {
                       <p style={{fontSize:13,fontWeight:700,color:'#0f1787',margin:'0 0 14px'}}>Mesa {mesa.numero}</p>
                       <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:14}}>
                         {[{key:'adulto',label:'LÍDER ADULTO'},{key:'lider',label:'LÍDER JOVEN'},{key:'colider',label:'CO-LÍDER'}].map(f=>(
-                          <div key={f.key}><label style={{fontSize:11,fontWeight:600,color:'#6b7280',display:'block',marginBottom:4}}>{f.label}</label><input value={editMesa[f.key as keyof typeof editMesa]} onChange={e=>setEditMesa(p=>({...p,[f.key]:e.target.value}))} style={{width:'100%',padding:'8px 10px',border:'1.5px solid #e8eaf0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',fontFamily:'inherit'}}/></div>
+                          <div key={f.key}><label style={{fontSize:11,fontWeight:600,color:'#6b7280',display:'block',marginBottom:4}}>{f.label}</label><input value={editMesa[f.key as keyof typeof editMesa]} list="servidores-mesas" placeholder="Escribe y elige un servidor" onChange={e=>setEditMesa(p=>({...p,[f.key]:e.target.value}))} style={{width:'100%',padding:'8px 10px',border:`1.5px solid ${esServidorInscrito(editMesa[f.key as keyof typeof editMesa])?'#e8eaf0':'#fed7aa'}`,borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',fontFamily:'inherit'}}/>
+                            {!esServidorInscrito(editMesa[f.key as keyof typeof editMesa])&&<p style={{fontSize:11,color:'#c2410c',margin:'4px 0 0'}}>No coincide con ningún servidor inscrito: esta persona no verá la mesa en su app.</p>}</div>
                         ))}
+                        <datalist id="servidores-mesas">{servidoresNombres.map(n=><option key={n} value={n}/>)}</datalist>
                       </div>
                       <div style={{display:'flex',gap:8}}>
                         <button onClick={()=>guardarMesa(mesa.id)} disabled={guardandoMesa} style={{flex:1,padding:'9px',background:guardandoMesa?'#9ca3af':'#0f1787',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>{guardandoMesa?'Guardando...':'Guardar'}</button>
                         <button onClick={()=>setEditandoMesaId(null)} style={{padding:'9px 14px',background:'#f3f4f6',color:'#374151',border:'none',borderRadius:8,fontSize:13,cursor:'pointer'}}>Cancelar</button>
+                        <button onClick={()=>eliminarMesa(mesa)} disabled={eliminandoMesa} style={{padding:'9px 12px',background:'#fef2f2',color:'#dc2626',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>{eliminandoMesa?'…':'Eliminar'}</button>
                       </div>
                     </div>
                   ):(
@@ -952,6 +979,8 @@ export default function RetiroDashboard() {
                           {mesa.adulto&&<div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:10,background:'#fef3c7',color:'#92400e',padding:'1px 7px',borderRadius:20,fontWeight:600,flexShrink:0}}>Adulto</span><span style={{fontSize:12,color:'#374151'}}>{mesa.adulto}</span></div>}
                           {mesa.lider&&<div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:10,background:'#f0f2ff',color:'#0f1787',padding:'1px 7px',borderRadius:20,fontWeight:600,flexShrink:0}}>Líder</span><span style={{fontSize:12,color:'#374151'}}>{mesa.lider}</span></div>}
                           {mesa.colider&&<div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:10,background:'#faf5ff',color:'#7c3aed',padding:'1px 7px',borderRadius:20,fontWeight:600,flexShrink:0}}>Co-líder</span><span style={{fontSize:12,color:'#374151'}}>{mesa.colider}</span></div>}
+                          {[mesa.adulto,mesa.lider,mesa.colider].some(n=>n&&!esServidorInscrito(n))&&<span style={{fontSize:11,color:'#c2410c'}}>⚠ Hay un nombre que no coincide con ningún servidor inscrito</span>}
+                          {!mesa.adulto&&!mesa.lider&&!mesa.colider&&<span style={{fontSize:12,color:'#9ca3af',fontStyle:'italic'}}>Sin líderes asignados — toca Editar</span>}
                         </div>
                       </div>
                       <button onClick={()=>iniciarEdicionMesa(mesa)} style={{padding:'6px 10px',background:'#f0f2ff',color:'#0f1787',border:'none',borderRadius:8,fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0}}>Editar</button>
@@ -1022,8 +1051,9 @@ export default function RetiroDashboard() {
                   ))}
                 </div>
               </div>}
-              {asignaciones.length===0&&<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,padding:'40px 24px',textAlign:'center'}}><p style={{fontSize:15,fontWeight:600,color:'#111827',margin:'0 0 6px'}}>No hay asignaciones aún</p><p style={{fontSize:13,color:'#6b7280',margin:0}}>Agrega caminantes a las mesas manualmente desde abajo.</p></div>}
-              {asignaciones.length>0&&(
+              {mesasDisponibles.length===0&&<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,padding:'32px 24px',textAlign:'center',marginBottom:16}}><p style={{fontSize:15,fontWeight:600,color:'#111827',margin:'0 0 6px'}}>Este retiro todavía no tiene mesas</p><p style={{fontSize:13,color:'#6b7280',margin:'0 0 14px'}}>Créalas primero y asígnales sus líderes.</p><button onClick={()=>setTab('mesas')} style={{padding:'9px 16px',background:'#0f1787',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>Ir a Mesas</button></div>}
+              {mesasDisponibles.length>0&&asignaciones.length===0&&<p style={{fontSize:12,color:'#6b7280',margin:'0 0 12px'}}>Abre una mesa y usa <b>+ Agregar caminante</b> para empezar.</p>}
+              {mesasDisponibles.length>0&&(
                 <div style={{display:'flex',flexDirection:'column',gap:10}}>
                   {mesasDisponibles.map(mesa=>{
                     const cams=aPM[mesa.numero]??[], ab=mesaExpandida===mesa.id, conf=cams.filter(a=>a.confirmado_por_lider).length
@@ -1107,15 +1137,16 @@ export default function RetiroDashboard() {
           {exitoCuartos&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ {exitoCuartos}</div>}
           {loadingCuartos?<Spinner/>:(
             <>
+              <CrearHabitaciones key={habitaciones.length} totalHabitaciones={habitaciones.length} bloques={[...new Set(habitaciones.map(h=>h.bloque))]} onCambio={async()=>{await cargarCuartos();await syncHabitaciones()}}/>
               <div style={{display:'flex',gap:8,marginBottom:16}}>{[{l:'Total asig.',v:totAsig,c:'#0f1787'},{l:'Servidores',v:totSrv,c:'#1e40af'},{l:'Caminantes',v:totCam,c:'#16a34a'},{l:'Sin cuarto',v:sinCuarto.length,c:'#dc2626'}].map(s=><div key={s.l} style={{flex:1,background:'white',border:'0.5px solid #e8eaf0',borderRadius:10,padding:'8px 6px',textAlign:'center'}}><div style={{fontSize:18,fontWeight:700,color:s.c}}>{s.v}</div><div style={{fontSize:10,color:'#6b7280'}}>{s.l}</div></div>)}</div>
               {sinCuarto.length>0&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:10,padding:'12px 14px',marginBottom:14}}><p style={{fontSize:12,fontWeight:700,color:'#991b1b',margin:'0 0 6px',textTransform:'uppercase',letterSpacing:.5}}>{sinCuarto.length} sin cuarto</p><div style={{display:'flex',flexDirection:'column',gap:3}}>{sinCuarto.slice(0,6).map(p=><div key={p.id} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#7f1d1d'}}><span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:20,background:p.tipo==='servidor'?'#cfe2ff':'#f0fdf4',color:p.tipo==='servidor'?'#1e40af':'#166534'}}>{p.tipo==='servidor'?'SRV':'CAM'}</span>{p.nombre}</div>)}{sinCuarto.length>6&&<span style={{fontSize:11,color:'#9ca3af',marginTop:2}}>...y {sinCuarto.length-6} más</span>}</div></div>}
               <div style={{position:'relative',marginBottom:10}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)'}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" placeholder="Buscar habitación, bloque o persona..." value={busquedaCuartos} onChange={e=>setBusquedaCuartos(e.target.value)} style={{width:'100%',padding:'10px 12px 10px 36px',border:'1.5px solid #e8eaf0',borderRadius:10,fontSize:13,outline:'none',boxSizing:'border-box',background:'white',fontFamily:'inherit'}}/>{busquedaCuartos&&<button onClick={()=>setBusquedaCuartos('')} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:16}}>✕</button>}</div>
               <div style={{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}}>
-                {[{l:'Todos',v:null},{l:'Piso 1',v:1},{l:'Piso 2',v:2},{l:'Piso 3',v:3}].map(f=><button key={String(f.v)} onClick={()=>setFiltroPiso(f.v)} style={{padding:'5px 12px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,background:filtroPiso===f.v?'#0f1787':'#f3f4f6',color:filtroPiso===f.v?'white':'#6b7280'}}>{f.l}</button>)}
+                {[{l:'Todos',v:null as number|null},...[...new Set(habitaciones.map(h=>h.piso))].sort((a,b)=>a-b).map(p=>({l:`Piso ${p}`,v:p as number|null}))].map(f=><button key={String(f.v)} onClick={()=>setFiltroPiso(f.v)} style={{padding:'5px 12px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,background:filtroPiso===f.v?'#0f1787':'#f3f4f6',color:filtroPiso===f.v?'white':'#6b7280'}}>{f.l}</button>)}
                 <div style={{width:'100%',height:0}}/>
                 {[{l:'Todos',v:'todos'as const},{l:'Servidores',v:'servidor'as const},{l:'Caminantes',v:'caminante'as const},{l:'Libre',v:'libre'as const}].map(f=><button key={f.v} onClick={()=>setFiltroTipo(f.v)} style={{padding:'5px 12px',borderRadius:20,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,background:filtroTipo===f.v?'#7c3aed':'#f3f4f6',color:filtroTipo===f.v?'white':'#6b7280'}}>{f.l}</button>)}
               </div>
-              {habitaciones.length===0?<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:14,padding:'40px 24px',textAlign:'center'}}><p style={{fontSize:15,fontWeight:600,color:'#111827',margin:'0 0 6px'}}>No hay habitaciones cargadas</p></div>:bloquesCuartos.length===0?<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:10,padding:'20px',textAlign:'center',color:'#9ca3af',fontSize:13}}>Sin resultados</div>:(
+              {habitaciones.length===0?null:bloquesCuartos.length===0?<div style={{background:'white',border:'1.5px solid #e8eaf0',borderRadius:10,padding:'20px',textAlign:'center',color:'#9ca3af',fontSize:13}}>Sin resultados</div>:(
                 <div style={{display:'flex',flexDirection:'column',gap:24}}>
                   {bloquesCuartos.map(blq=>{
                     const habs=habFilt.filter(h=>h.bloque===blq); if(!habs.length) return null
@@ -1126,7 +1157,7 @@ export default function RetiroDashboard() {
                         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
                           <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:cb,color:ct}}>Piso {piso}</span>
                           <h3 style={{fontSize:13,fontWeight:700,color:'#111827',margin:0}}>{blq}</h3>
-                          {p1&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#cfe2ff',color:'#1e40af'}}>Solo servidores</span>}
+                          {habs.every(h=>h.solo_servidores)&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#cfe2ff',color:'#1e40af'}}>Solo servidores</span>}
                         </div>
                         <div style={{display:'flex',flexDirection:'column',gap:8}}>
                           {habs.map(hab=>{
@@ -1149,6 +1180,11 @@ export default function RetiroDashboard() {
                                 </button>
                                 {ab&&(
                                   <div style={{borderTop:'1px solid #f3f4f6',padding:'10px 14px'}}>
+                                    {editandoHabId===hab.id?(
+                                      <div style={{marginBottom:10}}><FormHabitacion inicial={hab} bloques={[...new Set(habitaciones.map(h=>h.bloque))]} onListo={async()=>{setEditandoHabId(null);await cargarCuartos();await syncHabitaciones()}} onCancelar={()=>setEditandoHabId(null)}/></div>
+                                    ):(
+                                      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:6}}><button onClick={()=>setEditandoHabId(hab.id)} style={{padding:'4px 10px',background:'#f0f2ff',color:'#0f1787',border:'none',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer'}}>Editar habitación</button></div>
+                                    )}
                                     {asigs.length===0?<p style={{fontSize:13,color:'#9ca3af',margin:'4px 0 8px',fontStyle:'italic'}}>Habitación vacía</p>:(
                                       <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:10}}>
                                         {asigs.map(a=><div key={a.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:a.tipo_persona==='servidor'?'#eff6ff':'#f0fdf4',borderRadius:8}}><span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:20,background:a.tipo_persona==='servidor'?'#cfe2ff':'#bbf7d0',color:a.tipo_persona==='servidor'?'#1e40af':'#166534',flexShrink:0}}>{a.tipo_persona==='servidor'?'SRV':'CAM'}</span><span style={{fontSize:13,fontWeight:500,color:'#111827',flex:1}}>{a.nombre}</span><button onClick={()=>quitarDeHab(a.id)} style={{padding:'3px 8px',background:'#fef2f2',color:'#dc2626',border:'none',borderRadius:6,fontSize:11,fontWeight:600,cursor:'pointer'}}>✕</button></div>)}
