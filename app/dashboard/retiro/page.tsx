@@ -450,8 +450,23 @@ export default function RetiroDashboard() {
     else await supabase.from('seguimiento_caminantes').insert({asignacion_mesa_id:asigId,llamado:nv.llamado,contesto:nv.contesto})
   }
   const agregarCamAMesa = async (mesaId:string,mesaNum:number,camId:string) => {
-    if(!camId) return; setGuardandoCam(true)
-    await supabase.from('asignaciones_mesa').insert({caminante_id:camId,mesa_id:mesaId,mesa_numero:mesaNum,sugerido_por_sistema:false,confirmado_por_lider:true})
+    if(!camId) { alert('Primero elige un caminante de la lista.'); return }
+    setGuardandoCam(true)
+    // Si el caminante aparece "sin mesa" es porque no tiene asignación en una
+    // mesa de ESTE retiro. Cualquier asignación que le quede (de una mesa
+    // borrada o de otro retiro) es basura que bloquea el insert: se limpia.
+    const { data: viejas } = await supabase.from('asignaciones_mesa').select('id').eq('caminante_id', camId)
+    if (viejas && viejas.length > 0) {
+      const viejasIds = viejas.map((v: any) => v.id)
+      await supabase.from('seguimiento_caminantes').delete().in('asignacion_mesa_id', viejasIds)
+      await supabase.from('asignaciones_mesa').delete().in('id', viejasIds)
+    }
+    const { error } = await supabase.from('asignaciones_mesa').insert({caminante_id:camId,mesa_id:mesaId,mesa_numero:mesaNum,sugerido_por_sistema:false,confirmado_por_lider:true})
+    if (error) {
+      alert('No se pudo agregar a la mesa: ' + error.message)
+      setGuardandoCam(false)
+      return
+    }
     setAgregandoACam(null); setCamSel(''); await cargarCaminantes(); await syncMesas(); setGuardandoCam(false)
   }
   const iniciarEdicionDificil = (cam: Caminante | undefined | null) => {
