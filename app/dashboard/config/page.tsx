@@ -8,7 +8,7 @@ import BottomNav from '@/components/BottomNav'
 import {
   User, Bell, Shield, Download, RefreshCw,
   ChevronRight, LogOut, Info, Database, Moon, Globe,
-  AlertTriangle, Check, Users, Lock, Calendar, Pencil, DollarSign
+  AlertTriangle, Check, Users, Lock, Calendar, Pencil, DollarSign, MailX
 } from 'lucide-react'
 
 type Toast = { msg: string; tipo: 'ok' | 'error' } | null
@@ -289,6 +289,7 @@ export default function ConfigPage() {
       <Seccion titulo="Retiro">
         <Fila icon={Pencil} label="Editar retiro actual" color="#0f1787" sublabel="Link del formulario, fechas, costos, etc. — sin archivar nada" onClick={() => router.push('/dashboard/config/editar-retiro')} />
         <Fila icon={DollarSign} label="Precio para servidores internos" color="#0f1787" sublabel={`Lo que deben pagar: $${Number(COSTO_SERVIDOR || 0).toLocaleString('es-CO')}`} onClick={abrirPrecio} />
+        <Fila icon={MailX} label="Correo de cupos llenos" color="#0f1787" sublabel="Avisar a los inscritos sin pago que ya no hay cupos" onClick={() => router.push('/dashboard/config/cupos-llenos')} />
         <Fila icon={Calendar} label="Crear nuevo retiro" color="#0f1787" sublabel="Archiva el retiro actual y activa uno nuevo" onClick={() => router.push('/dashboard/config/nuevo-retiro')} ultimo />
       </Seccion>
 
