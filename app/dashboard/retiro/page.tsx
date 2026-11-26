@@ -8,6 +8,8 @@ import { formatearFechasRetiro } from '@/lib/formato-fecha'
 import MiRolPreRetiro from '@/components/MiRolPreRetiro'
 import CargarRolesRetiro from '@/components/lider/CargarRolesRetiro'
 import { CrearMesas, CrearHabitaciones, FormHabitacion, llamarLogistica } from '@/components/lider/GestionLogistica'
+import ExcelHabitaciones from '@/components/lider/ExcelHabitaciones'
+import { nombreArchivoSeguro } from '@/lib/habitaciones-excel'
 
 const CAMINANTES_POR_MESA = 6
 const APPS_SCRIPT_MESAS = 'https://script.google.com/macros/s/AKfycbxSBSMqBbLMjpjvwkGFYGOXN2Itnlk9ZMb5hxLaYiqhyDaily/exec'
@@ -651,7 +653,7 @@ export default function RetiroDashboard() {
         }
       })
 
-      doc.save(`Mesas_IX_Retiro_Effeta_${new Date().toISOString().slice(0,10)}.pdf`)
+      doc.save(nombreArchivoSeguro(`${NOMBRE_RETIRO} - Mesas`, 'pdf'))
     } catch (e) {
       console.error(e)
       setErrorPDF('No se pudo generar el PDF. Intenta de nuevo.')
@@ -1152,6 +1154,7 @@ export default function RetiroDashboard() {
           {exitoCuartos&&<div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 14px',marginBottom:12,fontSize:13,color:'#16a34a'}}>✓ {exitoCuartos}</div>}
           {loadingCuartos?<Spinner/>:(
             <>
+              <ExcelHabitaciones nombreRetiro={NOMBRE_RETIRO} habitaciones={habitaciones} asignaciones={asignacionesHab} onCambio={async()=>{await cargarCuartos();await syncHabitaciones()}}/>
               <CrearHabitaciones key={habitaciones.length} totalHabitaciones={habitaciones.length} bloques={[...new Set(habitaciones.map(h=>h.bloque))]} onCambio={async()=>{await cargarCuartos();await syncHabitaciones()}}/>
               <div style={{display:'flex',gap:8,marginBottom:16}}>{[{l:'Total asig.',v:totAsig,c:'#0f1787'},{l:'Servidores',v:totSrv,c:'#1e40af'},{l:'Caminantes',v:totCam,c:'#16a34a'},{l:'Sin cuarto',v:sinCuarto.length,c:'#dc2626'}].map(s=><div key={s.l} style={{flex:1,background:'white',border:'0.5px solid #e8eaf0',borderRadius:10,padding:'8px 6px',textAlign:'center'}}><div style={{fontSize:18,fontWeight:700,color:s.c}}>{s.v}</div><div style={{fontSize:10,color:'#6b7280'}}>{s.l}</div></div>)}</div>
               {sinCuarto.length>0&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:10,padding:'12px 14px',marginBottom:14}}><p style={{fontSize:12,fontWeight:700,color:'#991b1b',margin:'0 0 6px',textTransform:'uppercase',letterSpacing:.5}}>{sinCuarto.length} sin cuarto</p><div style={{display:'flex',flexDirection:'column',gap:3}}>{sinCuarto.slice(0,6).map(p=><div key={p.id} style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#7f1d1d'}}><span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:20,background:p.tipo==='servidor'?'#cfe2ff':'#f0fdf4',color:p.tipo==='servidor'?'#1e40af':'#166534'}}>{p.tipo==='servidor'?'SRV':'CAM'}</span>{p.nombre}</div>)}{sinCuarto.length>6&&<span style={{fontSize:11,color:'#9ca3af',marginTop:2}}>...y {sinCuarto.length-6} más</span>}</div></div>}
